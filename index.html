@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Programa Preparador Físico | Login</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="login-page">
+    <section class="login-card">
+      <div class="brand">
+        <div class="logo">PF</div>
+        <h1>Programa Preparador Físico</h1>
+        <p>Acceso privado para clientes y administrador</p>
+      </div>
+
+      <form id="loginForm">
+        <label>Usuario o nickname</label>
+        <input type="text" id="username" placeholder="Ej: admin o cliente1" required />
+
+        <label>Contraseña</label>
+        <input type="password" id="password" placeholder="Introduce tu contraseña" required />
+
+        <button type="submit">Entrar</button>
+        <p id="message"></p>
+      </form>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="supabase-sync.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

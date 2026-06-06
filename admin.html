@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel Administrador</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo small">PF</div>
+        <div>
+          <h2>Admin</h2>
+          <span>Panel principal</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-section="paciente"><span>👤</span> Paciente</button>
+        <button class="nav-item" data-section="usuarios"><span>👥</span> Usuarios</button>
+        <button class="nav-item" data-section="biblioteca"><span>📚</span> Biblioteca</button>
+        <button class="nav-item" data-section="sesiones"><span>🏋️</span> Creación sesiones</button>
+        <button class="nav-item" data-section="periodicidad"><span>📆</span> Periodicidad</button>
+        <button class="nav-item" data-section="graficaPro"><span>🕸️</span> Gráfica PRO</button>
+
+        <button class="nav-item" data-section="valoraciones"><span>📊</span> Valoraciones</button>
+              <button class="nav-item" data-section="sistema"><span>⚙️</span> Sistema</button>
+      </nav>
+
+      <button id="logoutBtn" class="logout">Cerrar sesión</button>
+    </aside>
+
+    <main class="admin-main">
+      <header class="admin-header">
+        <div>
+          <p class="eyebrow">Programa Preparador Físico</p>
+          <h1 id="sectionTitle">Paciente</h1>
+        </div>
+        <div class="admin-user">
+          <span id="adminName">Administrador</span>
+          <div class="avatar">A</div>
+        </div>
+      </header>
+
+      <section class="dashboard-grid">
+        <article class="stat-card"><span>Pacientes activos</span><strong id="patientCounter">0</strong></article>
+        <article class="stat-card"><span>Registros historial</span><strong id="historyCounter">0</strong></article>
+        <article class="stat-card"><span>Archivos guardados</span><strong id="fileCounter">0</strong></article>
+      </section>
+
+      <section class="content-card" id="contentArea"></section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="supabase-sync.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>
