@@ -508,18 +508,37 @@ function getClientMicroLabel(session) {
 }
 
 
+
+function normalizeSessionNumber(session) {
+  return Number(session?.numero || session?.numeroSesion || session?.sessionNumber || 0);
+}
+
+function isSessionCompletedForClient(session) {
+  refreshCompletedSessions();
+
+  const sessionNumber = normalizeSessionNumber(session);
+  const patientNickname = session?.patientNickname || currentPatient.nickname;
+
+  return completedSessions.some(item => {
+    const sameId = item.sessionId && session.id && String(item.sessionId) === String(session.id);
+    const samePatient = String(item.patientNickname || "") === String(patientNickname || "");
+    const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
+    const sameNumber = samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber;
+    return sameId || sameNumber;
+  });
+}
+
 function isSessionCompleted(sessionId) {
-  return completedSessions.some(item =>
-    item.sessionId === sessionId &&
-    item.patientNickname === currentPatient.nickname
-  );
+  const session = sessions.find(item => String(item.id) === String(sessionId));
+  if (!session) return false;
+  return isSessionCompletedForClient(session);
 }
 
 function getClientCompletedSessions() {
   refreshCompletedSessions();
   return sessions.filter(session =>
     session.patientNickname === currentPatient.nickname &&
-    isSessionCompleted(session.id)
+    isSessionCompletedForClient(session)
   );
 }
 
@@ -528,7 +547,7 @@ function getClientPendingSessions() {
   return sessions
     .filter(session =>
       session.patientNickname === currentPatient.nickname &&
-      !isSessionCompleted(session.id)
+      !isSessionCompletedForClient(session)
     )
     .sort((a, b) => {
       const dateA = a.fecha || "";
@@ -538,31 +557,45 @@ function getClientPendingSessions() {
     });
 }
 
+function persistCompletedSessionsAndCloud() {
+  localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
+
+  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+    window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
+      console.warn("No se pudo sincronizar completedSessions con Supabase:", error);
+    });
+  } else if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.push === "function") {
+    window.PPF_SUPABASE.push().catch(error => {
+      console.warn("No se pudo sincronizar Supabase:", error);
+    });
+  }
+}
+
 function completeClientSession(sessionId) {
-  const session = sessions.find(item => item.id === sessionId);
+  const session = sessions.find(item => String(item.id) === String(sessionId));
   if (!session) return;
 
-  if (isSessionCompleted(sessionId)) return;
+  if (isSessionCompletedForClient(session)) {
+    renderClientSection("proxima");
+    return;
+  }
 
   const confirmed = confirm(`¿Marcar la sesión nº ${session.numero} como terminada?`);
   if (!confirmed) return;
 
   completedSessions.push({
-  sessionId,
-  numero: session.numero,
-  microciclo: session.microciclo,
-  patientNickname: currentPatient.nickname,
-  completedAt: new Date().toISOString()
-});
+    sessionId: session.id,
+    numero: normalizeSessionNumber(session),
+    microciclo: session.microciclo,
+    patientNickname: currentPatient.nickname,
+    completedAt: new Date().toISOString()
+  });
 
-  localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
-
-  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-  window.PPF_SUPABASE.pushKey("completedSessions");
-}
+  persistCompletedSessionsAndCloud();
 
   alert("Sesión marcada como terminada. Ya cuenta en tu Dashboard y en Mis sesiones.");
   renderClientSection("proxima");
+}
 
 function renderSessionExerciseList(session) {
   function simpleModule(key, title) {
@@ -621,38 +654,6 @@ function renderSessionExerciseList(session) {
   `;
 }
 
-
-function normalizeSessionNumber(session) {
-  return Number(session?.numero || session?.numeroSesion || session?.sessionNumber || 0);
-}
-
-function isSessionCompletedForClient(session) {
-  const sessionNumber = normalizeSessionNumber(session);
-  const patientNickname = session?.patientNickname || currentClient?.nickname || currentClient?.id || "";
-
-  return completedSessions.some(item => {
-    const sameId = item.sessionId && session.id && String(item.sessionId) === String(session.id);
-    const samePatient = String(item.patientNickname || "") === String(patientNickname || "");
-    const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
-    const sameNumber = samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber;
-    return sameId || sameNumber;
-  });
-}
-
-function persistCompletedSessionsAndCloud() {
-  persistCompletedSessionsAndCloud();
-
-  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-    window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
-      console.warn("No se pudo sincronizar completedSessions con Supabase:", error);
-    });
-  } else if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.push === "function") {
-    window.PPF_SUPABASE.push().catch(error => {
-      console.warn("No se pudo sincronizar Supabase:", error);
-    });
-  }
-}
-
 function renderNextSession() {
   const nextSession = getClientPendingSessions()[0];
 
@@ -693,7 +694,7 @@ function renderNextSession() {
 }
 
 const clientSections = {
-  inicio: {
+  dashboard: {
     title: "Dashboard Cliente PRO",
     html: () => renderClientDashboard()
   },
@@ -716,7 +717,7 @@ const clientSections = {
 };
 
 function renderClientSection(key) {
-  const section = clientSections[key];
+  const section = clientSections[key] || clientSections.dashboard;
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
 }
@@ -742,7 +743,5 @@ if (typeof isSessionCompletedForClient === "function") {
 }
 
 window.completeClientSession = completeClientSession;
-
-}
 
 })();

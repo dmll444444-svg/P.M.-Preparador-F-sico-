@@ -18,7 +18,7 @@
       </div>
 
       <nav class="sidebar-nav">
-        <button class="client-nav-item active" data-client-section="inicio"><span>📊</span> Dashboard</button>
+        <button class="client-nav-item active" data-client-section="dashboard"><span>📊</span> Dashboard</button>
         <button class="client-nav-item" data-client-section="proxima"><span>🎯</span> Sesión próxima</button>
         <button class="client-nav-item" data-client-section="sesiones"><span>🏋️</span> Mis sesiones</button>
         <button class="client-nav-item" data-client-section="historial"><span>📁</span> Mi historial</button>
@@ -32,7 +32,7 @@
       <header class="admin-header">
         <div>
           <p class="eyebrow">Programa Preparador Físico</p>
-          <h1 id="clientSectionTitle">Inicio</h1>
+          <h1 id="clientSectionTitle">Dashboard Cliente PRO</h1>
         </div>
         <div class="admin-user">
           <span id="clientHeaderName">Cliente</span>
@@ -44,6 +44,9 @@
     </main>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="supabase-sync.js"></script>
   <script src="cliente.js"></script>
 </body>
 </html>
