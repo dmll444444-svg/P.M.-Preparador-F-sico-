@@ -737,8 +737,12 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
 renderClientSection("inicio");
 
 
-if (typeof isSessionCompletedForClient === "function") 
-   window.isSessionCompletedForClient = isSessionCompletedForClient;
+if (typeof isSessionCompletedForClient === "function") {
+  window.isSessionCompletedForClient = isSessionCompletedForClient;
+}
+
+window.completeClientSession = completeClientSession;
 
 }
+
 })();
