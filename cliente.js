@@ -616,6 +616,38 @@ function renderSessionExerciseList(session) {
   `;
 }
 
+
+function normalizeSessionNumber(session) {
+  return Number(session?.numero || session?.numeroSesion || session?.sessionNumber || 0);
+}
+
+function isSessionCompletedForClient(session) {
+  const sessionNumber = normalizeSessionNumber(session);
+  const patientNickname = session?.patientNickname || currentClient?.nickname || currentClient?.id || "";
+
+  return completedSessions.some(item => {
+    const sameId = item.sessionId && session.id && String(item.sessionId) === String(session.id);
+    const samePatient = String(item.patientNickname || "") === String(patientNickname || "");
+    const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
+    const sameNumber = samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber;
+    return sameId || sameNumber;
+  });
+}
+
+function persistCompletedSessionsAndCloud() {
+  persistCompletedSessionsAndCloud();
+
+  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+    window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
+      console.warn("No se pudo sincronizar completedSessions con Supabase:", error);
+    });
+  } else if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.push === "function") {
+    window.PPF_SUPABASE.push().catch(error => {
+      console.warn("No se pudo sincronizar Supabase:", error);
+    });
+  }
+}
+
 function renderNextSession() {
   const nextSession = getClientPendingSessions()[0];
 
@@ -699,5 +731,37 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
 
 renderClientSection("inicio");
 
+
+
+
+/* FIX complete session delegated */
+document.addEventListener("click", function(event) {
+  const btn = event.target.closest("#completeSessionBtn, [data-complete-session], .complete-session-btn");
+  if (!btn) return;
+
+  const activeSession = window.currentNextSession || (typeof nextSession !== "undefined" ? nextSession : null) || (typeof currentSession !== "undefined" ? currentSession : null);
+  if (!activeSession) return;
+
+  if (isSessionCompletedForClient(activeSession)) return;
+
+  completedSessions.push({
+    sessionId: activeSession.id,
+    numero: normalizeSessionNumber(activeSession),
+    completedAt: new Date().toISOString(),
+    patientNickname: activeSession.patientNickname || currentClient?.nickname || currentClient?.id || ""
+  });
+
+  persistCompletedSessionsAndCloud();
+
+  setTimeout(() => {
+    if (typeof renderNextSession === "function") renderNextSession();
+    if (typeof renderDashboard === "function") renderDashboard();
+    if (typeof renderMySessions === "function") renderMySessions();
+  }, 150);
+}, true);
+
+
+
+if (typeof isSessionCompletedForClient === "function") window.isSessionCompletedForClient = isSessionCompletedForClient;
 
 })();
