@@ -878,6 +878,39 @@ function renderNextSession() {
   `;
 }
 
+
+function renderClientProfile() {
+  const patientInitial = (currentPatient.nombre || currentPatient.nickname || "C").charAt(0).toUpperCase();
+  const imcValue = Number(currentPatient.imc || 0);
+  const imcText = imcValue ? imcValue.toFixed(1) : "-";
+
+  return `
+    <div class="client-profile-app-card">
+      <div class="client-profile-app-hero">
+        ${currentPatient.foto
+          ? `<img class="client-profile-app-photo" src="${currentPatient.foto}" alt="${currentPatient.nombre || "Cliente"}">`
+          : `<div class="client-profile-app-photo fallback">${patientInitial}</div>`
+        }
+        <div>
+          <p class="eyebrow">Perfil cliente</p>
+          <h2>${currentPatient.nombre || "Cliente"}</h2>
+          <p>@${currentPatient.nickname || "-"}</p>
+        </div>
+      </div>
+
+      <div class="client-profile-app-grid">
+        <article><span>Edad</span><strong>${currentPatient.edad || "-"} años</strong></article>
+        <article><span>Peso</span><strong>${currentPatient.peso || "-"} kg</strong></article>
+        <article><span>Altura</span><strong>${currentPatient.altura || "-"} cm</strong></article>
+        <article><span>IMC</span><strong>${imcText}</strong></article>
+        <article><span>Objetivo</span><strong>${currentPatient.objetivo || "Entrenamiento"}</strong></article>
+        <article><span>Op. física</span><strong>${currentPatient.operacion || currentPatient.operacionFisica || currentPatient.operacion_fisica || "-"}</strong></article>
+      </div>
+    </div>
+  `;
+}
+
+
 const clientSections = {
   dashboard: {
     title: "Dashboard Cliente PRO",
@@ -902,6 +935,10 @@ const clientSections = {
   archivos: {
     title: "Mis archivos",
     html: () => `<h2>Mis archivos</h2><p>Documentos, imágenes e informes disponibles.</p>${renderClientFiles()}`
+  },
+  perfil: {
+    title: "Perfil",
+    html: () => renderClientProfile()
   }
 };
 
@@ -911,11 +948,17 @@ function renderClientSection(key) {
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
 }
 
+function setClientNavActive(sectionKey) {
+  clientNavItems.forEach(nav => {
+    nav.classList.toggle("active", nav.dataset.clientSection === sectionKey);
+  });
+}
+
 clientNavItems.forEach(item => {
   item.addEventListener("click", () => {
-    clientNavItems.forEach(nav => nav.classList.remove("active"));
-    item.classList.add("active");
-    renderClientSection(item.dataset.clientSection);
+    const sectionKey = item.dataset.clientSection || "dashboard";
+    setClientNavActive(sectionKey);
+    renderClientSection(sectionKey);
   });
 });
 
@@ -924,6 +967,7 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
   window.location.href = "index.html";
 });
 
+setClientNavActive("dashboard");
 renderClientSection("dashboard");
 
 
