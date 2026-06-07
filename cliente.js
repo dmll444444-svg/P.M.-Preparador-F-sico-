@@ -102,7 +102,7 @@ function renderClientSessions() {
 
   return `
     <div class="sessions-list">
-      ${mySessions.slice().reverse().map(session => `
+      ${mySessions.map(session => `
         <article class="session-card">
           <div class="session-card-header">
             <span class="session-badge">Sesión nº ${session.numero}</span>
@@ -379,8 +379,6 @@ function getClientDashboardStats() {
 
 function renderClientLatestSessions() {
   const mySessions = getClientCompletedSessions()
-    .slice()
-    .reverse()
     .slice(0, 4);
 
   if (mySessions.length === 0) {
@@ -536,10 +534,19 @@ function isSessionCompleted(sessionId) {
 
 function getClientCompletedSessions() {
   refreshCompletedSessions();
-  return sessions.filter(session =>
-    session.patientNickname === currentPatient.nickname &&
-    isSessionCompletedForClient(session)
-  );
+  return sessions
+    .filter(session =>
+      session.patientNickname === currentPatient.nickname &&
+      isSessionCompletedForClient(session)
+    )
+    .sort((a, b) => {
+      const numeroDiff = Number(b.numero || 0) - Number(a.numero || 0);
+      if (numeroDiff !== 0) return numeroDiff;
+
+      const dateA = a.fecha || "";
+      const dateB = b.fecha || "";
+      return dateB.localeCompare(dateA);
+    });
 }
 
 function getClientPendingSessions() {
@@ -694,6 +701,10 @@ function renderNextSession() {
 }
 
 const clientSections = {
+  inicio: {
+    title: "Dashboard Cliente PRO",
+    html: () => renderClientDashboard()
+  },
   dashboard: {
     title: "Dashboard Cliente PRO",
     html: () => renderClientDashboard()
