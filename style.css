@@ -3180,3 +3180,72 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   PM ONLINE · VALORACIONES FIX FINAL
+   Quita encabezado verde duplicado y centra la X de eliminar.
+   ========================================================= */
+
+.valuation-table-head {
+  display: none !important;
+}
+
+.valuation-tests-area {
+  margin-top: 22px;
+  display: grid;
+  gap: 12px;
+}
+
+.valuation-test-row {
+  grid-template-columns: 1.05fr 1.35fr .72fr 1.45fr 58px !important;
+  align-items: center !important;
+}
+
+.valuation-remove-btn {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  min-height: 48px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  place-items: center !important;
+  align-self: center !important;
+  justify-self: center !important;
+  background: linear-gradient(135deg, #ef4444, #e11d48) !important;
+  color: #ffffff !important;
+  font-size: 28px !important;
+  font-weight: 1000 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  box-shadow: 0 14px 30px rgba(225, 29, 72, .34), inset 0 1px 0 rgba(255,255,255,.22) !important;
+  cursor: pointer !important;
+}
+
+.valuation-remove-btn:hover {
+  transform: scale(1.08) !important;
+  background: linear-gradient(135deg, #f43f5e, #be123c) !important;
+  box-shadow: 0 18px 38px rgba(225, 29, 72, .44), inset 0 1px 0 rgba(255,255,255,.25) !important;
+}
+
+@media (max-width: 1100px) {
+  .valuation-test-row {
+    grid-template-columns: 1fr !important;
+    padding-top: 64px !important;
+  }
+
+  .valuation-remove-btn {
+    position: absolute !important;
+    top: 14px !important;
+    right: 14px !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+}
+

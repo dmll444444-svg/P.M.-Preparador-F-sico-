@@ -4117,12 +4117,6 @@ const sections = {
           </div>
         </div>
 
-        <div class="valuation-table-head">
-          <span>TEST 1</span>
-          <span>Datos registrados</span>
-          <span>Registro</span>
-          <span>Observaciones cualitativas</span>
-        </div>
 
         <div class="valuation-tests-area" id="valuationTestsArea">
           ${valuationTestRow(1)}
