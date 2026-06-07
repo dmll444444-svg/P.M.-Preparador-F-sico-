@@ -25,6 +25,7 @@ const fileCounter = document.getElementById("fileCounter");
 let patients = JSON.parse(localStorage.getItem("patients")) || [];
 let histories = JSON.parse(localStorage.getItem("histories")) || [];
 let patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
+let valoraciones = JSON.parse(localStorage.getItem("valoraciones")) || [];
 let sessions = JSON.parse(localStorage.getItem("sessions")) || [];
 let editingSessionId = null;
 let exerciseLibrary = JSON.parse(localStorage.getItem("exerciseLibrary")) || [];
@@ -321,6 +322,7 @@ function persistAppData() {
   localStorage.setItem("sessions", JSON.stringify(sessions));
   localStorage.setItem("histories", JSON.stringify(histories));
   localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
+  localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
   localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
 }
 
@@ -3519,6 +3521,7 @@ function applyLocalBackupData(backup) {
   localStorage.setItem("sessions", JSON.stringify(sessions));
   localStorage.setItem("histories", JSON.stringify(histories));
   localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
+  localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
   localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
   localStorage.setItem("completedSessions", JSON.stringify(data.completedSessions || []));
 
@@ -3617,6 +3620,189 @@ function bindSystemPanel() {
     alert("Flags de BD limpiados. La app queda usando localStorage.");
     renderSystemStats();
   });
+}
+
+
+function escapeValuationHtml(value = "") {
+  return String(value).replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[char]));
+}
+
+function valuationUnitOptions(selected = "cm") {
+  return ["cm", "segundos", "N", "N/Kg peso", "m/s"]
+    .map(unit => `<option value="${unit}" ${unit === selected ? "selected" : ""}>${unit}</option>`)
+    .join("");
+}
+
+function valuationTestRow(number = 1) {
+  return `
+    <div class="valuation-test-row" data-valuation-row>
+      <div>
+        <label>TEST ${number}</label>
+        <input class="valuation-test-name" type="text" placeholder="Ej: CMJ, Sprint 10 m, IMTP..." required />
+      </div>
+
+      <div class="valuation-attempts">
+        <label>Datos registrados</label>
+        <div class="valuation-attempt-grid">
+          <input class="valuation-attempt-1" type="text" placeholder="Intento 1" />
+          <input class="valuation-attempt-2" type="text" placeholder="Intento 2" />
+          <input class="valuation-attempt-3" type="text" placeholder="Intento 3" />
+        </div>
+      </div>
+
+      <div>
+        <label>Registro</label>
+        <select class="valuation-unit">${valuationUnitOptions()}</select>
+      </div>
+
+      <div>
+        <label>Observaciones cualitativas</label>
+        <textarea class="valuation-observations" placeholder="Observaciones técnicas, calidad de movimiento, compensaciones..."></textarea>
+      </div>
+
+      <button class="valuation-remove-btn" type="button" title="Eliminar test">✕</button>
+    </div>
+  `;
+}
+
+function refreshValuationNumbers() {
+  document.querySelectorAll("[data-valuation-row]").forEach((row, index) => {
+    const label = row.querySelector("label");
+    if (label) label.textContent = `TEST ${index + 1}`;
+  });
+}
+
+function renderValuationsList(filterNickname = "") {
+  const list = document.getElementById("valuationsList");
+  if (!list) return;
+
+  const visible = valoraciones
+    .filter(item => !filterNickname || item.patientNickname === filterNickname)
+    .slice()
+    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+  if (visible.length === 0) {
+    list.innerHTML = `<p>No hay valoraciones guardadas todavía.</p>`;
+    return;
+  }
+
+  list.innerHTML = visible.map(item => {
+    const patient = patients.find(p => p.nickname === item.patientNickname);
+    return `
+      <article class="valuation-card">
+        <div class="history-card-header">
+          <span class="history-type">Valoración</span>
+          <span class="history-date">${escapeValuationHtml(item.fecha || "-")}</span>
+        </div>
+        <h3>${escapeValuationHtml(patient ? patient.nombre : item.patientNickname)}</h3>
+        <div class="valuation-card-tests">
+          ${(item.tests || []).map((test, index) => `
+            <div class="valuation-card-test">
+              <strong>TEST ${index + 1}: ${escapeValuationHtml(test.nombre || "-")}</strong>
+              <p><b>Datos:</b> ${escapeValuationHtml(test.intento1 || "-")} · ${escapeValuationHtml(test.intento2 || "-")} · ${escapeValuationHtml(test.intento3 || "-")} ${escapeValuationHtml(test.unidad || "")}</p>
+              <p><b>Observaciones:</b> ${escapeValuationHtml(test.observaciones || "-")}</p>
+            </div>
+          `).join("")}
+        </div>
+        <div class="file-actions">
+          <button class="danger-btn" type="button" onclick="deleteValuation('${item.id}')">Eliminar</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function bindValoracionesForm() {
+  const form = document.getElementById("valuationsForm");
+  const testsArea = document.getElementById("valuationTestsArea");
+  const addBtn = document.getElementById("addValuationTestBtn");
+  const filter = document.getElementById("valuationsFilter");
+
+  if (!form || !testsArea) return;
+
+  setTodayIfEmpty("valuationDate");
+  renderValuationsList();
+
+  addBtn?.addEventListener("click", () => {
+    testsArea.insertAdjacentHTML("beforeend", valuationTestRow(testsArea.querySelectorAll("[data-valuation-row]").length + 1));
+    refreshValuationNumbers();
+  });
+
+  testsArea.addEventListener("click", event => {
+    const btn = event.target.closest(".valuation-remove-btn");
+    if (!btn) return;
+
+    const rows = testsArea.querySelectorAll("[data-valuation-row]");
+    if (rows.length <= 1) {
+      alert("Debe quedar al menos un test.");
+      return;
+    }
+
+    btn.closest("[data-valuation-row]")?.remove();
+    refreshValuationNumbers();
+  });
+
+  filter?.addEventListener("change", () => renderValuationsList(filter.value));
+
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+
+    const patientNickname = document.getElementById("valuationPatient")?.value || "";
+    const fecha = document.getElementById("valuationDate")?.value || "";
+
+    if (!patientNickname || !fecha) {
+      alert("Selecciona paciente y fecha.");
+      return;
+    }
+
+    const tests = [...testsArea.querySelectorAll("[data-valuation-row]")].map(row => ({
+      nombre: row.querySelector(".valuation-test-name")?.value.trim() || "",
+      intento1: row.querySelector(".valuation-attempt-1")?.value.trim() || "",
+      intento2: row.querySelector(".valuation-attempt-2")?.value.trim() || "",
+      intento3: row.querySelector(".valuation-attempt-3")?.value.trim() || "",
+      unidad: row.querySelector(".valuation-unit")?.value || "cm",
+      observaciones: row.querySelector(".valuation-observations")?.value.trim() || ""
+    })).filter(test => test.nombre || test.intento1 || test.intento2 || test.intento3 || test.observaciones);
+
+    if (tests.length === 0) {
+      alert("Rellena al menos un test.");
+      return;
+    }
+
+    const payload = {
+      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+      patientNickname,
+      fecha,
+      tests,
+      createdAt: new Date().toISOString()
+    };
+
+    valoraciones.push(payload);
+    localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
+
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+      window.PPF_SUPABASE.pushKey("valoraciones").catch(error => console.warn("No se pudo sincronizar valoraciones:", error));
+    }
+
+    form.reset();
+    testsArea.innerHTML = valuationTestRow(1);
+    setTodayIfEmpty("valuationDate");
+    renderValuationsList(filter?.value || "");
+    alert("Valoración guardada correctamente.");
+  });
+}
+
+function deleteValuation(id) {
+  if (!confirm("¿Eliminar esta valoración?")) return;
+  valoraciones = valoraciones.filter(item => item.id !== id);
+  localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
+  renderValuationsList(document.getElementById("valuationsFilter")?.value || "");
 }
 
 const sections = {
@@ -3916,17 +4102,49 @@ const sections = {
     title: "Valoraciones",
     html: `
       <h2>Valoraciones</h2>
-      <p>Registra evolución, mediciones, pruebas físicas y observaciones.</p>
-      <form class="patient-form">
+      <p>Registra pruebas físicas con intentos, unidad de registro y observaciones cualitativas por test.</p>
+
+      <form class="patient-form valuation-form" id="valuationsForm">
         <div class="form-grid-2">
-          <select>${patientOptions()}</select>
-          <input type="date" />
-          <input type="text" placeholder="Peso / medidas" />
-          <input type="text" placeholder="Observaciones" />
-          <button class="primary-btn">Añadir valoración</button>
+          <div>
+            <label for="valuationPatient">Selecciona paciente</label>
+            <select id="valuationPatient" required>${patientOptions()}</select>
+          </div>
+
+          <div>
+            <label for="valuationDate">Fecha</label>
+            <input id="valuationDate" type="date" required />
+          </div>
+        </div>
+
+        <div class="valuation-table-head">
+          <span>TEST 1</span>
+          <span>Datos registrados</span>
+          <span>Registro</span>
+          <span>Observaciones cualitativas</span>
+        </div>
+
+        <div class="valuation-tests-area" id="valuationTestsArea">
+          ${valuationTestRow(1)}
+        </div>
+
+        <div class="form-actions valuation-actions">
+          <button class="secondary-btn" id="addValuationTestBtn" type="button">+ Añadir test</button>
+          <button class="primary-btn" type="submit">Guardar valoración</button>
         </div>
       </form>
-    `
+
+      <div class="patient-form" style="margin-top:26px;">
+        <label for="valuationsFilter">Filtrar valoraciones por paciente</label>
+        <select id="valuationsFilter">
+          <option value="">Todos los pacientes</option>
+          ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
+        </select>
+      </div>
+
+      <div class="history-list" id="valuationsList"></div>
+    `,
+    afterRender: bindValoracionesForm
   }
 };
 
@@ -3964,6 +4182,7 @@ window.toggleAllSessionsSelection = toggleAllSessionsSelection;
 window.editPatient = editPatient;
 window.deletePatient = deletePatient;
 window.renderSection = renderSection;
+window.deleteValuation = deleteValuation;
 
 
 
