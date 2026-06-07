@@ -734,7 +734,7 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
   window.location.href = "index.html";
 });
 
-renderClientSection("inicio");
+renderClientSection("dashboard");
 
 
 if (typeof isSessionCompletedForClient === "function") {
