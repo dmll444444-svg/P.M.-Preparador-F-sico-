@@ -102,7 +102,7 @@ function renderClientSessions() {
 
   return `
     <div class="sessions-list">
-      ${mySessions.map(session => `
+      ${mySessions.slice().reverse().map(session => `
         <article class="session-card">
           <div class="session-card-header">
             <span class="session-badge">Sesión nº ${session.numero}</span>
@@ -379,6 +379,8 @@ function getClientDashboardStats() {
 
 function renderClientLatestSessions() {
   const mySessions = getClientCompletedSessions()
+    .slice()
+    .reverse()
     .slice(0, 4);
 
   if (mySessions.length === 0) {
@@ -425,6 +427,29 @@ function renderClientDashboard() {
         </div>
       </div>
     </div>
+
+    <section class="mobile-home-actions" aria-label="Accesos rápidos móvil">
+      <button type="button" class="mobile-action-card primary" data-client-section="proxima">
+        <span class="mobile-action-icon">🎯</span>
+        <strong>Próxima sesión</strong>
+        <small>Ver entrenamiento</small>
+      </button>
+      <button type="button" class="mobile-action-card" data-client-section="sesiones">
+        <span class="mobile-action-icon">🏋️</span>
+        <strong>Mis sesiones</strong>
+        <small>Completadas</small>
+      </button>
+      <button type="button" class="mobile-action-card" data-client-section="historial">
+        <span class="mobile-action-icon">📁</span>
+        <strong>Historial</strong>
+        <small>Evolución</small>
+      </button>
+      <button type="button" class="mobile-action-card" data-client-section="archivos">
+        <span class="mobile-action-icon">🗂️</span>
+        <strong>Archivos</strong>
+        <small>Documentos</small>
+      </button>
+    </section>
 
     <section class="client-pro-kpis">
       <article><span>Sesiones</span><strong>${stats.sessions}</strong></article>
@@ -534,19 +559,10 @@ function isSessionCompleted(sessionId) {
 
 function getClientCompletedSessions() {
   refreshCompletedSessions();
-  return sessions
-    .filter(session =>
-      session.patientNickname === currentPatient.nickname &&
-      isSessionCompletedForClient(session)
-    )
-    .sort((a, b) => {
-      const numeroDiff = Number(b.numero || 0) - Number(a.numero || 0);
-      if (numeroDiff !== 0) return numeroDiff;
-
-      const dateA = a.fecha || "";
-      const dateB = b.fecha || "";
-      return dateB.localeCompare(dateA);
-    });
+  return sessions.filter(session =>
+    session.patientNickname === currentPatient.nickname &&
+    isSessionCompletedForClient(session)
+  );
 }
 
 function getClientPendingSessions() {
@@ -701,10 +717,6 @@ function renderNextSession() {
 }
 
 const clientSections = {
-  inicio: {
-    title: "Dashboard Cliente PRO",
-    html: () => renderClientDashboard()
-  },
   dashboard: {
     title: "Dashboard Cliente PRO",
     html: () => renderClientDashboard()
@@ -728,17 +740,26 @@ const clientSections = {
 };
 
 function renderClientSection(key) {
-  const section = clientSections[key] || clientSections.dashboard;
+  const sectionKey = clientSections[key] ? key : "dashboard";
+  const section = clientSections[sectionKey];
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
+
+  clientNavItems.forEach(nav => {
+    nav.classList.toggle("active", nav.dataset.clientSection === sectionKey);
+  });
 }
 
 clientNavItems.forEach(item => {
   item.addEventListener("click", () => {
-    clientNavItems.forEach(nav => nav.classList.remove("active"));
-    item.classList.add("active");
     renderClientSection(item.dataset.clientSection);
   });
+});
+
+document.addEventListener("click", event => {
+  const quickAction = event.target.closest("[data-client-section]");
+  if (!quickAction || quickAction.classList.contains("client-nav-item")) return;
+  renderClientSection(quickAction.dataset.clientSection);
 });
 
 document.getElementById("clientLogoutBtn").addEventListener("click", () => {

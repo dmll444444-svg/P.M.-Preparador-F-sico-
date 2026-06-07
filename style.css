@@ -2601,3 +2601,399 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   background: rgba(239,68,68,.96) !important;
   border: 2px solid rgba(255,255,255,.65) !important;
 }
+
+
+/* =========================================================
+   CLIENTE MOBILE APP PRO
+   Convierte el panel cliente en una experiencia tipo app móvil
+   sin romper el diseño de escritorio.
+   ========================================================= */
+.mobile-home-actions {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  body {
+    background: radial-gradient(circle at 0% 0%, rgba(34,197,94,.18), transparent 34%), #020617;
+    overflow-x: hidden;
+  }
+
+  .client-layout {
+    display: block;
+    min-height: 100vh;
+    padding-bottom: 92px;
+    background: radial-gradient(circle at 20% 0%, rgba(34,197,94,.18), transparent 38%), #020617;
+  }
+
+  .client-sidebar {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 1000;
+    padding: 8px;
+    border-radius: 26px;
+    background: rgba(15, 23, 42, .94);
+    border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 18px 55px rgba(0,0,0,.55), 0 0 30px rgba(34,197,94,.08);
+    backdrop-filter: blur(18px);
+    display: block;
+  }
+
+  .client-sidebar .sidebar-brand,
+  .client-sidebar .logout {
+    display: none !important;
+  }
+
+  .client-sidebar .sidebar-nav {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .client-nav-item {
+    min-height: 62px;
+    padding: 8px 4px;
+    border-radius: 20px;
+    justify-content: center;
+    text-align: center;
+    display: grid;
+    gap: 4px;
+    font-size: 0;
+    color: #94a3b8;
+    transform: none !important;
+  }
+
+  .client-nav-item span {
+    display: block;
+    font-size: 23px;
+    line-height: 1;
+  }
+
+  .client-nav-item::after {
+    content: attr(data-mobile-label);
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.05;
+    color: currentColor;
+  }
+
+  .client-nav-item[data-client-section="dashboard"]::after { content: "Inicio"; }
+  .client-nav-item[data-client-section="proxima"]::after { content: "Próxima"; }
+  .client-nav-item[data-client-section="sesiones"]::after { content: "Sesiones"; }
+  .client-nav-item[data-client-section="historial"]::after { content: "Historial"; }
+  .client-nav-item[data-client-section="archivos"]::after { content: "Archivos"; }
+
+  .client-nav-item.active {
+    color: #ecfdf5;
+    background: linear-gradient(135deg, rgba(34,197,94,.34), rgba(20,184,166,.22));
+    box-shadow: inset 0 0 0 1px rgba(134,239,172,.22);
+  }
+
+  .client-main {
+    padding: 16px 12px 18px;
+  }
+
+  .client-main > .admin-header {
+    position: sticky;
+    top: 0;
+    z-index: 800;
+    margin: -16px -12px 16px;
+    padding: 14px 12px 12px;
+    background: linear-gradient(180deg, rgba(2,6,23,.98), rgba(2,6,23,.84));
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,.07);
+  }
+
+  .client-main > .admin-header .eyebrow {
+    font-size: 11px;
+    margin-bottom: 3px;
+  }
+
+  .client-main > .admin-header h1 {
+    font-size: 22px;
+    line-height: 1.08;
+  }
+
+  .admin-user {
+    padding: 7px 8px;
+    border-radius: 18px;
+    gap: 8px;
+  }
+
+  .admin-user span {
+    max-width: 116px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+  }
+
+  .content-card {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .client-profile-card {
+    grid-template-columns: 76px 1fr;
+    gap: 14px;
+    padding: 16px;
+    border-radius: 28px;
+    background: linear-gradient(135deg, rgba(34,197,94,.11), rgba(15,23,42,.84));
+    border-color: rgba(34,197,94,.18);
+  }
+
+  .client-profile-photo,
+  .client-profile-photo.fallback {
+    width: 76px;
+    height: 76px;
+    border-radius: 24px;
+    font-size: 34px;
+  }
+
+  .client-profile-card h2 {
+    font-size: 20px;
+    line-height: 1.1;
+  }
+
+  .client-profile-card p:not(.eyebrow) {
+    display: none;
+  }
+
+  .patient-tags {
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .patient-tags span {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .mobile-home-actions {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin: 14px 0;
+  }
+
+  .mobile-action-card {
+    min-height: 118px;
+    padding: 16px;
+    border-radius: 26px;
+    color: white;
+    text-align: left;
+    background: rgba(15,23,42,.76);
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: inset 0 0 22px rgba(255,255,255,.025);
+    display: grid;
+    align-content: space-between;
+    gap: 8px;
+  }
+
+  .mobile-action-card.primary {
+    background: linear-gradient(135deg, rgba(34,197,94,.28), rgba(20,184,166,.16)), rgba(15,23,42,.86);
+    border-color: rgba(134,239,172,.28);
+  }
+
+  .mobile-action-icon {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 17px;
+    background: linear-gradient(135deg, #22c55e, #14b8a6);
+    color: #02130a;
+    font-size: 22px;
+  }
+
+  .mobile-action-card strong {
+    font-size: 15px;
+  }
+
+  .mobile-action-card small {
+    color: #94a3b8;
+    font-weight: 800;
+  }
+
+  .client-pro-kpis {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin: 14px 0;
+  }
+
+  .client-pro-kpis article {
+    padding: 15px;
+    border-radius: 22px;
+    min-height: 90px;
+  }
+
+  .client-pro-kpis span {
+    font-size: 12px;
+  }
+
+  .client-pro-kpis strong {
+    font-size: 24px;
+  }
+
+  .client-pro-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .client-pro-card,
+  .client-next-session-card,
+  .client-empty-next,
+  .session-card,
+  .history-card,
+  .file-card {
+    padding: 16px;
+    border-radius: 26px;
+    background: rgba(15,23,42,.72);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .module-panel-header h3,
+  .client-next-session-card h2 {
+    font-size: 22px;
+  }
+
+  .client-mini-bars {
+    min-height: 215px;
+    gap: 15px;
+    overflow-x: auto !important;
+    padding-bottom: 4px;
+  }
+
+  .client-mini-bar-item {
+    min-width: 58px;
+    height: 214px;
+  }
+
+  .client-mini-bar-wrap {
+    height: 155px;
+  }
+
+  .client-mini-bar {
+    width: 38px;
+  }
+
+  .distribution-row {
+    grid-template-columns: 78px 1fr 44px;
+    gap: 9px;
+  }
+
+  .client-next-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .client-next-summary span {
+    text-align: center;
+    font-size: 12px;
+    padding: 9px 7px;
+  }
+
+  .client-next-content {
+    gap: 12px;
+  }
+
+  .client-next-module {
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  .client-next-module li,
+  .session-summary-box li {
+    line-height: 1.42;
+    margin-bottom: 9px;
+  }
+
+  .client-next-module a,
+  .session-summary-box a {
+    display: inline-block;
+    margin-top: 3px;
+  }
+
+  .finish-session-btn {
+    position: sticky;
+    bottom: 92px;
+    z-index: 850;
+    min-height: 56px;
+    border-radius: 22px;
+    font-size: 15px;
+    box-shadow: 0 18px 38px rgba(34,197,94,.22);
+  }
+
+  .session-card-header,
+  .history-card-header,
+  .file-card-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .session-summary,
+  .session-summary-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .sessions-list,
+  .history-list,
+  .files-list {
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .file-card {
+    grid-template-columns: 1fr;
+  }
+
+  .file-visual {
+    width: 100%;
+    height: 170px;
+  }
+
+  .secondary-btn,
+  .file-actions a {
+    min-height: 44px;
+    display: inline-grid;
+    place-items: center;
+  }
+
+  .client-empty-next {
+    min-height: 185px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+  }
+}
+
+@media (max-width: 380px) {
+  .client-main > .admin-header h1 {
+    font-size: 19px;
+  }
+
+  .client-nav-item span {
+    font-size: 20px;
+  }
+
+  .client-nav-item::after {
+    font-size: 9px;
+  }
+
+  .mobile-home-actions,
+  .client-pro-kpis {
+    grid-template-columns: 1fr;
+  }
+}
