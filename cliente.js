@@ -693,6 +693,10 @@ function renderNextSession() {
 }
 
 const clientSections = {
+  dashboard: {
+    title: "Dashboard Cliente PRO",
+    html: () => renderClientDashboard()
+  },
   inicio: {
     title: "Dashboard Cliente PRO",
     html: () => renderClientDashboard()
@@ -716,7 +720,7 @@ const clientSections = {
 };
 
 function renderClientSection(key) {
-  const section = clientSections[key];
+  const section = clientSections[key] || clientSections.dashboard;
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
 }

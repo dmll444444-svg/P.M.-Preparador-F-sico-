@@ -2601,15 +2601,3 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   background: rgba(239,68,68,.96) !important;
   border: 2px solid rgba(255,255,255,.65) !important;
 }
-
-
-/* PM Online branding polish */
-.logo, .logo.small, .avatar {
-  letter-spacing: -0.04em;
-}
-.login-card .brand h1 {
-  line-height: 1.12;
-}
-@media (max-width: 768px) {
-  .login-card .brand h1 { font-size: 25px; }
-}

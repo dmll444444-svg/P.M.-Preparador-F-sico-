@@ -3492,7 +3492,7 @@ function downloadJsonFile(filename, data) {
 
 function getLocalBackupData() {
   return {
-    app: "Programa Preparador Físico Online",
+    app: "Programa Preparador Físico",
     version: "localStorage-estable",
     exportedAt: new Date().toISOString(),
     data: {
