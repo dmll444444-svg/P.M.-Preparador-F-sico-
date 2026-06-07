@@ -3492,7 +3492,7 @@ function downloadJsonFile(filename, data) {
 
 function getLocalBackupData() {
   return {
-    app: "Programa Preparador Físico",
+    app: "Programa Preparador Físico Online",
     version: "localStorage-estable",
     exportedAt: new Date().toISOString(),
     data: {
@@ -3539,6 +3539,44 @@ function renderSystemStats() {
     <article><span>Biblioteca</span><strong>${exerciseLibrary.length}</strong></article>
     <article><span>Terminadas</span><strong>${completedSessions.length}</strong></article>
   `;
+}
+
+
+function manualSupabaseSyncFromSystem() {
+  if (!window.PPF_SUPABASE || typeof window.PPF_SUPABASE.push !== "function") {
+    alert("Supabase no está cargado o no está configurado.");
+    return;
+  }
+
+  const btn = document.getElementById("syncSupabaseBtn");
+  const previousText = btn ? btn.textContent : "";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Sincronizando...";
+  }
+
+  window.PPF_SUPABASE.push()
+    .then(() => {
+      alert("Supabase actualizado correctamente.");
+      if (typeof renderSystemStats === "function") renderSystemStats();
+
+  document.getElementById("syncSupabaseBtn")?.addEventListener("click", event => {
+    event.preventDefault();
+    manualSupabaseSyncFromSystem();
+  });
+
+    })
+    .catch(error => {
+      console.error("Error sincronizando Supabase:", error);
+      alert("Error sincronizando Supabase. Revisa la consola.");
+    })
+    .finally(() => {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = previousText || "Actualizar Supabase";
+      }
+    });
 }
 
 function bindSystemPanel() {
@@ -3944,4 +3982,36 @@ document.addEventListener("click", function(event) {
   window.editSession(match[1]);
 }, true);
 
+
+
+function ensureSupabaseButtonInSystem() {
+  const systemPanel = document.querySelector(".system-panel");
+  if (!systemPanel || document.getElementById("syncSupabaseBtn")) return;
+
+  const actions = systemPanel.querySelector(".system-actions") || document.createElement("div");
+  actions.className = "system-actions";
+
+  const btn = document.createElement("button");
+  btn.className = "primary-btn";
+  btn.id = "syncSupabaseBtn";
+  btn.type = "button";
+  btn.textContent = "Actualizar Supabase";
+  btn.addEventListener("click", manualSupabaseSyncFromSystem);
+
+  actions.appendChild(btn);
+
+  if (!actions.parentElement) {
+    systemPanel.insertBefore(actions, systemPanel.firstChild);
+  }
+}
+
+document.addEventListener("click", () => {
+  setTimeout(ensureSupabaseButtonInSystem, 100);
+});
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(ensureSupabaseButtonInSystem, 300);
+});
+
+
+window.manualSupabaseSyncFromSystem = manualSupabaseSyncFromSystem;
 })();

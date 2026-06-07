@@ -428,29 +428,6 @@ function renderClientDashboard() {
       </div>
     </div>
 
-    <section class="mobile-home-actions" aria-label="Accesos rápidos móvil">
-      <button type="button" class="mobile-action-card primary" data-client-section="proxima">
-        <span class="mobile-action-icon">🎯</span>
-        <strong>Próxima sesión</strong>
-        <small>Ver entrenamiento</small>
-      </button>
-      <button type="button" class="mobile-action-card" data-client-section="sesiones">
-        <span class="mobile-action-icon">🏋️</span>
-        <strong>Mis sesiones</strong>
-        <small>Completadas</small>
-      </button>
-      <button type="button" class="mobile-action-card" data-client-section="historial">
-        <span class="mobile-action-icon">📁</span>
-        <strong>Historial</strong>
-        <small>Evolución</small>
-      </button>
-      <button type="button" class="mobile-action-card" data-client-section="archivos">
-        <span class="mobile-action-icon">🗂️</span>
-        <strong>Archivos</strong>
-        <small>Documentos</small>
-      </button>
-    </section>
-
     <section class="client-pro-kpis">
       <article><span>Sesiones</span><strong>${stats.sessions}</strong></article>
       <article><span>Micro actual</span><strong>${stats.micro}</strong></article>
@@ -531,37 +508,18 @@ function getClientMicroLabel(session) {
 }
 
 
-
-function normalizeSessionNumber(session) {
-  return Number(session?.numero || session?.numeroSesion || session?.sessionNumber || 0);
-}
-
-function isSessionCompletedForClient(session) {
-  refreshCompletedSessions();
-
-  const sessionNumber = normalizeSessionNumber(session);
-  const patientNickname = session?.patientNickname || currentPatient.nickname;
-
-  return completedSessions.some(item => {
-    const sameId = item.sessionId && session.id && String(item.sessionId) === String(session.id);
-    const samePatient = String(item.patientNickname || "") === String(patientNickname || "");
-    const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
-    const sameNumber = samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber;
-    return sameId || sameNumber;
-  });
-}
-
 function isSessionCompleted(sessionId) {
-  const session = sessions.find(item => String(item.id) === String(sessionId));
-  if (!session) return false;
-  return isSessionCompletedForClient(session);
+  return completedSessions.some(item =>
+    item.sessionId === sessionId &&
+    item.patientNickname === currentPatient.nickname
+  );
 }
 
 function getClientCompletedSessions() {
   refreshCompletedSessions();
   return sessions.filter(session =>
     session.patientNickname === currentPatient.nickname &&
-    isSessionCompletedForClient(session)
+    isSessionCompleted(session.id)
   );
 }
 
@@ -570,7 +528,7 @@ function getClientPendingSessions() {
   return sessions
     .filter(session =>
       session.patientNickname === currentPatient.nickname &&
-      !isSessionCompletedForClient(session)
+      !isSessionCompleted(session.id)
     )
     .sort((a, b) => {
       const dateA = a.fecha || "";
@@ -580,45 +538,31 @@ function getClientPendingSessions() {
     });
 }
 
-function persistCompletedSessionsAndCloud() {
-  localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
-
-  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-    window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
-      console.warn("No se pudo sincronizar completedSessions con Supabase:", error);
-    });
-  } else if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.push === "function") {
-    window.PPF_SUPABASE.push().catch(error => {
-      console.warn("No se pudo sincronizar Supabase:", error);
-    });
-  }
-}
-
 function completeClientSession(sessionId) {
-  const session = sessions.find(item => String(item.id) === String(sessionId));
+  const session = sessions.find(item => item.id === sessionId);
   if (!session) return;
 
-  if (isSessionCompletedForClient(session)) {
-    renderClientSection("proxima");
-    return;
-  }
+  if (isSessionCompleted(sessionId)) return;
 
   const confirmed = confirm(`¿Marcar la sesión nº ${session.numero} como terminada?`);
   if (!confirmed) return;
 
   completedSessions.push({
-    sessionId: session.id,
-    numero: normalizeSessionNumber(session),
-    microciclo: session.microciclo,
-    patientNickname: currentPatient.nickname,
-    completedAt: new Date().toISOString()
-  });
+  sessionId,
+  numero: session.numero,
+  microciclo: session.microciclo,
+  patientNickname: currentPatient.nickname,
+  completedAt: new Date().toISOString()
+});
 
-  persistCompletedSessionsAndCloud();
+  localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
+
+  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+  window.PPF_SUPABASE.pushKey("completedSessions");
+}
 
   alert("Sesión marcada como terminada. Ya cuenta en tu Dashboard y en Mis sesiones.");
   renderClientSection("proxima");
-}
 
 function renderSessionExerciseList(session) {
   function simpleModule(key, title) {
@@ -677,6 +621,38 @@ function renderSessionExerciseList(session) {
   `;
 }
 
+
+function normalizeSessionNumber(session) {
+  return Number(session?.numero || session?.numeroSesion || session?.sessionNumber || 0);
+}
+
+function isSessionCompletedForClient(session) {
+  const sessionNumber = normalizeSessionNumber(session);
+  const patientNickname = session?.patientNickname || currentClient?.nickname || currentClient?.id || "";
+
+  return completedSessions.some(item => {
+    const sameId = item.sessionId && session.id && String(item.sessionId) === String(session.id);
+    const samePatient = String(item.patientNickname || "") === String(patientNickname || "");
+    const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
+    const sameNumber = samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber;
+    return sameId || sameNumber;
+  });
+}
+
+function persistCompletedSessionsAndCloud() {
+  persistCompletedSessionsAndCloud();
+
+  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+    window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
+      console.warn("No se pudo sincronizar completedSessions con Supabase:", error);
+    });
+  } else if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.push === "function") {
+    window.PPF_SUPABASE.push().catch(error => {
+      console.warn("No se pudo sincronizar Supabase:", error);
+    });
+  }
+}
+
 function renderNextSession() {
   const nextSession = getClientPendingSessions()[0];
 
@@ -717,7 +693,7 @@ function renderNextSession() {
 }
 
 const clientSections = {
-  dashboard: {
+  inicio: {
     title: "Dashboard Cliente PRO",
     html: () => renderClientDashboard()
   },
@@ -740,26 +716,17 @@ const clientSections = {
 };
 
 function renderClientSection(key) {
-  const sectionKey = clientSections[key] ? key : "dashboard";
-  const section = clientSections[sectionKey];
+  const section = clientSections[key];
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-
-  clientNavItems.forEach(nav => {
-    nav.classList.toggle("active", nav.dataset.clientSection === sectionKey);
-  });
 }
 
 clientNavItems.forEach(item => {
   item.addEventListener("click", () => {
+    clientNavItems.forEach(nav => nav.classList.remove("active"));
+    item.classList.add("active");
     renderClientSection(item.dataset.clientSection);
   });
-});
-
-document.addEventListener("click", event => {
-  const quickAction = event.target.closest("[data-client-section]");
-  if (!quickAction || quickAction.classList.contains("client-nav-item")) return;
-  renderClientSection(quickAction.dataset.clientSection);
 });
 
 document.getElementById("clientLogoutBtn").addEventListener("click", () => {
@@ -775,5 +742,7 @@ if (typeof isSessionCompletedForClient === "function") {
 }
 
 window.completeClientSession = completeClientSession;
+
+}
 
 })();

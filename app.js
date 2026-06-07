@@ -1,12 +1,3 @@
-(async function PPF_APP_BOOTSTRAP() {
-  try {
-    if (window.PPF_SUPABASE_READY) {
-      await window.PPF_SUPABASE_READY;
-    }
-  } catch (error) {
-    console.warn("Supabase bootstrap error:", error);
-  }
-
 const users = [
   { username: "admin", password: "admin123", role: "admin", nickname: "Administrador" },
   { username: "cliente1", password: "cliente123", role: "client", nickname: "cliente1" },
@@ -56,6 +47,3 @@ form.addEventListener("submit", function (event) {
     }
   }, 500);
 });
-
-
-})();

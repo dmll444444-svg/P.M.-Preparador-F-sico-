@@ -3,14 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Panel Cliente</title>
+  <title>Programa Preparador Físico Online | Cliente</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#22c55e" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="client-layout">
     <aside class="client-sidebar">
       <div class="sidebar-brand">
-        <div class="logo small">PF</div>
+        <div class="logo small">PM</div>
         <div>
           <h2>Cliente</h2>
           <span>Área personal</span>
@@ -31,7 +34,7 @@
     <main class="client-main">
       <header class="admin-header">
         <div>
-          <p class="eyebrow">Programa Preparador Físico</p>
+          <p class="eyebrow">Programa Preparador Físico Online</p>
           <h1 id="clientSectionTitle">Inicio</h1>
         </div>
         <div class="admin-user">
@@ -44,6 +47,9 @@
     </main>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="supabase-sync.js"></script>
   <script src="cliente.js"></script>
 </body>
 </html>
