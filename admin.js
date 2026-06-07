@@ -3916,4 +3916,32 @@ updateCounters();
 renderSection("paciente");
 
 
+
+
+/* FIX GitHub Pages: exponer funciones usadas por botones inline */
+window.editSession = editSession;
+window.deleteSession = deleteSession;
+window.deleteSelectedSessions = deleteSelectedSessions;
+window.toggleAllSessionsSelection = toggleAllSessionsSelection;
+window.editPatient = editPatient;
+window.deletePatient = deletePatient;
+window.renderSection = renderSection;
+
+
+
+/* FIX extra: edición de sesiones por delegación */
+document.addEventListener("click", function(event) {
+  const btn = event.target.closest(".edit-btn");
+  if (!btn || !btn.textContent.includes("Editar sesión")) return;
+
+  const onclick = btn.getAttribute("onclick") || "";
+  const match = onclick.match(/editSession\('([^']+)'\)/);
+  if (!match) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  window.editSession(match[1]);
+}, true);
+
 })();
