@@ -548,16 +548,21 @@ function completeClientSession(sessionId) {
   if (!confirmed) return;
 
   completedSessions.push({
-    sessionId,
-    patientNickname: currentPatient.nickname,
-    completedAt: new Date().toISOString()
-  });
+  sessionId,
+  numero: session.numero,
+  microciclo: session.microciclo,
+  patientNickname: currentPatient.nickname,
+  completedAt: new Date().toISOString()
+});
 
   localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
 
+  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+  window.PPF_SUPABASE.pushKey("completedSessions");
+}
+
   alert("Sesión marcada como terminada. Ya cuenta en tu Dashboard y en Mis sesiones.");
   renderClientSection("proxima");
-}
 
 function renderSessionExerciseList(session) {
   function simpleModule(key, title) {
@@ -732,36 +737,8 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
 renderClientSection("inicio");
 
 
+if (typeof isSessionCompletedForClient === "function") 
+   window.isSessionCompletedForClient = isSessionCompletedForClient;
 
-
-/* FIX complete session delegated */
-document.addEventListener("click", function(event) {
-  const btn = event.target.closest("#completeSessionBtn, [data-complete-session], .complete-session-btn");
-  if (!btn) return;
-
-  const activeSession = window.currentNextSession || (typeof nextSession !== "undefined" ? nextSession : null) || (typeof currentSession !== "undefined" ? currentSession : null);
-  if (!activeSession) return;
-
-  if (isSessionCompletedForClient(activeSession)) return;
-
-  completedSessions.push({
-    sessionId: activeSession.id,
-    numero: normalizeSessionNumber(activeSession),
-    completedAt: new Date().toISOString(),
-    patientNickname: activeSession.patientNickname || currentClient?.nickname || currentClient?.id || ""
-  });
-
-  persistCompletedSessionsAndCloud();
-
-  setTimeout(() => {
-    if (typeof renderNextSession === "function") renderNextSession();
-    if (typeof renderDashboard === "function") renderDashboard();
-    if (typeof renderMySessions === "function") renderMySessions();
-  }, 150);
-}, true);
-
-
-
-if (typeof isSessionCompletedForClient === "function") window.isSessionCompletedForClient = isSessionCompletedForClient;
-
+}
 })();
