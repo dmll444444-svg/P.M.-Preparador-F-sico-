@@ -102,7 +102,7 @@ function renderClientSessions() {
 
   return `
     <div class="sessions-list">
-      ${mySessions.slice().reverse().map(session => `
+      ${mySessions.map(session => `
         <article class="session-card">
           <div class="session-card-header">
             <span class="session-badge">Sesión nº ${session.numero}</span>
@@ -379,8 +379,6 @@ function getClientDashboardStats() {
 
 function renderClientLatestSessions() {
   const mySessions = getClientCompletedSessions()
-    .slice()
-    .reverse()
     .slice(0, 4);
 
   if (mySessions.length === 0) {
@@ -517,10 +515,16 @@ function isSessionCompleted(sessionId) {
 
 function getClientCompletedSessions() {
   refreshCompletedSessions();
-  return sessions.filter(session =>
-    session.patientNickname === currentPatient.nickname &&
-    isSessionCompleted(session.id)
-  );
+  return sessions
+    .filter(session =>
+      session.patientNickname === currentPatient.nickname &&
+      isSessionCompleted(session.id)
+    )
+    .sort((a, b) => {
+      const numberDiff = Number(b.numero || 0) - Number(a.numero || 0);
+      if (numberDiff !== 0) return numberDiff;
+      return String(b.fecha || "").localeCompare(String(a.fecha || ""));
+    });
 }
 
 function getClientPendingSessions() {
@@ -563,6 +567,7 @@ function completeClientSession(sessionId) {
 
   alert("Sesión marcada como terminada. Ya cuenta en tu Dashboard y en Mis sesiones.");
   renderClientSection("proxima");
+}
 
 function renderSessionExerciseList(session) {
   function simpleModule(key, title) {
@@ -640,7 +645,7 @@ function isSessionCompletedForClient(session) {
 }
 
 function persistCompletedSessionsAndCloud() {
-  persistCompletedSessionsAndCloud();
+  localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
 
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
     window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
@@ -746,7 +751,5 @@ if (typeof isSessionCompletedForClient === "function") {
 }
 
 window.completeClientSession = completeClientSession;
-
-}
 
 })();
