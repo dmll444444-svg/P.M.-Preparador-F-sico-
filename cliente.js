@@ -658,6 +658,185 @@ function persistCompletedSessionsAndCloud() {
   }
 }
 
+
+
+function getClientSessionRadarValues(session) {
+  const buckets = {
+    ts: 0,
+    ti: 0,
+    core: 0,
+    plyo: 0,
+    movilidad: 0,
+    activacion: 0
+  };
+
+  getClientSessionExercises(session).forEach(item => {
+    const seriesNumber = Number(item.series);
+    const value = Number.isNaN(seriesNumber) || seriesNumber <= 0 ? 1 : seriesNumber;
+    const type = String(item.tipo || item.type || "").toLowerCase();
+    const moduleName = String(item.moduleName || "").toLowerCase();
+    const name = String(item.nombre || "").toLowerCase();
+    const text = `${type} ${moduleName} ${name}`;
+
+    if (moduleName.includes("movilidad")) buckets.movilidad += value;
+    else if (moduleName.includes("activación") || moduleName.includes("activacion")) buckets.activacion += value;
+    else if (text.includes("core")) buckets.core += value;
+    else if (text.includes("plyo") || text.includes("plio")) buckets.plyo += value;
+    else if (text.includes("inferior") || text.includes("ti") || text.includes("tren inferior")) buckets.ti += value;
+    else if (text.includes("superior") || text.includes("ts") || text.includes("tren superior")) buckets.ts += value;
+    else buckets.ts += value;
+  });
+
+  return [
+    { label: "TS", v: buckets.ts },
+    { label: "TI", v: buckets.ti },
+    { label: "Core", v: buckets.core },
+    { label: "Plyo", v: buckets.plyo },
+    { label: "Mov.", v: buckets.movilidad },
+    { label: "Act.", v: buckets.activacion }
+  ];
+}
+
+function clientRadarPercent(value, total) {
+  if (!total) return 0;
+  return Math.round((Number(value || 0) / total) * 100);
+}
+
+function renderClientRadarSvg(items) {
+  const safeItems = (items || []).map(item => ({
+    label: item.label,
+    v: Number(item.v ?? item.value ?? 0) || 0
+  }));
+
+  const total = safeItems.reduce((sum, item) => sum + item.v, 0);
+  const maxValue = Math.max(...safeItems.map(item => item.v), 1);
+  const cx = 200;
+  const cy = 200;
+  const radius = 118;
+
+  function axisPoint(index, customRadius = radius) {
+    const angle = (-90 + (360 / safeItems.length) * index) * Math.PI / 180;
+    return {
+      x: cx + Math.cos(angle) * customRadius,
+      y: cy + Math.sin(angle) * customRadius,
+      angle
+    };
+  }
+
+  const dataPoints = safeItems.map((item, index) => {
+    const labelPoint = axisPoint(index, radius + 38);
+    const normalized = Math.max(0, Math.min(1, item.v / maxValue));
+    const angle = axisPoint(index).angle;
+
+    return {
+      ...item,
+      percent: clientRadarPercent(item.v, total),
+      x: cx + Math.cos(angle) * radius * normalized,
+      y: cy + Math.sin(angle) * radius * normalized,
+      labelX: labelPoint.x,
+      labelY: labelPoint.y
+    };
+  });
+
+  const polygon = dataPoints.map(point => `${point.x},${point.y}`).join(" ");
+
+  const grid = [0.25, 0.5, 0.75, 1].map(scale => {
+    const gridPoints = safeItems.map((_, index) => {
+      const point = axisPoint(index, radius * scale);
+      return `${point.x},${point.y}`;
+    }).join(" ");
+
+    return `<polygon points="${gridPoints}" class="radar-grid-line" />`;
+  }).join("");
+
+  const axisLines = safeItems.map((_, index) => {
+    const point = axisPoint(index, radius);
+    return `<line x1="${cx}" y1="${cy}" x2="${point.x}" y2="${point.y}" class="radar-axis-line" />`;
+  }).join("");
+
+  const strongest = safeItems.reduce((best, item) => item.v > best.v ? item : best, { label: "-", v: -1 });
+
+  return `
+    <div class="radar-pro2-wrap client-next-radar-wrap">
+      <svg class="radar-pro2-svg" viewBox="0 0 400 400" role="img" aria-label="Radar PRO de sesión próxima">
+        <defs>
+          <radialGradient id="clientRadarGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#22c55e" stop-opacity="0.42"/>
+            <stop offset="100%" stop-color="#14b8a6" stop-opacity="0.05"/>
+          </radialGradient>
+          <filter id="clientRadarShadow">
+            <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#22c55e" flood-opacity="0.22"/>
+          </filter>
+        </defs>
+
+        ${grid}
+        ${axisLines}
+        <polygon points="${polygon}" class="radar-data-area" fill="url(#clientRadarGlow)" filter="url(#clientRadarShadow)" />
+        <polygon points="${polygon}" class="radar-data-line" />
+
+        ${dataPoints.map(point => `
+          <g class="radar-pro2-point">
+            <circle cx="${point.x}" cy="${point.y}" r="13" class="radar-point-hit" />
+            <circle cx="${point.x}" cy="${point.y}" r="6" class="radar-point-core" />
+          </g>
+        `).join("")}
+
+        ${dataPoints.map(point => `
+          <text x="${point.labelX}" y="${point.labelY}" text-anchor="middle" dominant-baseline="middle" class="radar-pro2-label">${point.label}</text>
+        `).join("")}
+      </svg>
+
+      <div class="radar-pro2-focus-card">
+        <span>Mayor foco</span>
+        <strong>${strongest.label}</strong>
+        <small>${strongest.v < 0 ? 0 : strongest.v} series</small>
+      </div>
+    </div>
+  `;
+}
+
+function renderClientNextRadar(session) {
+  const radarValues = getClientSessionRadarValues(session);
+  const max = Math.max(...radarValues.map(item => item.v), 1);
+
+  return `
+    <section class="client-next-radar-section">
+      <article class="graph-pro-card client-next-radar-card">
+        <div class="module-panel-header">
+          <div>
+            <p class="eyebrow">Radar PRO</p>
+            <h3>Distribución de la sesión próxima</h3>
+            <p>Vista rápida del foco de trabajo antes de realizar la sesión.</p>
+          </div>
+          <span class="session-badge">Sesión nº ${session.numero}</span>
+        </div>
+        ${renderClientRadarSvg(radarValues)}
+      </article>
+
+      <article class="graph-pro-card client-next-radar-detail">
+        <div class="module-panel-header">
+          <div>
+            <p class="eyebrow">Detalle</p>
+            <h3>Series por categoría</h3>
+          </div>
+        </div>
+        <div class="distribution-chart">
+          ${radarValues.map(item => {
+            const percent = Math.round((item.v / max) * 100);
+            return `
+              <div class="distribution-row">
+                <span>${item.label}</span>
+                <div class="distribution-track"><div class="distribution-fill" style="width:${Number.isFinite(percent) ? percent : 0}%"></div></div>
+                <strong>${item.v}</strong>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
 function renderNextSession() {
   const nextSession = getClientPendingSessions()[0];
 
@@ -671,6 +850,8 @@ function renderNextSession() {
   }
 
   return `
+    ${renderClientNextRadar(nextSession)}
+
     <article class="client-next-session-card">
       <div class="session-card-header">
         <span class="session-badge">Sesión nº ${nextSession.numero}</span>
