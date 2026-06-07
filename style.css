@@ -2601,3 +2601,326 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   background: rgba(239,68,68,.96) !important;
   border: 2px solid rgba(255,255,255,.65) !important;
 }
+
+
+/* =========================================================
+   PM ONLINE · FASE 1 VISUAL PRO
+   Mejoras solo visuales: logo, sidebar, tarjetas, botones,
+   KPIs, avatar, hover y acabado premium.
+   ========================================================= */
+
+:root {
+  --pm-bg: #020617;
+  --pm-panel: rgba(15, 23, 42, 0.78);
+  --pm-panel-strong: rgba(15, 23, 42, 0.92);
+  --pm-card: rgba(15, 23, 42, 0.62);
+  --pm-card-soft: rgba(2, 6, 23, 0.50);
+  --pm-line: rgba(148, 163, 184, 0.14);
+  --pm-line-green: rgba(34, 197, 94, 0.24);
+  --pm-green: #22c55e;
+  --pm-teal: #14b8a6;
+  --pm-text: #f8fafc;
+  --pm-muted: #94a3b8;
+  --pm-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+/* Fondo más premium */
+body {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.16), transparent 34%),
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.10), transparent 28%),
+    var(--pm-bg);
+}
+
+/* Login más comercial */
+.login-page {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(34, 197, 94, 0.38), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(20, 184, 166, 0.16), transparent 28%),
+    linear-gradient(135deg, #020617 0%, #07111f 48%, #020617 100%);
+}
+
+.login-card {
+  border-radius: 32px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(2, 6, 23, 0.72));
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 35px 100px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+.logo,
+.logo.small,
+.avatar,
+.client-profile-photo.fallback,
+.session-selected-avatar,
+.graph-pro-avatar,
+.periodicity-patient-avatar {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.26), transparent 28%),
+    linear-gradient(135deg, var(--pm-green), var(--pm-teal));
+  color: #02130a;
+  box-shadow: 0 12px 34px rgba(34, 197, 94, 0.28);
+  letter-spacing: -0.04em;
+}
+
+/* Sidebar premium */
+.sidebar,
+.client-sidebar {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.82)),
+    radial-gradient(circle at 20% 0%, rgba(34, 197, 94, 0.14), transparent 34%);
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 18px 0 60px rgba(0, 0, 0, 0.18);
+}
+
+.sidebar-brand,
+.admin-user,
+.client-profile-card,
+.client-pro-card,
+.content-card,
+.stat-card,
+.session-card,
+.history-card,
+.file-card,
+.client-next-session-card,
+.client-empty-next {
+  box-shadow: var(--pm-shadow);
+}
+
+/* Menús con icono tipo app */
+.nav-item,
+.client-nav-item {
+  position: relative;
+  min-height: 50px;
+  font-weight: 750;
+  border: 1px solid transparent;
+  letter-spacing: -0.01em;
+}
+
+.nav-item span,
+.client-nav-item span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(255,255,255,.055);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.nav-item:hover,
+.nav-item.active,
+.client-nav-item:hover,
+.client-nav-item.active {
+  background:
+    linear-gradient(135deg, rgba(34, 197, 94, 0.24), rgba(20, 184, 166, 0.16));
+  border-color: rgba(34, 197, 94, 0.20);
+  box-shadow: 0 16px 34px rgba(20, 184, 166, 0.08);
+}
+
+.nav-item.active::before,
+.client-nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 14px;
+  width: 4px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--pm-green), var(--pm-teal));
+  box-shadow: 0 0 18px rgba(34, 197, 94, .6);
+}
+
+/* Cabeceras */
+.admin-header,
+.client-main .admin-header {
+  padding: 6px 0 4px;
+}
+
+.eyebrow {
+  color: #22e07c;
+  letter-spacing: -0.01em;
+  text-shadow: 0 0 24px rgba(34, 197, 94, 0.22);
+}
+
+h1, h2, h3 {
+  letter-spacing: -0.045em;
+}
+
+/* Usuario arriba derecha */
+.admin-user {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.70));
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 10px 14px;
+}
+
+/* Tarjetas y paneles */
+.stat-card,
+.content-card,
+.client-pro-card,
+.client-profile-card,
+.session-card,
+.history-card,
+.file-card,
+.client-next-session-card,
+.client-empty-next,
+.session-summary-box,
+.client-next-module {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(2, 6, 23, 0.54));
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.stat-card:hover,
+.client-pro-kpis article:hover,
+.client-pro-card:hover,
+.session-card:hover,
+.file-card:hover,
+.history-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(34, 197, 94, 0.26);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+}
+
+/* KPIs más fitness/app */
+.client-pro-kpis article,
+.dashboard-grid .stat-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(34, 197, 94, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.76), rgba(2, 6, 23, 0.56));
+  border-color: rgba(34, 197, 94, 0.16);
+  transition: .22s ease;
+}
+
+.client-pro-kpis article::after,
+.dashboard-grid .stat-card::after {
+  content: "";
+  position: absolute;
+  right: -22px;
+  bottom: -22px;
+  width: 82px;
+  height: 82px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.055);
+}
+
+.client-pro-kpis span,
+.stat-card span {
+  color: #9fb4d0;
+  font-weight: 650;
+}
+
+.client-pro-kpis strong,
+.stat-card strong {
+  color: #ffffff;
+  text-shadow: 0 0 26px rgba(34, 197, 94, 0.10);
+}
+
+/* Botones pro */
+.primary-btn,
+form button,
+.copy-access-btn,
+.finish-session-btn {
+  background:
+    linear-gradient(135deg, #2be477 0%, #16c4b0 100%);
+  color: #02130a;
+  box-shadow: 0 18px 40px rgba(34, 197, 94, 0.22);
+  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+
+.primary-btn:hover,
+form button:hover,
+.copy-access-btn:hover,
+.finish-session-btn:hover {
+  transform: translateY(-1px);
+  filter: saturate(1.08);
+  box-shadow: 0 22px 50px rgba(34, 197, 94, 0.30);
+}
+
+.secondary-btn {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255,255,255,.07);
+}
+
+/* Tags */
+.patient-tags span,
+.client-next-summary span,
+.session-badge {
+  border: 1px solid rgba(34, 197, 94, 0.12);
+  background: rgba(34, 197, 94, 0.10);
+  color: #bbf7d0;
+}
+
+/* Gráficas mini más limpias */
+.client-mini-bar-wrap {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+
+.client-mini-bar {
+  background: linear-gradient(180deg, #2be477, #14b8a6);
+  box-shadow: 0 10px 26px rgba(34,197,94,.24);
+}
+
+/* Fotos/avatar cliente */
+.client-profile-photo {
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  box-shadow: 0 20px 48px rgba(0,0,0,.34);
+}
+
+/* Inputs más finos */
+input,
+select,
+textarea {
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(2, 6, 23, 0.72);
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: rgba(34, 197, 94, 0.20);
+}
+
+/* Scrollbar discreta */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(2, 6, 23, 0.72);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(34,197,94,.55), rgba(20,184,166,.45));
+  border-radius: 999px;
+  border: 3px solid rgba(2, 6, 23, 0.72);
+}
+
+/* Ajuste móvil sin tocar lógica */
+@media (max-width: 800px) {
+  .login-card {
+    padding: 28px 22px;
+    border-radius: 28px;
+  }
+
+  .client-pro-kpis article,
+  .stat-card {
+    border-radius: 18px;
+  }
+
+  .client-profile-card {
+    border-radius: 26px;
+  }
+
+  .client-nav-item span,
+  .nav-item span {
+    width: 28px;
+    height: 28px;
+  }
+}
+
