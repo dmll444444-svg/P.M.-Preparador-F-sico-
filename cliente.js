@@ -722,7 +722,27 @@ const clientSections = {
     title: "Mis archivos",
     html: () => `<h2>Mis archivos</h2><p>Documentos, imágenes e informes disponibles.</p>${renderClientFiles()}`
   }
-};
+,
+    perfil: {
+      title: "Perfil",
+      html: () => `
+        <section class="client-profile-card mobile-profile-card">
+          <div class="client-profile-photo fallback">${currentPatient?.nombre ? currentPatient.nombre.charAt(0).toUpperCase() : "P"}</div>
+          <div>
+            <p class="eyebrow">Perfil Cliente</p>
+            <h2>${currentPatient?.nombre || "Cliente"}</h2>
+            <p>Resumen personal y datos principales.</p>
+            <div class="patient-tags">
+              <span>@${currentPatient?.nickname || "-"}</span>
+              <span>${currentPatient?.edad || "-"} años</span>
+              <span>${currentPatient?.peso || "-"} kg</span>
+              <span>${currentPatient?.altura || "-"} cm</span>
+              <span>IMC ${currentPatient?.imc || "-"}</span>
+            </div>
+          </div>
+        </section>
+      `
+    }};
 
 function renderClientSection(key) {
   const section = clientSections[key] || clientSections.dashboard;
@@ -743,7 +763,27 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
   window.location.href = "index.html";
 });
 
-renderClientSection("dashboard");
+
+
+  // Navegación inferior móvil tipo app
+  document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const sectionKey = tab.dataset.clientSection || "dashboard";
+
+      document.querySelectorAll(".client-mobile-tab").forEach((item) => item.classList.remove("active"));
+      tab.classList.add("active");
+
+      document.querySelectorAll(".client-nav-item").forEach((item) => {
+        item.classList.toggle("active", item.dataset.clientSection === sectionKey);
+      });
+
+      if (typeof renderClientSection === "function") {
+        renderClientSection(sectionKey);
+      }
+    });
+  });
+
+  renderClientSection("dashboard");
 
 
 if (typeof isSessionCompletedForClient === "function") {

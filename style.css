@@ -3184,79 +3184,66 @@ textarea:focus {
 
 
 /* =========================================================
-   PM ONLINE · PWA INSTALABLE
-   Aspecto app móvil, safe areas e instalación.
+   FIX FASE 2 · Barra inferior móvil cliente
    ========================================================= */
 
-@media (display-mode: standalone) {
-  body {
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .admin-main,
-  .client-main {
-    padding-top: calc(24px + env(safe-area-inset-top));
-  }
-}
-
-.pwa-install-btn {
-  width: 100%;
-  margin-top: 12px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.28);
-  color: #bbf7d0;
-  font-weight: 950;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
-}
-
-.pwa-install-btn:hover {
-  background: rgba(34, 197, 94, 0.18);
+.client-mobile-bottom-nav {
+  display: none;
 }
 
 @media (max-width: 800px) {
-  html, body {
-    min-height: 100%;
-    overflow-x: hidden;
-    overscroll-behavior-y: none;
+  .client-mobile-bottom-nav {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+    z-index: 9999;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    padding: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    border-radius: 24px;
+    background: rgba(2, 6, 23, 0.86);
+    border: 1px solid rgba(34, 197, 94, 0.22);
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255,255,255,.05);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
   }
 
-  body {
-    background:
-      radial-gradient(circle at 15% 0%, rgba(34,197,94,.18), transparent 34%),
-      #020617;
+  .client-mobile-tab {
+    min-width: 0;
+    border: 0;
+    border-radius: 18px;
+    padding: 8px 4px;
+    background: transparent;
+    color: #94a3b8;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-weight: 900;
+    cursor: pointer;
   }
 
-  .login-page {
-    min-height: 100dvh;
-    padding: calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));
+  .client-mobile-tab span {
+    font-size: 20px;
+    line-height: 1;
   }
 
-  .login-card {
-    max-width: 420px;
-    border-radius: 30px;
+  .client-mobile-tab small {
+    font-size: 10px;
+    line-height: 1;
   }
 
-  .admin-layout,
-  .client-layout {
-    min-height: 100dvh;
-  }
-
-  .client-main,
-  .admin-main {
-    padding-left: 18px;
-    padding-right: 18px;
+  .client-mobile-tab.active {
+    background: linear-gradient(135deg, rgba(34,197,94,.30), rgba(20,184,166,.22));
+    color: #f8fafc;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
   }
 
   .client-main {
-    padding-bottom: calc(104px + env(safe-area-inset-bottom));
-  }
-
-  .client-mobile-bottom-nav {
-    padding-bottom: calc(8px + env(safe-area-inset-bottom));
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important;
   }
 }
