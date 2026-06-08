@@ -2604,782 +2604,410 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 
 /* =========================================================
-   PM ONLINE · FASE 1 VISUAL PRO
-   Mejoras solo visuales: logo, sidebar, tarjetas, botones,
-   KPIs, avatar, hover y acabado premium.
+   CLIENTE MOBILE APP PRO
+   Convierte el panel cliente en una experiencia tipo app móvil
+   sin romper el diseño de escritorio.
    ========================================================= */
-
-:root {
-  --pm-bg: #020617;
-  --pm-panel: rgba(15, 23, 42, 0.78);
-  --pm-panel-strong: rgba(15, 23, 42, 0.92);
-  --pm-card: rgba(15, 23, 42, 0.62);
-  --pm-card-soft: rgba(2, 6, 23, 0.50);
-  --pm-line: rgba(148, 163, 184, 0.14);
-  --pm-line-green: rgba(34, 197, 94, 0.24);
-  --pm-green: #22c55e;
-  --pm-teal: #14b8a6;
-  --pm-text: #f8fafc;
-  --pm-muted: #94a3b8;
-  --pm-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
-}
-
-/* Fondo más premium */
-body {
-  background:
-    radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.16), transparent 34%),
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.10), transparent 28%),
-    var(--pm-bg);
-}
-
-/* Login más comercial */
-.login-page {
-  background:
-    radial-gradient(circle at 18% 18%, rgba(34, 197, 94, 0.38), transparent 28%),
-    radial-gradient(circle at 82% 8%, rgba(20, 184, 166, 0.16), transparent 28%),
-    linear-gradient(135deg, #020617 0%, #07111f 48%, #020617 100%);
-}
-
-.login-card {
-  border-radius: 32px;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(2, 6, 23, 0.72));
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow: 0 35px 100px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255,255,255,.05);
-}
-
-.logo,
-.logo.small,
-.avatar,
-.client-profile-photo.fallback,
-.session-selected-avatar,
-.graph-pro-avatar,
-.periodicity-patient-avatar {
-  background:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.26), transparent 28%),
-    linear-gradient(135deg, var(--pm-green), var(--pm-teal));
-  color: #02130a;
-  box-shadow: 0 12px 34px rgba(34, 197, 94, 0.28);
-  letter-spacing: -0.04em;
-}
-
-/* Sidebar premium */
-.sidebar,
-.client-sidebar {
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.82)),
-    radial-gradient(circle at 20% 0%, rgba(34, 197, 94, 0.14), transparent 34%);
-  border-right: 1px solid rgba(148, 163, 184, 0.12);
-  box-shadow: 18px 0 60px rgba(0, 0, 0, 0.18);
-}
-
-.sidebar-brand,
-.admin-user,
-.client-profile-card,
-.client-pro-card,
-.content-card,
-.stat-card,
-.session-card,
-.history-card,
-.file-card,
-.client-next-session-card,
-.client-empty-next {
-  box-shadow: var(--pm-shadow);
-}
-
-/* Menús con icono tipo app */
-.nav-item,
-.client-nav-item {
-  position: relative;
-  min-height: 50px;
-  font-weight: 750;
-  border: 1px solid transparent;
-  letter-spacing: -0.01em;
-}
-
-.nav-item span,
-.client-nav-item span {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: rgba(255,255,255,.055);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
-}
-
-.nav-item:hover,
-.nav-item.active,
-.client-nav-item:hover,
-.client-nav-item.active {
-  background:
-    linear-gradient(135deg, rgba(34, 197, 94, 0.24), rgba(20, 184, 166, 0.16));
-  border-color: rgba(34, 197, 94, 0.20);
-  box-shadow: 0 16px 34px rgba(20, 184, 166, 0.08);
-}
-
-.nav-item.active::before,
-.client-nav-item.active::before {
-  content: "";
-  position: absolute;
-  left: -10px;
-  top: 14px;
-  width: 4px;
-  height: 22px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--pm-green), var(--pm-teal));
-  box-shadow: 0 0 18px rgba(34, 197, 94, .6);
-}
-
-/* Cabeceras */
-.admin-header,
-.client-main .admin-header {
-  padding: 6px 0 4px;
-}
-
-.eyebrow {
-  color: #22e07c;
-  letter-spacing: -0.01em;
-  text-shadow: 0 0 24px rgba(34, 197, 94, 0.22);
-}
-
-h1, h2, h3 {
-  letter-spacing: -0.045em;
-}
-
-/* Usuario arriba derecha */
-.admin-user {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.70));
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  padding: 10px 14px;
-}
-
-/* Tarjetas y paneles */
-.stat-card,
-.content-card,
-.client-pro-card,
-.client-profile-card,
-.session-card,
-.history-card,
-.file-card,
-.client-next-session-card,
-.client-empty-next,
-.session-summary-box,
-.client-next-module {
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(2, 6, 23, 0.54));
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255,255,255,.035);
-}
-
-.stat-card:hover,
-.client-pro-kpis article:hover,
-.client-pro-card:hover,
-.session-card:hover,
-.file-card:hover,
-.history-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(34, 197, 94, 0.26);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
-}
-
-/* KPIs más fitness/app */
-.client-pro-kpis article,
-.dashboard-grid .stat-card {
-  position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 90% 10%, rgba(34, 197, 94, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.76), rgba(2, 6, 23, 0.56));
-  border-color: rgba(34, 197, 94, 0.16);
-  transition: .22s ease;
-}
-
-.client-pro-kpis article::after,
-.dashboard-grid .stat-card::after {
-  content: "";
-  position: absolute;
-  right: -22px;
-  bottom: -22px;
-  width: 82px;
-  height: 82px;
-  border-radius: 999px;
-  background: rgba(34, 197, 94, 0.055);
-}
-
-.client-pro-kpis span,
-.stat-card span {
-  color: #9fb4d0;
-  font-weight: 650;
-}
-
-.client-pro-kpis strong,
-.stat-card strong {
-  color: #ffffff;
-  text-shadow: 0 0 26px rgba(34, 197, 94, 0.10);
-}
-
-/* Botones pro */
-.primary-btn,
-form button,
-.copy-access-btn,
-.finish-session-btn {
-  background:
-    linear-gradient(135deg, #2be477 0%, #16c4b0 100%);
-  color: #02130a;
-  box-shadow: 0 18px 40px rgba(34, 197, 94, 0.22);
-  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
-}
-
-.primary-btn:hover,
-form button:hover,
-.copy-access-btn:hover,
-.finish-session-btn:hover {
-  transform: translateY(-1px);
-  filter: saturate(1.08);
-  box-shadow: 0 22px 50px rgba(34, 197, 94, 0.30);
-}
-
-.secondary-btn {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(255,255,255,.07);
-}
-
-/* Tags */
-.patient-tags span,
-.client-next-summary span,
-.session-badge {
-  border: 1px solid rgba(34, 197, 94, 0.12);
-  background: rgba(34, 197, 94, 0.10);
-  color: #bbf7d0;
-}
-
-/* Gráficas mini más limpias */
-.client-mini-bar-wrap {
-  background: rgba(15, 23, 42, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
-}
-
-.client-mini-bar {
-  background: linear-gradient(180deg, #2be477, #14b8a6);
-  box-shadow: 0 10px 26px rgba(34,197,94,.24);
-}
-
-/* Fotos/avatar cliente */
-.client-profile-photo {
-  border: 1px solid rgba(34, 197, 94, 0.18);
-  box-shadow: 0 20px 48px rgba(0,0,0,.34);
-}
-
-/* Inputs más finos */
-input,
-select,
-textarea {
-  border-color: rgba(148, 163, 184, 0.14);
-  background: rgba(2, 6, 23, 0.72);
-}
-
-input:hover,
-select:hover,
-textarea:hover {
-  border-color: rgba(34, 197, 94, 0.20);
-}
-
-/* Scrollbar discreta */
-::-webkit-scrollbar {
-  width: 11px;
-  height: 11px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(2, 6, 23, 0.72);
-}
-
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(34,197,94,.55), rgba(20,184,166,.45));
-  border-radius: 999px;
-  border: 3px solid rgba(2, 6, 23, 0.72);
-}
-
-/* Ajuste móvil sin tocar lógica */
-@media (max-width: 800px) {
-  .login-card {
-    padding: 28px 22px;
-    border-radius: 28px;
-  }
-
-  .client-pro-kpis article,
-  .stat-card {
-    border-radius: 18px;
-  }
-
-  .client-profile-card {
-    border-radius: 26px;
-  }
-
-  .client-nav-item span,
-  .nav-item span {
-    width: 28px;
-    height: 28px;
-  }
-}
-
-
-/* =========================================================
-   PM ONLINE · FASE 1 VISUAL PRO V2
-   Cambios más visibles: glow, tarjetas, sidebar y botones.
-   ========================================================= */
-
-.sidebar-brand .logo.small,
-.client-sidebar .logo.small,
-.login-card .logo,
-.avatar {
-  position: relative;
-  background: linear-gradient(135deg, #34f27d 0%, #13d6bd 100%) !important;
-  color: #02130a !important;
-  border: 1px solid rgba(255,255,255,.22) !important;
-  box-shadow:
-    0 0 0 5px rgba(34,197,94,.10),
-    0 16px 42px rgba(34,197,94,.38) !important;
-  font-weight: 1000 !important;
-}
-
-.login-card {
-  border: 1px solid rgba(34,197,94,.24) !important;
-  box-shadow:
-    0 0 0 1px rgba(255,255,255,.04) inset,
-    0 35px 110px rgba(0,0,0,.58),
-    0 0 90px rgba(34,197,94,.10) !important;
-}
-
-.sidebar,
-.client-sidebar {
-  background:
-    radial-gradient(circle at 20% 5%, rgba(34,197,94,.20), transparent 34%),
-    linear-gradient(180deg, #0f172a 0%, #0b1220 52%, #07111f 100%) !important;
-}
-
-.nav-item,
-.client-nav-item {
-  border-radius: 18px !important;
-  margin-bottom: 8px !important;
-  transition: transform .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease !important;
-}
-
-.nav-item:hover,
-.client-nav-item:hover {
-  transform: translateX(3px) !important;
-}
-
-.nav-item.active,
-.client-nav-item.active {
-  background: linear-gradient(135deg, rgba(34,197,94,.30), rgba(20,184,166,.22)) !important;
-  border: 1px solid rgba(34,197,94,.34) !important;
-  box-shadow:
-    0 12px 28px rgba(20,184,166,.14),
-    inset 0 1px 0 rgba(255,255,255,.08) !important;
-}
-
-.stat-card,
-.content-card,
-.client-pro-card,
-.client-profile-card,
-.session-card,
-.history-card,
-.file-card,
-.client-next-session-card,
-.client-empty-next {
-  border-radius: 26px !important;
-  border: 1px solid rgba(34,197,94,.16) !important;
-  background:
-    radial-gradient(circle at 95% 0%, rgba(34,197,94,.10), transparent 26%),
-    linear-gradient(180deg, rgba(15,23,42,.88), rgba(2,6,23,.62)) !important;
-  box-shadow:
-    0 24px 70px rgba(0,0,0,.30),
-    inset 0 1px 0 rgba(255,255,255,.045) !important;
-}
-
-.stat-card strong,
-.client-pro-kpis strong {
-  font-size: clamp(1.8rem, 2.4vw, 2.6rem) !important;
-}
-
-.primary-btn,
-.copy-access-btn,
-.finish-session-btn,
-form button {
-  border-radius: 16px !important;
-  background: linear-gradient(135deg, #34f27d, #12d6bd) !important;
-  color: #02130a !important;
-  font-weight: 950 !important;
-  box-shadow: 0 18px 44px rgba(34,197,94,.28) !important;
-}
-
-.eyebrow,
-.sidebar-brand h2,
-.admin-header .eyebrow,
-.client-main .eyebrow {
-  color: #34f27d !important;
-}
-
-.admin-header h1,
-.client-main h1 {
-  text-shadow: 0 0 28px rgba(34,197,94,.12) !important;
-}
-
-input,
-select,
-textarea {
-  border-radius: 16px !important;
-  border: 1px solid rgba(148,163,184,.18) !important;
-}
-
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: rgba(34,197,94,.55) !important;
-  box-shadow: 0 0 0 4px rgba(34,197,94,.10) !important;
-}
-
-.client-mini-bar {
-  background: linear-gradient(180deg, #34f27d 0%, #12d6bd 100%) !important;
-  box-shadow: 0 10px 26px rgba(34,197,94,.28) !important;
-}
-
-.patient-tags span,
-.client-next-summary span,
-.session-badge {
-  background: rgba(34,197,94,.14) !important;
-  border-color: rgba(34,197,94,.22) !important;
-  color: #bbf7d0 !important;
-}
-
-@media (max-width: 800px) {
-  .client-sidebar,
-  .sidebar {
-    box-shadow: 0 -20px 60px rgba(0,0,0,.30) !important;
-  }
-
-  .client-nav-item,
-  .nav-item {
-    border-radius: 16px !important;
-  }
-}
-
-
-/* =========================================================
-   PM ONLINE · VALORACIONES PRO
-   Tabla de tests con 3 intentos, unidad y observaciones.
-   ========================================================= */
-
-.valuation-form {
-  margin-top: 22px;
-}
-
-.valuation-table-head,
-.valuation-test-row {
-  display: grid;
-  grid-template-columns: 1.05fr 1.35fr .72fr 1.45fr auto;
-  gap: 14px;
-  align-items: start;
-}
-
-.valuation-table-head {
-  margin-top: 18px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(34, 197, 94, 0.10);
-  border: 1px solid rgba(34, 197, 94, 0.18);
-  color: #86efac;
-  font-weight: 900;
-  text-transform: uppercase;
-  font-size: 12px;
-  letter-spacing: .04em;
-}
-
-.valuation-test-row {
-  position: relative;
-  padding: 16px;
-  border-radius: 22px;
-  background: rgba(2, 6, 23, 0.52);
-  border: 1px solid rgba(255,255,255,.08);
-  box-shadow: 0 18px 44px rgba(0,0,0,.20);
-}
-
-.valuation-test-row label {
-  display: block;
-  margin-bottom: 8px;
-  color: #86efac;
-}
-
-.valuation-attempt-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.valuation-test-row textarea {
-  min-height: 54px;
-  height: 54px;
-}
-
-.valuation-remove-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: rgba(248, 113, 113, 0.14);
-  color: #fca5a5;
-  font-weight: 1000;
-  align-self: end;
-}
-
-.valuation-actions {
-  margin-top: 4px;
-}
-
-.valuation-card-tests {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.valuation-card-test {
-  padding: 14px;
-  border-radius: 18px;
-  background: rgba(255,255,255,.045);
-  border: 1px solid rgba(255,255,255,.07);
-}
-
-.valuation-card-test strong {
-  display: block;
-  color: #86efac;
-  margin-bottom: 7px;
-}
-
-.valuation-card-test p {
-  margin: 4px 0;
-}
-
-@media (max-width: 1100px) {
-  .valuation-table-head {
-    display: none;
-  }
-
-  .valuation-test-row {
-    grid-template-columns: 1fr;
-    padding-top: 48px;
-  }
-
-  .valuation-remove-btn {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-  }
-
-  .valuation-attempt-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-
-
-
-@media (max-width: 800px) {
-  .client-mobile-bottom-nav {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: 10px;
-    z-index: 9999;
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 6px;
-    padding: 8px;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom));
-    border-radius: 24px;
-    background: rgba(2, 6, 23, 0.86);
-    border: 1px solid rgba(34, 197, 94, 0.22);
-    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255,255,255,.05);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
-  }
-
-  .client-mobile-tab {
-    min-width: 0;
-    border: 0;
-    border-radius: 18px;
-    padding: 8px 4px;
-    background: transparent;
-    color: #94a3b8;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    font-weight: 900;
-    cursor: pointer;
-  }
-
-  .client-mobile-tab span {
-    font-size: 20px;
-    line-height: 1;
-  }
-
-  .client-mobile-tab small {
-    font-size: 10px;
-    line-height: 1;
-  }
-
-  .client-mobile-tab.active {
-    background: linear-gradient(135deg, rgba(34,197,94,.30), rgba(20,184,166,.22));
-    color: #f8fafc;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
-  }
-
-  .client-main {
-    padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important;
-  }
-}
-
-
-
-/* =========================================================
-   FIX REAL MÓVIL · Ocultar sidebar y barra inferior abajo
-   ========================================================= */
-
-.client-mobile-bottom-nav {
+.mobile-home-actions {
   display: none;
 }
 
-@media (max-width: 800px) {
+@media (max-width: 768px) {
+  body {
+    background: radial-gradient(circle at 0% 0%, rgba(34,197,94,.18), transparent 34%), #020617;
+    overflow-x: hidden;
+  }
+
   .client-layout {
-    display: block !important;
-    min-height: 100dvh !important;
-    width: 100% !important;
+    display: block;
+    min-height: 100vh;
+    padding-bottom: 92px;
+    background: radial-gradient(circle at 20% 0%, rgba(34,197,94,.18), transparent 38%), #020617;
   }
 
   .client-sidebar {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 1000;
+    padding: 8px;
+    border-radius: 26px;
+    background: rgba(15, 23, 42, .94);
+    border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 18px 55px rgba(0,0,0,.55), 0 0 30px rgba(34,197,94,.08);
+    backdrop-filter: blur(18px);
+    display: block;
+  }
+
+  .client-sidebar .sidebar-brand,
+  .client-sidebar .logout {
     display: none !important;
-    visibility: hidden !important;
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    height: 0 !important;
-    overflow: hidden !important;
+  }
+
+  .client-sidebar .sidebar-nav {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .client-nav-item {
+    min-height: 62px;
+    padding: 8px 4px;
+    border-radius: 20px;
+    justify-content: center;
+    text-align: center;
+    display: grid;
+    gap: 4px;
+    font-size: 0;
+    color: #94a3b8;
+    transform: none !important;
+  }
+
+  .client-nav-item span {
+    display: block;
+    font-size: 23px;
+    line-height: 1;
+  }
+
+  .client-nav-item::after {
+    content: attr(data-mobile-label);
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.05;
+    color: currentColor;
+  }
+
+  .client-nav-item[data-client-section="dashboard"]::after { content: "Inicio"; }
+  .client-nav-item[data-client-section="proxima"]::after { content: "Próxima"; }
+  .client-nav-item[data-client-section="sesiones"]::after { content: "Sesiones"; }
+  .client-nav-item[data-client-section="historial"]::after { content: "Historial"; }
+  .client-nav-item[data-client-section="archivos"]::after { content: "Archivos"; }
+
+  .client-nav-item.active {
+    color: #ecfdf5;
+    background: linear-gradient(135deg, rgba(34,197,94,.34), rgba(20,184,166,.22));
+    box-shadow: inset 0 0 0 1px rgba(134,239,172,.22);
   }
 
   .client-main {
-    width: 100% !important;
-    min-height: 100dvh !important;
-    margin: 0 !important;
-    padding: calc(18px + env(safe-area-inset-top)) 14px calc(104px + env(safe-area-inset-bottom)) !important;
+    padding: 16px 12px 18px;
   }
 
-  .client-main .admin-header {
+  .client-main > .admin-header {
     position: sticky;
     top: 0;
-    z-index: 30;
-    padding: 10px 0 14px !important;
-    background: linear-gradient(180deg, rgba(2,6,23,.96), rgba(2,6,23,.76), transparent) !important;
+    z-index: 800;
+    margin: -16px -12px 16px;
+    padding: 14px 12px 12px;
+    background: linear-gradient(180deg, rgba(2,6,23,.98), rgba(2,6,23,.84));
     backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,.07);
   }
 
-  .client-main .admin-header h1 {
-    font-size: 1.75rem !important;
-    line-height: 1.05 !important;
+  .client-main > .admin-header .eyebrow {
+    font-size: 11px;
+    margin-bottom: 3px;
   }
 
-  .client-main .admin-user {
-    padding: 8px 10px !important;
-    border-radius: 18px !important;
+  .client-main > .admin-header h1 {
+    font-size: 22px;
+    line-height: 1.08;
   }
 
-  .client-main .admin-user span {
-    max-width: 128px !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
+  .admin-user {
+    padding: 7px 8px;
+    border-radius: 18px;
+    gap: 8px;
   }
 
-  .client-mobile-bottom-nav {
-    position: fixed !important;
-    left: 10px !important;
-    right: 10px !important;
-    bottom: 8px !important;
-    z-index: 99999 !important;
-    display: grid !important;
-    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-    gap: 5px !important;
-    padding: 8px !important;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom)) !important;
-    border-radius: 24px !important;
-    background: rgba(2, 6, 23, 0.92) !important;
-    border: 1px solid rgba(34, 197, 94, 0.28) !important;
-    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255,255,255,.06) !important;
-    backdrop-filter: blur(22px) !important;
-    -webkit-backdrop-filter: blur(22px) !important;
+  .admin-user span {
+    max-width: 116px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 800;
   }
 
-  .client-mobile-tab {
-    appearance: none !important;
-    -webkit-appearance: none !important;
-    min-width: 0 !important;
-    height: 58px !important;
-    border: 0 !important;
-    border-radius: 18px !important;
-    padding: 7px 3px !important;
-    background: transparent !important;
-    color: #94a3b8 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: center !important;
-    gap: 4px !important;
-    font-weight: 900 !important;
-    cursor: pointer !important;
+  .avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
   }
 
-  .client-mobile-tab span {
-    display: block !important;
-    font-size: 22px !important;
-    line-height: 1 !important;
+  .content-card {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
-  .client-mobile-tab small {
-    display: block !important;
-    font-size: 10px !important;
-    line-height: 1 !important;
-    white-space: nowrap !important;
+  .client-profile-card {
+    grid-template-columns: 76px 1fr;
+    gap: 14px;
+    padding: 16px;
+    border-radius: 28px;
+    background: linear-gradient(135deg, rgba(34,197,94,.11), rgba(15,23,42,.84));
+    border-color: rgba(34,197,94,.18);
   }
 
-  .client-mobile-tab.active {
-    background: linear-gradient(135deg, rgba(34,197,94,.34), rgba(20,184,166,.24)) !important;
-    color: #f8fafc !important;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 24px rgba(34,197,94,.12) !important;
+  .client-profile-photo,
+  .client-profile-photo.fallback {
+    width: 76px;
+    height: 76px;
+    border-radius: 24px;
+    font-size: 34px;
   }
 
-  .content-card,
+  .client-profile-card h2 {
+    font-size: 20px;
+    line-height: 1.1;
+  }
+
+  .client-profile-card p:not(.eyebrow) {
+    display: none;
+  }
+
+  .patient-tags {
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .patient-tags span {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .mobile-home-actions {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin: 14px 0;
+  }
+
+  .mobile-action-card {
+    min-height: 118px;
+    padding: 16px;
+    border-radius: 26px;
+    color: white;
+    text-align: left;
+    background: rgba(15,23,42,.76);
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: inset 0 0 22px rgba(255,255,255,.025);
+    display: grid;
+    align-content: space-between;
+    gap: 8px;
+  }
+
+  .mobile-action-card.primary {
+    background: linear-gradient(135deg, rgba(34,197,94,.28), rgba(20,184,166,.16)), rgba(15,23,42,.86);
+    border-color: rgba(134,239,172,.28);
+  }
+
+  .mobile-action-icon {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 17px;
+    background: linear-gradient(135deg, #22c55e, #14b8a6);
+    color: #02130a;
+    font-size: 22px;
+  }
+
+  .mobile-action-card strong {
+    font-size: 15px;
+  }
+
+  .mobile-action-card small {
+    color: #94a3b8;
+    font-weight: 800;
+  }
+
+  .client-pro-kpis {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin: 14px 0;
+  }
+
+  .client-pro-kpis article {
+    padding: 15px;
+    border-radius: 22px;
+    min-height: 90px;
+  }
+
+  .client-pro-kpis span {
+    font-size: 12px;
+  }
+
+  .client-pro-kpis strong {
+    font-size: 24px;
+  }
+
+  .client-pro-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
   .client-pro-card,
-  .client-profile-card,
   .client-next-session-card,
+  .client-empty-next,
+  .session-card,
+  .history-card,
+  .file-card {
+    padding: 16px;
+    border-radius: 26px;
+    background: rgba(15,23,42,.72);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .module-panel-header h3,
+  .client-next-session-card h2 {
+    font-size: 22px;
+  }
+
+  .client-mini-bars {
+    min-height: 215px;
+    gap: 15px;
+    overflow-x: auto !important;
+    padding-bottom: 4px;
+  }
+
+  .client-mini-bar-item {
+    min-width: 58px;
+    height: 214px;
+  }
+
+  .client-mini-bar-wrap {
+    height: 155px;
+  }
+
+  .client-mini-bar {
+    width: 38px;
+  }
+
+  .distribution-row {
+    grid-template-columns: 78px 1fr 44px;
+    gap: 9px;
+  }
+
+  .client-next-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .client-next-summary span {
+    text-align: center;
+    font-size: 12px;
+    padding: 9px 7px;
+  }
+
+  .client-next-content {
+    gap: 12px;
+  }
+
+  .client-next-module {
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  .client-next-module li,
+  .session-summary-box li {
+    line-height: 1.42;
+    margin-bottom: 9px;
+  }
+
+  .client-next-module a,
+  .session-summary-box a {
+    display: inline-block;
+    margin-top: 3px;
+  }
+
+  .finish-session-btn {
+    position: sticky;
+    bottom: 92px;
+    z-index: 850;
+    min-height: 56px;
+    border-radius: 22px;
+    font-size: 15px;
+    box-shadow: 0 18px 38px rgba(34,197,94,.22);
+  }
+
+  .session-card-header,
+  .history-card-header,
+  .file-card-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .session-summary,
+  .session-summary-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .sessions-list,
+  .history-list,
+  .files-list {
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .file-card {
+    grid-template-columns: 1fr;
+  }
+
+  .file-visual {
+    width: 100%;
+    height: 170px;
+  }
+
+  .secondary-btn,
+  .file-actions a {
+    min-height: 44px;
+    display: inline-grid;
+    place-items: center;
+  }
+
   .client-empty-next {
-    border-radius: 24px !important;
+    min-height: 185px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+  }
+}
+
+@media (max-width: 380px) {
+  .client-main > .admin-header h1 {
+    font-size: 19px;
+  }
+
+  .client-nav-item span {
+    font-size: 20px;
+  }
+
+  .client-nav-item::after {
+    font-size: 9px;
+  }
+
+  .mobile-home-actions,
+  .client-pro-kpis {
+    grid-template-columns: 1fr;
   }
 }
 
 
 
 /* =========================================================
-   PM FIX FINAL · Cliente móvil tipo app + instalar elegante
+   PM FIX CLIENTE · vacío + botones inferiores funcionales
    ========================================================= */
 
-/* Por defecto oculta en escritorio */
 .client-mobile-bottom-nav {
   display: none;
 }
 
-/* Botón instalar app centrado y sin fondo blanco feo */
 .pwa-install-btn,
 .login-card .pwa-install-btn,
 button.pwa-install-btn {
@@ -3400,12 +3028,6 @@ button.pwa-install-btn {
   box-shadow: 0 16px 42px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.06) !important;
 }
 
-.pwa-install-btn:hover,
-.login-card .pwa-install-btn:hover {
-  transform: translateY(-1px) !important;
-  background: linear-gradient(135deg, rgba(34,197,94,.32), rgba(20,184,166,.25)) !important;
-}
-
 @media (max-width: 800px), (pointer: coarse) and (max-width: 1024px) {
   body {
     overflow-x: hidden !important;
@@ -3417,7 +3039,6 @@ button.pwa-install-btn {
     min-height: 100dvh !important;
   }
 
-  /* Oculta completamente la barra lateral en móvil */
   .client-sidebar,
   aside.client-sidebar,
   .client-layout > .client-sidebar,
@@ -3453,48 +3074,6 @@ button.pwa-install-btn {
     padding: calc(14px + env(safe-area-inset-top)) 12px calc(116px + env(safe-area-inset-bottom)) !important;
   }
 
-  .client-main .admin-header {
-    display: flex !important;
-    align-items: center !important;
-    gap: 10px !important;
-    padding: 8px 0 14px !important;
-  }
-
-  .client-main .admin-header h1 {
-    font-size: 1.55rem !important;
-    line-height: 1.05 !important;
-  }
-
-  .client-main .admin-user {
-    margin-left: auto !important;
-    padding: 7px 8px !important;
-    border-radius: 18px !important;
-  }
-
-  .client-main .admin-user span {
-    max-width: 92px !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-    font-size: .78rem !important;
-  }
-
-  .client-main .avatar {
-    width: 36px !important;
-    height: 36px !important;
-    min-width: 36px !important;
-  }
-
-  .content-card,
-  .client-pro-card,
-  .client-profile-card,
-  .client-next-session-card,
-  .client-empty-next {
-    border-radius: 24px !important;
-    padding: 16px !important;
-  }
-
-  /* Barra inferior fija tipo app */
   .client-mobile-bottom-nav {
     position: fixed !important;
     left: 10px !important;

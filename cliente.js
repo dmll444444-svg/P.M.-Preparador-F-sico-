@@ -102,7 +102,7 @@ function renderClientSessions() {
 
   return `
     <div class="sessions-list">
-      ${mySessions.map(session => `
+      ${mySessions.slice().reverse().map(session => `
         <article class="session-card">
           <div class="session-card-header">
             <span class="session-badge">Sesión nº ${session.numero}</span>
@@ -379,6 +379,8 @@ function getClientDashboardStats() {
 
 function renderClientLatestSessions() {
   const mySessions = getClientCompletedSessions()
+    .slice()
+    .reverse()
     .slice(0, 4);
 
   if (mySessions.length === 0) {
@@ -515,16 +517,10 @@ function isSessionCompleted(sessionId) {
 
 function getClientCompletedSessions() {
   refreshCompletedSessions();
-  return sessions
-    .filter(session =>
-      session.patientNickname === currentPatient.nickname &&
-      isSessionCompleted(session.id)
-    )
-    .sort((a, b) => {
-      const numberDiff = Number(b.numero || 0) - Number(a.numero || 0);
-      if (numberDiff !== 0) return numberDiff;
-      return String(b.fecha || "").localeCompare(String(a.fecha || ""));
-    });
+  return sessions.filter(session =>
+    session.patientNickname === currentPatient.nickname &&
+    isSessionCompleted(session.id)
+  );
 }
 
 function getClientPendingSessions() {
@@ -567,7 +563,6 @@ function completeClientSession(sessionId) {
 
   alert("Sesión marcada como terminada. Ya cuenta en tu Dashboard y en Mis sesiones.");
   renderClientSection("proxima");
-}
 
 function renderSessionExerciseList(session) {
   function simpleModule(key, title) {
@@ -645,7 +640,7 @@ function isSessionCompletedForClient(session) {
 }
 
 function persistCompletedSessionsAndCloud() {
-  localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
+  persistCompletedSessionsAndCloud();
 
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
     window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
@@ -698,10 +693,6 @@ function renderNextSession() {
 }
 
 const clientSections = {
-  dashboard: {
-    title: "Dashboard Cliente PRO",
-    html: () => renderClientDashboard()
-  },
   inicio: {
     title: "Dashboard Cliente PRO",
     html: () => renderClientDashboard()
@@ -722,7 +713,46 @@ const clientSections = {
     title: "Mis archivos",
     html: () => `<h2>Mis archivos</h2><p>Documentos, imágenes e informes disponibles.</p>${renderClientFiles()}`
   }
-,
+};
+
+function renderClientSection(key) {
+  const section = clientSections[key];
+  clientSectionTitle.textContent = section.title;
+  clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
+}
+
+clientNavItems.forEach(item => {
+  item.addEventListener("click", () => {
+    clientNavItems.forEach(nav => nav.classList.remove("active"));
+    item.classList.add("active");
+    renderClientSection(item.dataset.clientSection);
+  });
+});
+
+document.getElementById("clientLogoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("currentUser");
+  window.location.href = "index.html";
+});
+
+
+
+  // PM FIX: navegación inferior móvil robusta por delegación
+  window.PM_MOBILE_NAV = function PM_MOBILE_NAV(sectionKey, clickedTab) {
+    const key = sectionKey || "dashboard";
+
+    document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
+      tab.classList.toggle("active", clickedTab ? tab === clickedTab : tab.dataset.clientSection === key);
+    });
+
+    document.querySelectorAll(".client-nav-item").forEach((item) => {
+      item.classList.toggle("active", item.dataset.clientSection === key);
+    });
+
+    if (typeof renderClientSection === "function") {
+      renderClientSection(key);
+    }
+
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {},
     perfil: {
       title: "Perfil",
       html: () => `
@@ -742,69 +772,17 @@ const clientSections = {
           </div>
         </section>
       `
-    }};
-
-function renderClientSection(key) {
-  const section = clientSections[key] || clientSections.dashboard;
-  clientSectionTitle.textContent = section.title;
-  clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-}
-
-clientNavItems.forEach(item => {
-  item.addEventListener("click", () => {
-    clientNavItems.forEach(nav => nav.classList.remove("active"));
-    item.classList.add("active");
-    renderClientSection(item.dataset.clientSection);
-  });
-});
-
-document.getElementById("clientLogoutBtn").addEventListener("click", () => {
-  localStorage.removeItem("currentUser");
-  window.location.href = "index.html";
-});
-if (typeof renderClientSection === "function") {
-        renderClientSection(sectionKey);
-      }
-    });
-  });
-if (typeof renderClientSection === "function") {
-        renderClientSection(sectionKey);
-      }
-    });
-  });
-
-  
-
-  // FIX DEFINITIVO: navegación inferior móvil tipo app
-  function setMobileActive(sectionKey, clickedTab) {
-    document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
-      tab.classList.toggle("active", clickedTab ? tab === clickedTab : tab.dataset.clientSection === sectionKey);
-    });
-
-    document.querySelectorAll(".client-nav-item").forEach((item) => {
-      item.classList.toggle("active", item.dataset.clientSection === sectionKey);
-    });
-  }
-
-  window.PM_MOBILE_NAV = function PM_MOBILE_NAV(sectionKey, clickedTab) {
-    const key = sectionKey || "inicio";
-    setMobileActive(key, clickedTab || null);
-
-    if (typeof renderClientSection === "function") {
-      renderClientSection(key);
     }
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
-    tab.addEventListener("click", (event) => {
-      event.preventDefault();
-      window.PM_MOBILE_NAV(tab.dataset.clientSection || "inicio", tab);
-    });
+  document.addEventListener("click", function(event) {
+    const tab = event.target.closest(".client-mobile-tab");
+    if (!tab) return;
+    event.preventDefault();
+    window.PM_MOBILE_NAV(tab.dataset.clientSection || "dashboard", tab);
   });
 
-  renderClientSection("inicio");
+  renderClientSection("dashboard");
 
 
 if (typeof isSessionCompletedForClient === "function") {
@@ -812,5 +790,7 @@ if (typeof isSessionCompletedForClient === "function") {
 }
 
 window.completeClientSession = completeClientSession;
+
+}
 
 })();
