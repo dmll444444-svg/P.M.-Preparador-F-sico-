@@ -762,22 +762,12 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 });
-
-
-
-  // Navegación inferior móvil tipo app
-  document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      const sectionKey = tab.dataset.clientSection || "dashboard";
-
-      document.querySelectorAll(".client-mobile-tab").forEach((item) => item.classList.remove("active"));
-      tab.classList.add("active");
-
-      document.querySelectorAll(".client-nav-item").forEach((item) => {
-        item.classList.toggle("active", item.dataset.clientSection === sectionKey);
-      });
-
-      if (typeof renderClientSection === "function") {
+if (typeof renderClientSection === "function") {
+        renderClientSection(sectionKey);
+      }
+    });
+  });
+if (typeof renderClientSection === "function") {
         renderClientSection(sectionKey);
       }
     });
@@ -785,25 +775,36 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
 
   
 
-  // FIX móvil: barra inferior tipo app
+  // FIX DEFINITIVO: navegación inferior móvil tipo app
+  function setMobileActive(sectionKey, clickedTab) {
+    document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
+      tab.classList.toggle("active", clickedTab ? tab === clickedTab : tab.dataset.clientSection === sectionKey);
+    });
+
+    document.querySelectorAll(".client-nav-item").forEach((item) => {
+      item.classList.toggle("active", item.dataset.clientSection === sectionKey);
+    });
+  }
+
+  window.PM_MOBILE_NAV = function PM_MOBILE_NAV(sectionKey, clickedTab) {
+    const key = sectionKey || "inicio";
+    setMobileActive(key, clickedTab || null);
+
+    if (typeof renderClientSection === "function") {
+      renderClientSection(key);
+    }
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      const sectionKey = tab.dataset.clientSection || "dashboard";
-
-      document.querySelectorAll(".client-mobile-tab").forEach((item) => item.classList.remove("active"));
-      tab.classList.add("active");
-
-      document.querySelectorAll(".client-nav-item").forEach((item) => {
-        item.classList.toggle("active", item.dataset.clientSection === sectionKey);
-      });
-
-      if (typeof renderClientSection === "function") {
-        renderClientSection(sectionKey);
-      }
+    tab.addEventListener("click", (event) => {
+      event.preventDefault();
+      window.PM_MOBILE_NAV(tab.dataset.clientSection || "inicio", tab);
     });
   });
 
-  renderClientSection("dashboard");
+  renderClientSection("inicio");
 
 
 if (typeof isSessionCompletedForClient === "function") {
