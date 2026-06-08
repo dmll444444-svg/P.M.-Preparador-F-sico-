@@ -712,84 +712,88 @@ const clientSections = {
   archivos: {
     title: "Mis archivos",
     html: () => `<h2>Mis archivos</h2><p>Documentos, imágenes e informes disponibles.</p>${renderClientFiles()}`
+  },
+  perfil: {
+    title: "Perfil",
+    html: () => `
+      <section class="client-profile-card mobile-profile-card">
+        <div class="client-profile-photo fallback">${currentPatient?.nombre ? currentPatient.nombre.charAt(0).toUpperCase() : "P"}</div>
+        <div>
+          <p class="eyebrow">Perfil Cliente</p>
+          <h2>${currentPatient?.nombre || "Cliente"}</h2>
+          <p>Resumen personal y datos principales.</p>
+          <div class="patient-tags">
+            <span>@${currentPatient?.nickname || "-"}</span>
+            <span>${currentPatient?.edad || "-"} años</span>
+            <span>${currentPatient?.peso || "-"} kg</span>
+            <span>${currentPatient?.altura || "-"} cm</span>
+            <span>IMC ${currentPatient?.imc || "-"}</span>
+          </div>
+        </div>
+      </section>
+    `
   }
 };
 
 function renderClientSection(key) {
-  const section = clientSections[key];
+  const safeKey = clientSections[key] ? key : "inicio";
+  const section = clientSections[safeKey];
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
 }
 
+function setActiveClientNav(sectionKey, clickedTab = null) {
+  clientNavItems.forEach(item => {
+    item.classList.toggle("active", item.dataset.clientSection === sectionKey);
+  });
+
+  document.querySelectorAll(".client-mobile-tab").forEach(tab => {
+    if (clickedTab) {
+      tab.classList.toggle("active", tab === clickedTab);
+    } else {
+      tab.classList.toggle("active", tab.dataset.clientSection === sectionKey);
+    }
+  });
+}
+
 clientNavItems.forEach(item => {
   item.addEventListener("click", () => {
-    clientNavItems.forEach(nav => nav.classList.remove("active"));
-    item.classList.add("active");
-    renderClientSection(item.dataset.clientSection);
+    const sectionKey = item.dataset.clientSection || "inicio";
+    setActiveClientNav(sectionKey);
+    renderClientSection(sectionKey);
   });
 });
 
-document.getElementById("clientLogoutBtn").addEventListener("click", () => {
-  localStorage.removeItem("currentUser");
-  window.location.href = "index.html";
+window.PM_MOBILE_NAV = function PM_MOBILE_NAV(sectionKey, clickedTab) {
+  const key = clientSections[sectionKey] ? sectionKey : "inicio";
+  setActiveClientNav(key, clickedTab || null);
+  renderClientSection(key);
+  try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+};
+
+document.addEventListener("click", function(event) {
+  const tab = event.target.closest(".client-mobile-tab");
+  if (!tab) return;
+  event.preventDefault();
+  window.PM_MOBILE_NAV(tab.dataset.clientSection || "inicio", tab);
 });
 
-
-
-  // PM FIX: navegación inferior móvil robusta por delegación
-  window.PM_MOBILE_NAV = function PM_MOBILE_NAV(sectionKey, clickedTab) {
-    const key = sectionKey || "dashboard";
-
-    document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
-      tab.classList.toggle("active", clickedTab ? tab === clickedTab : tab.dataset.clientSection === key);
-    });
-
-    document.querySelectorAll(".client-nav-item").forEach((item) => {
-      item.classList.toggle("active", item.dataset.clientSection === key);
-    });
-
-    if (typeof renderClientSection === "function") {
-      renderClientSection(key);
-    }
-
-    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {},
-    perfil: {
-      title: "Perfil",
-      html: () => `
-        <section class="client-profile-card mobile-profile-card">
-          <div class="client-profile-photo fallback">${currentPatient?.nombre ? currentPatient.nombre.charAt(0).toUpperCase() : "P"}</div>
-          <div>
-            <p class="eyebrow">Perfil Cliente</p>
-            <h2>${currentPatient?.nombre || "Cliente"}</h2>
-            <p>Resumen personal y datos principales.</p>
-            <div class="patient-tags">
-              <span>@${currentPatient?.nickname || "-"}</span>
-              <span>${currentPatient?.edad || "-"} años</span>
-              <span>${currentPatient?.peso || "-"} kg</span>
-              <span>${currentPatient?.altura || "-"} cm</span>
-              <span>IMC ${currentPatient?.imc || "-"}</span>
-            </div>
-          </div>
-        </section>
-      `
-    }
-  };
-
-  document.addEventListener("click", function(event) {
-    const tab = event.target.closest(".client-mobile-tab");
-    if (!tab) return;
-    event.preventDefault();
-    window.PM_MOBILE_NAV(tab.dataset.clientSection || "dashboard", tab);
+const logoutBtn = document.getElementById("clientLogoutBtn");
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
   });
-
-  renderClientSection("dashboard");
-
+}
 
 if (typeof isSessionCompletedForClient === "function") {
   window.isSessionCompletedForClient = isSessionCompletedForClient;
 }
 
 window.completeClientSession = completeClientSession;
+
+renderClientSection("inicio");
+setActiveClientNav("inicio");
 
 }
 

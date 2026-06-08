@@ -7,6 +7,13 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="favicon.ico?v=2" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#22c55e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="PM Online" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 </head>
 <body>
   <div class="client-layout">
@@ -46,11 +53,8 @@
     </main>
   </div>
 
-  <script src="cliente.js"></script>
-<script src="pwa-register.js"></script>
-
   <nav class="client-mobile-bottom-nav" aria-label="Navegación móvil cliente">
-    <button class="client-mobile-tab active" data-client-section="dashboard" type="button">
+    <button class="client-mobile-tab active" data-client-section="inicio" type="button">
       <span>🏠</span>
       <small>Inicio</small>
     </button>
@@ -58,9 +62,9 @@
       <span>📅</span>
       <small>Sesión</small>
     </button>
-    <button class="client-mobile-tab" data-client-section="dashboard" type="button">
+    <button class="client-mobile-tab" data-client-section="sesiones" type="button">
       <span>📊</span>
-      <small>Panel</small>
+      <small>Sesiones</small>
     </button>
     <button class="client-mobile-tab" data-client-section="archivos" type="button">
       <span>📁</span>
@@ -72,5 +76,10 @@
     </button>
   </nav>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="supabase-sync.js"></script>
+  <script src="cliente.js"></script>
+  <script src="pwa-register.js"></script>
 </body>
 </html>

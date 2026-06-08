@@ -1,4 +1,4 @@
-const users = [
+const defaultUsers = [
   { username: "admin", password: "admin123", role: "admin", nickname: "Administrador" },
   { username: "cliente1", password: "cliente123", role: "client", nickname: "cliente1" },
   { username: "cliente2", password: "cliente456", role: "client", nickname: "cliente2" }
@@ -7,43 +7,68 @@ const users = [
 const form = document.getElementById("loginForm");
 const message = document.getElementById("message");
 
-form.addEventListener("submit", function (event) {
-  event.preventDefault();
+function safeJson(key, fallback = []) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
 
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value.trim();
+function setMessage(text, className) {
+  if (!message) return;
+  message.textContent = text;
+  message.className = className || "";
+}
 
-  const savedPatients = JSON.parse(localStorage.getItem("patients")) || [];
+async function waitForCloudData() {
+  if (!window.PPF_SUPABASE_READY) return;
+  try {
+    setMessage("Cargando datos...", "success");
+    await window.PPF_SUPABASE_READY;
+  } catch (error) {
+    console.warn("Supabase login bootstrap error:", error);
+  }
+}
+
+function buildUsers() {
+  const savedPatients = safeJson("patients", []);
 
   const patientUsers = savedPatients
-    .filter(patient => patient.nickname && patient.accessPassword)
+    .filter(patient => patient && patient.nickname && patient.accessPassword)
     .map(patient => ({
-      username: patient.nickname,
-      password: patient.accessPassword,
+      username: String(patient.nickname).trim(),
+      password: String(patient.accessPassword).trim(),
       role: "client",
       nickname: patient.nickname,
-      patientName: patient.nombre
+      patientName: patient.nombre || patient.name || patient.nickname
     }));
 
-  const allUsers = [...users, ...patientUsers];
+  return [...defaultUsers, ...patientUsers];
+}
 
-  const user = allUsers.find(item => item.username === username && item.password === password);
+if (form) {
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
 
-  if (!user) {
-    message.textContent = "Usuario o contraseña incorrectos";
-    message.className = "error";
-    return;
-  }
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value.trim();
 
-  localStorage.setItem("currentUser", JSON.stringify(user));
-  message.textContent = `Acceso correcto. Bienvenido, ${user.nickname}`;
-  message.className = "success";
+    await waitForCloudData();
 
-  setTimeout(() => {
-    if (user.role === "admin") {
-      window.location.href = "admin.html";
-    } else {
-      window.location.href = "cliente.html";
+    const allUsers = buildUsers();
+    const user = allUsers.find(item => item.username === username && item.password === password);
+
+    if (!user) {
+      setMessage("Usuario o contraseña incorrectos", "error");
+      return;
     }
-  }, 500);
-});
+
+    localStorage.setItem("currentUser", JSON.stringify(user));
+    setMessage(`Acceso correcto. Bienvenido, ${user.nickname}`, "success");
+
+    setTimeout(() => {
+      window.location.href = user.role === "admin" ? "admin.html" : "cliente.html";
+    }, 350);
+  });
+}
