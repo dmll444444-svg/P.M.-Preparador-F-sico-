@@ -783,6 +783,26 @@ document.getElementById("clientLogoutBtn").addEventListener("click", () => {
     });
   });
 
+  
+
+  // FIX móvil: barra inferior tipo app
+  document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const sectionKey = tab.dataset.clientSection || "dashboard";
+
+      document.querySelectorAll(".client-mobile-tab").forEach((item) => item.classList.remove("active"));
+      tab.classList.add("active");
+
+      document.querySelectorAll(".client-nav-item").forEach((item) => {
+        item.classList.toggle("active", item.dataset.clientSection === sectionKey);
+      });
+
+      if (typeof renderClientSection === "function") {
+        renderClientSection(sectionKey);
+      }
+    });
+  });
+
   renderClientSection("dashboard");
 
 

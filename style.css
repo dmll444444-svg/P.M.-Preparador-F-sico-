@@ -3183,13 +3183,6 @@ textarea:focus {
 
 
 
-/* =========================================================
-   FIX FASE 2 · Barra inferior móvil cliente
-   ========================================================= */
-
-.client-mobile-bottom-nav {
-  display: none;
-}
 
 @media (max-width: 800px) {
   .client-mobile-bottom-nav {
@@ -3245,5 +3238,132 @@ textarea:focus {
 
   .client-main {
     padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+
+
+/* =========================================================
+   FIX REAL MÓVIL · Ocultar sidebar y barra inferior abajo
+   ========================================================= */
+
+.client-mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 800px) {
+  .client-layout {
+    display: block !important;
+    min-height: 100dvh !important;
+    width: 100% !important;
+  }
+
+  .client-sidebar {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .client-main {
+    width: 100% !important;
+    min-height: 100dvh !important;
+    margin: 0 !important;
+    padding: calc(18px + env(safe-area-inset-top)) 14px calc(104px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .client-main .admin-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 10px 0 14px !important;
+    background: linear-gradient(180deg, rgba(2,6,23,.96), rgba(2,6,23,.76), transparent) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .client-main .admin-header h1 {
+    font-size: 1.75rem !important;
+    line-height: 1.05 !important;
+  }
+
+  .client-main .admin-user {
+    padding: 8px 10px !important;
+    border-radius: 18px !important;
+  }
+
+  .client-main .admin-user span {
+    max-width: 128px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .client-mobile-bottom-nav {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: 8px !important;
+    z-index: 99999 !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 5px !important;
+    padding: 8px !important;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+    border-radius: 24px !important;
+    background: rgba(2, 6, 23, 0.92) !important;
+    border: 1px solid rgba(34, 197, 94, 0.28) !important;
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255,255,255,.06) !important;
+    backdrop-filter: blur(22px) !important;
+    -webkit-backdrop-filter: blur(22px) !important;
+  }
+
+  .client-mobile-tab {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    min-width: 0 !important;
+    height: 58px !important;
+    border: 0 !important;
+    border-radius: 18px !important;
+    padding: 7px 3px !important;
+    background: transparent !important;
+    color: #94a3b8 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    font-weight: 900 !important;
+    cursor: pointer !important;
+  }
+
+  .client-mobile-tab span {
+    display: block !important;
+    font-size: 22px !important;
+    line-height: 1 !important;
+  }
+
+  .client-mobile-tab small {
+    display: block !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  .client-mobile-tab.active {
+    background: linear-gradient(135deg, rgba(34,197,94,.34), rgba(20,184,166,.24)) !important;
+    color: #f8fafc !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 24px rgba(34,197,94,.12) !important;
+  }
+
+  .content-card,
+  .client-pro-card,
+  .client-profile-card,
+  .client-next-session-card,
+  .client-empty-next {
+    border-radius: 24px !important;
   }
 }
