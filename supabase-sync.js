@@ -40,6 +40,16 @@ function ppfWriteLocalJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value || []));
 }
 
+async function ppfWaitForSupabaseLibrary(timeoutMs = 3500) {
+  const start = Date.now();
+
+  while (!window.supabase && Date.now() - start < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 80));
+  }
+
+  return Boolean(window.supabase);
+}
+
 function ppfCreateClient() {
   if (!ppfSupabaseIsConfigured()) return null;
 
@@ -131,6 +141,8 @@ function ppfPatchLocalStorageForSync() {
 
 async function ppfSupabaseBootstrap() {
   ppfPatchLocalStorageForSync();
+
+  await ppfWaitForSupabaseLibrary();
 
   if (!ppfSupabaseIsConfigured()) {
     window.PPF_SUPABASE_STATUS = "disabled";

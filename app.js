@@ -6,44 +6,110 @@ const users = [
 
 const form = document.getElementById("loginForm");
 const message = document.getElementById("message");
+const submitButton = form ? form.querySelector('button[type="submit"]') : null;
 
-form.addEventListener("submit", function (event) {
-  event.preventDefault();
+function normalizeLoginValue(value) {
+  return String(value || "").trim();
+}
 
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value.trim();
+function getPatientPassword(patient) {
+  return normalizeLoginValue(
+    patient.accessPassword ||
+    patient.password ||
+    patient.contrasena ||
+    patient.passwordCliente ||
+    patient.clave ||
+    ""
+  );
+}
 
-  const savedPatients = JSON.parse(localStorage.getItem("patients")) || [];
+function buildPatientUsers() {
+  const savedPatients = JSON.parse(localStorage.getItem("patients") || "[]");
 
-  const patientUsers = savedPatients
-    .filter(patient => patient.nickname && patient.accessPassword)
+  return savedPatients
+    .filter(patient => patient && patient.nickname && getPatientPassword(patient))
     .map(patient => ({
-      username: patient.nickname,
-      password: patient.accessPassword,
+      username: normalizeLoginValue(patient.nickname),
+      password: getPatientPassword(patient),
       role: "client",
-      nickname: patient.nickname,
-      patientName: patient.nombre
+      nickname: normalizeLoginValue(patient.nickname),
+      patientName: patient.nombre || patient.name || "",
+      patientId: patient.id || ""
     }));
+}
 
-  const allUsers = [...users, ...patientUsers];
+async function ensureCloudReadyForLogin() {
+  if (!window.PPF_SUPABASE_READY) return false;
 
-  const user = allUsers.find(item => item.username === username && item.password === password);
-
-  if (!user) {
-    message.textContent = "Usuario o contraseña incorrectos";
-    message.className = "error";
-    return;
-  }
-
-  localStorage.setItem("currentUser", JSON.stringify(user));
-  message.textContent = `Acceso correcto. Bienvenido, ${user.nickname}`;
-  message.className = "success";
-
-  setTimeout(() => {
-    if (user.role === "admin") {
-      window.location.href = "admin.html";
-    } else {
-      window.location.href = "cliente.html";
+  try {
+    if (message) {
+      message.textContent = "Sincronizando datos...";
+      message.className = "info";
     }
-  }, 500);
-});
+
+    await window.PPF_SUPABASE_READY;
+
+    // En móvil/PWA a veces el Service Worker entrega versión cacheada:
+    // hacemos un pull extra antes de validar usuario.
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
+      await window.PPF_SUPABASE.pull();
+    }
+
+    return true;
+  } catch (error) {
+    console.warn("No se pudo sincronizar antes del login:", error);
+    return false;
+  }
+}
+
+if (form) {
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    const username = normalizeLoginValue(document.getElementById("username")?.value);
+    const password = normalizeLoginValue(document.getElementById("password")?.value);
+
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Entrando...";
+    }
+
+    await ensureCloudReadyForLogin();
+
+    const patientUsers = buildPatientUsers();
+    const allUsers = [...users, ...patientUsers];
+
+    const user = allUsers.find(item =>
+      normalizeLoginValue(item.username).toLowerCase() === username.toLowerCase() &&
+      normalizeLoginValue(item.password) === password
+    );
+
+    if (!user) {
+      if (message) {
+        message.textContent = "Usuario o contraseña incorrectos";
+        message.className = "error";
+      }
+
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Entrar";
+      }
+      return;
+    }
+
+    localStorage.setItem("currentUser", JSON.stringify(user));
+
+    if (message) {
+      message.textContent = `Acceso correcto. Bienvenido, ${user.nickname}`;
+      message.className = "success";
+    }
+
+    setTimeout(() => {
+      if (user.role === "admin") {
+        window.location.href = "admin.html";
+      } else {
+        window.location.href = "cliente.html";
+      }
+    }, 350);
+  });
+}
