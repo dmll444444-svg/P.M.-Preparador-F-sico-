@@ -20,6 +20,7 @@ const patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
 let completedSessions = JSON.parse(localStorage.getItem("completedSessions")) || [];
 
 const currentPatient = patients.find(patient => patient.nickname === currentUser.nickname);
+const currentClient = currentPatient;
 
 if (!currentPatient) {
   alert("No se han encontrado tus datos de cliente.");
@@ -563,6 +564,7 @@ function completeClientSession(sessionId) {
 
   alert("Sesión marcada como terminada. Ya cuenta en tu Dashboard y en Mis sesiones.");
   renderClientSection("proxima");
+}
 
 function renderSessionExerciseList(session) {
   function simpleModule(key, title) {
@@ -640,7 +642,7 @@ function isSessionCompletedForClient(session) {
 }
 
 function persistCompletedSessionsAndCloud() {
-  persistCompletedSessionsAndCloud();
+  localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
 
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
     window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
@@ -692,8 +694,13 @@ function renderNextSession() {
   `;
 }
 
+
 const clientSections = {
   inicio: {
+    title: "Dashboard Cliente PRO",
+    html: () => renderClientDashboard()
+  },
+  dashboard: {
     title: "Dashboard Cliente PRO",
     html: () => renderClientDashboard()
   },
@@ -736,37 +743,45 @@ const clientSections = {
 };
 
 function renderClientSection(key) {
-  const safeKey = clientSections[key] ? key : "inicio";
-  const section = clientSections[safeKey];
+  const sectionKey = clientSections[key] ? key : "inicio";
+  const section = clientSections[sectionKey];
+  if (!section || !clientSectionTitle || !clientContentArea) return;
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-}
 
-function setActiveClientNav(sectionKey, clickedTab = null) {
-  clientNavItems.forEach(item => {
-    item.classList.toggle("active", item.dataset.clientSection === sectionKey);
-  });
-
-  document.querySelectorAll(".client-mobile-tab").forEach(tab => {
-    if (clickedTab) {
-      tab.classList.toggle("active", tab === clickedTab);
-    } else {
-      tab.classList.toggle("active", tab.dataset.clientSection === sectionKey);
-    }
+  document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.clientSection === sectionKey || (sectionKey === "dashboard" && tab.dataset.clientSection === "inicio"));
   });
 }
 
 clientNavItems.forEach(item => {
   item.addEventListener("click", () => {
-    const sectionKey = item.dataset.clientSection || "inicio";
-    setActiveClientNav(sectionKey);
-    renderClientSection(sectionKey);
+    const key = item.dataset.clientSection || "inicio";
+    clientNavItems.forEach(nav => nav.classList.remove("active"));
+    item.classList.add("active");
+    renderClientSection(key);
   });
 });
 
+const logoutBtn = document.getElementById("clientLogoutBtn");
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
+  });
+}
+
 window.PM_MOBILE_NAV = function PM_MOBILE_NAV(sectionKey, clickedTab) {
-  const key = clientSections[sectionKey] ? sectionKey : "inicio";
-  setActiveClientNav(key, clickedTab || null);
+  const key = sectionKey || "inicio";
+
+  document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
+    tab.classList.toggle("active", clickedTab ? tab === clickedTab : tab.dataset.clientSection === key);
+  });
+
+  document.querySelectorAll(".client-nav-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.clientSection === key || (key === "dashboard" && item.dataset.clientSection === "inicio"));
+  });
+
   renderClientSection(key);
   try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
 };
@@ -778,23 +793,12 @@ document.addEventListener("click", function(event) {
   window.PM_MOBILE_NAV(tab.dataset.clientSection || "inicio", tab);
 });
 
-const logoutBtn = document.getElementById("clientLogoutBtn");
-if (logoutBtn) {
-  logoutBtn.addEventListener("click", () => {
-    localStorage.removeItem("currentUser");
-    window.location.href = "index.html";
-  });
-}
+renderClientSection("inicio");
 
 if (typeof isSessionCompletedForClient === "function") {
   window.isSessionCompletedForClient = isSessionCompletedForClient;
 }
 
 window.completeClientSession = completeClientSession;
-
-renderClientSection("inicio");
-setActiveClientNav("inicio");
-
-}
 
 })();
