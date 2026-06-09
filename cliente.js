@@ -103,7 +103,7 @@ function renderClientSessions() {
 
   return `
     <div class="sessions-list">
-      ${mySessions.slice().reverse().map(session => `
+      ${mySessions.map(session => `
         <article class="session-card">
           <div class="session-card-header">
             <span class="session-badge">Sesión nº ${session.numero}</span>
@@ -238,7 +238,7 @@ function getClientSessionTonnage(session) {
 
 function getClientWeeklyData() {
   refreshCompletedSessions();
-  const mySessions = getClientCompletedSessions()
+  const mySessions = sortSessionsOldestFirst(getClientCompletedSessions())
     .filter(session => session.microciclo)
     .sort((a, b) => Number(a.microciclo) - Number(b.microciclo));
 
@@ -380,8 +380,6 @@ function getClientDashboardStats() {
 
 function renderClientLatestSessions() {
   const mySessions = getClientCompletedSessions()
-    .slice()
-    .reverse()
     .slice(0, 4);
 
   if (mySessions.length === 0) {
@@ -516,11 +514,31 @@ function isSessionCompleted(sessionId) {
   );
 }
 
+function sortSessionsNewestFirst(list = []) {
+  return list.slice().sort((a, b) => {
+    const dateA = a.fecha || "";
+    const dateB = b.fecha || "";
+    if (dateA !== dateB) return dateB.localeCompare(dateA);
+    return Number(b.numero || 0) - Number(a.numero || 0);
+  });
+}
+
+function sortSessionsOldestFirst(list = []) {
+  return list.slice().sort((a, b) => {
+    const dateA = a.fecha || "";
+    const dateB = b.fecha || "";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    return Number(a.numero || 0) - Number(b.numero || 0);
+  });
+}
+
 function getClientCompletedSessions() {
   refreshCompletedSessions();
-  return sessions.filter(session =>
-    session.patientNickname === currentPatient.nickname &&
-    isSessionCompleted(session.id)
+  return sortSessionsNewestFirst(
+    sessions.filter(session =>
+      session.patientNickname === currentPatient.nickname &&
+      isSessionCompleted(session.id)
+    )
   );
 }
 
@@ -655,6 +673,162 @@ function persistCompletedSessionsAndCloud() {
   }
 }
 
+
+function getClientSessionRadarValues(session) {
+  const buckets = {
+    "TS": 0,
+    "TI": 0,
+    "Core": 0,
+    "Plyo": 0,
+    "Mov.": 0,
+    "Act.": 0
+  };
+
+  function addExercises(list = [], fallbackKey = "") {
+    list.forEach(item => {
+      if (!item || item.deleted) return;
+      if (!(item.nombre || item.series || item.repeticiones || item.url)) return;
+
+      const seriesNumber = Number(item.series);
+      const value = Number.isNaN(seriesNumber) || seriesNumber <= 0 ? 1 : seriesNumber;
+      const type = String(item.tipo || item.categoria || fallbackKey || "").toLowerCase();
+
+      if (fallbackKey === "Mov.") buckets["Mov."] += value;
+      else if (fallbackKey === "Act.") buckets["Act."] += value;
+      else if (type.includes("superior") || type === "ts" || type.includes("t. superior")) buckets["TS"] += value;
+      else if (type.includes("inferior") || type === "ti" || type.includes("t. inferior")) buckets["TI"] += value;
+      else if (type.includes("core")) buckets["Core"] += value;
+      else if (type.includes("plyo") || type.includes("plio")) buckets["Plyo"] += value;
+      else buckets["TS"] += value;
+    });
+  }
+
+  addExercises(session.modules?.movilidad || [], "Mov.");
+  addExercises(session.modules?.activacion || [], "Act.");
+
+  const blocks = session.modules?.principal?.blocks;
+  if (blocks) {
+    ["bloque1", "bloque2", "bloque3", "bloque4"].forEach(blockKey => {
+      addExercises(blocks[blockKey]?.exercises || [], "");
+    });
+  }
+
+  return Object.entries(buckets).map(([label, v]) => ({ label, v }));
+}
+
+function renderClientRadarProForSession(session) {
+  const items = getClientSessionRadarValues(session);
+  const total = items.reduce((sum, item) => sum + item.v, 0);
+
+  if (!session || total === 0) {
+    return "";
+  }
+
+  const maxValue = Math.max(...items.map(item => item.v), 1);
+  const cx = 200;
+  const cy = 200;
+  const radius = 118;
+
+  function axisPoint(index, customRadius = radius) {
+    const angle = (-90 + (360 / items.length) * index) * Math.PI / 180;
+    return {
+      x: cx + Math.cos(angle) * customRadius,
+      y: cy + Math.sin(angle) * customRadius,
+      angle
+    };
+  }
+
+  const dataPoints = items.map((item, index) => {
+    const labelPoint = axisPoint(index, radius + 38);
+    const normalized = Math.max(0, Math.min(1, item.v / maxValue));
+    const angle = axisPoint(index).angle;
+
+    return {
+      ...item,
+      x: cx + Math.cos(angle) * radius * normalized,
+      y: cy + Math.sin(angle) * radius * normalized,
+      labelX: labelPoint.x,
+      labelY: labelPoint.y
+    };
+  });
+
+  const polygon = dataPoints.map(point => `${point.x},${point.y}`).join(" ");
+
+  const grid = [0.25, 0.5, 0.75, 1].map(scale => {
+    const points = items.map((_, index) => {
+      const point = axisPoint(index, radius * scale);
+      return `${point.x},${point.y}`;
+    }).join(" ");
+
+    return `<polygon points="${points}" class="radar-grid-line" />`;
+  }).join("");
+
+  const axisLines = items.map((_, index) => {
+    const point = axisPoint(index, radius);
+    return `<line x1="${cx}" y1="${cy}" x2="${point.x}" y2="${point.y}" class="radar-axis-line" />`;
+  }).join("");
+
+  const strongest = items.reduce((best, item) => item.v > best.v ? item : best, { label: "-", v: -1 });
+
+  return `
+    <article class="client-pro-card client-next-radar-card">
+      <div class="module-panel-header">
+        <div>
+          <p class="eyebrow">Radar PRO</p>
+          <h3>Foco de la sesión nº ${session.numero}</h3>
+        </div>
+      </div>
+
+      <div class="radar-pro2-wrap client-radar-pro-wrap">
+        <svg class="radar-pro2-svg" viewBox="0 0 400 400" role="img" aria-label="Radar PRO sesión próxima">
+          <defs>
+            <radialGradient id="clientRadarGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#22c55e" stop-opacity="0.42"/>
+              <stop offset="100%" stop-color="#14b8a6" stop-opacity="0.05"/>
+            </radialGradient>
+            <filter id="clientRadarShadow">
+              <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#22c55e" flood-opacity="0.22"/>
+            </filter>
+          </defs>
+
+          ${grid}
+          ${axisLines}
+
+          <polygon points="${polygon}" class="radar-data-area client-radar-data-area" filter="url(#clientRadarShadow)" />
+          <polygon points="${polygon}" class="radar-data-line" />
+
+          ${dataPoints.map(point => `
+            <g class="radar-pro2-point client-radar-tooltip-point"
+               data-label="${point.label}"
+               data-value="${point.v}"
+               data-percent="${total ? Math.round((point.v / total) * 100) : 0}">
+<circle cx="${point.x}" cy="${point.y}" r="15" class="radar-point-hit" />
+              <circle cx="${point.x}" cy="${point.y}" r="7" class="radar-point-core" />
+            </g>
+          `).join("")}
+
+          ${dataPoints.map(point => `
+            <text x="${point.labelX}" y="${point.labelY}" text-anchor="middle" dominant-baseline="middle" class="radar-pro2-label">
+              ${point.label}
+            </text>
+          `).join("")}
+        </svg>
+
+        <div class="radar-pro2-focus-card">
+          <span>Mayor foco</span>
+          <strong>${strongest.label}</strong>
+          <small>${strongest.v < 0 ? 0 : strongest.v} series</small>
+        </div>
+</div>
+
+      <div class="client-next-radar-summary">
+        ${items.map(item => `<span>${item.label}: <strong>${item.v}</strong></span>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
+
 function renderNextSession() {
   const nextSession = getClientPendingSessions()[0];
 
@@ -668,6 +842,7 @@ function renderNextSession() {
   }
 
   return `
+    ${renderClientRadarProForSession(nextSession)}
     <article class="client-next-session-card">
       <div class="session-card-header">
         <span class="session-badge">Sesión nº ${nextSession.numero}</span>
@@ -793,6 +968,14 @@ document.addEventListener("click", function(event) {
   window.PM_MOBILE_NAV(tab.dataset.clientSection || "inicio", tab);
 });
 
+  const clientHeaderLogoutBtn = document.getElementById("clientHeaderLogoutBtn");
+  if (clientHeaderLogoutBtn) {
+    clientHeaderLogoutBtn.addEventListener("click", () => {
+      localStorage.removeItem("currentUser");
+      window.location.href = "index.html";
+    });
+  }
+
 renderClientSection("inicio");
 
 if (typeof isSessionCompletedForClient === "function") {
@@ -801,4 +984,82 @@ if (typeof isSessionCompletedForClient === "function") {
 
 window.completeClientSession = completeClientSession;
 
+
+// Radar PRO: tooltip flotante estilo tarjeta PM siguiendo el cursor
+(function setupClientRadarMouseTooltip() {
+  if (window.__PM_RADAR_MOUSE_TOOLTIP_READY__) return;
+  window.__PM_RADAR_MOUSE_TOOLTIP_READY__ = true;
+
+  const tooltip = document.createElement("div");
+  tooltip.className = "radar-mouse-tooltip radar-mouse-tooltip-pro";
+  tooltip.innerHTML = `
+    <span>Categoría</span>
+    <strong>-</strong>
+    <p>- series · -%</p>
+  `;
+  document.body.appendChild(tooltip);
+
+  function moveTooltip(event) {
+    const offsetX = 18;
+    const offsetY = 18;
+    const tooltipWidth = tooltip.offsetWidth || 170;
+    const tooltipHeight = tooltip.offsetHeight || 92;
+
+    let left = event.pageX + offsetX;
+    let top = event.pageY + offsetY;
+
+    const maxLeft = window.scrollX + window.innerWidth - tooltipWidth - 12;
+    const maxTop = window.scrollY + window.innerHeight - tooltipHeight - 12;
+
+    if (left > maxLeft) left = event.pageX - tooltipWidth - offsetX;
+    if (top > maxTop) top = event.pageY - tooltipHeight - offsetY;
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
+
+  function showTooltip(event, point) {
+    const label = point.dataset.label || "-";
+    const value = point.dataset.value || "0";
+    const percent = point.dataset.percent || "0";
+
+    tooltip.querySelector("span").textContent = "Categoría";
+    tooltip.querySelector("strong").textContent = label;
+    tooltip.querySelector("p").textContent = `${value} series · ${percent}%`;
+
+    document.querySelectorAll(".client-radar-tooltip-point").forEach(item => item.classList.remove("active"));
+    point.classList.add("active");
+
+    moveTooltip(event);
+    tooltip.classList.add("show");
+  }
+
+  document.addEventListener("pointermove", (event) => {
+    const point = event.target.closest(".client-radar-tooltip-point");
+    if (!point) return;
+    moveTooltip(event);
+  });
+
+  document.addEventListener("pointerover", (event) => {
+    const point = event.target.closest(".client-radar-tooltip-point");
+    if (!point) return;
+    showTooltip(event, point);
+  });
+
+  document.addEventListener("click", (event) => {
+    const point = event.target.closest(".client-radar-tooltip-point");
+    if (!point) return;
+    showTooltip(event, point);
+  });
+
+  document.addEventListener("pointerout", (event) => {
+    const point = event.target.closest(".client-radar-tooltip-point");
+    if (!point) return;
+
+    point.classList.remove("active");
+    tooltip.classList.remove("show");
+  });
 })();
+
+})();
+

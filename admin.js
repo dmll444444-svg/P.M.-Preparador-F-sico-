@@ -457,7 +457,7 @@ function renderFilesList(filterNickname = "") {
 
         <div>
           <div class="file-card-header">
-            <span class="file-type">${item.category}</span>
+            <span class="file-type">${getLibraryCategories(item).join(" · ") || "Sin categoría"}</span>
             <span class="file-date">${item.date}</span>
           </div>
 
@@ -2146,17 +2146,43 @@ function editSession(sessionId) {
 
 
 
+
+function getLibraryCategories(item = {}) {
+  if (Array.isArray(item.categories) && item.categories.length) {
+    return item.categories;
+  }
+  if (item.category) return [item.category];
+  return [];
+}
+
+function libraryHasCategory(item = {}, category = "") {
+  if (!category) return true;
+  return getLibraryCategories(item).includes(category);
+}
+
+function getSelectedLibraryCategories() {
+  return Array.from(document.querySelectorAll('input[name="libraryCategories"]:checked'))
+    .map(input => input.value);
+}
+
+function renderLibraryCategoryBadges(item = {}) {
+  const categories = getLibraryCategories(item);
+  if (!categories.length) return `<span>Sin categoría</span>`;
+  return categories.map(category => `<span>${category}</span>`).join("");
+}
+
 function libraryOptions(category = "") {
   return exerciseLibrary
-    .filter(item => !category || item.category === category)
+    .filter(item => libraryHasCategory(item, category))
     .map(item => `<option value="${item.name}"></option>`)
     .join("");
 }
 
 function findLibraryExercise(name, category = "") {
+  const normalizedName = String(name || "").toLowerCase();
   return exerciseLibrary.find(item =>
-    item.name.toLowerCase() === name.toLowerCase() &&
-    (!category || item.category === category)
+    String(item.name || "").toLowerCase() === normalizedName &&
+    libraryHasCategory(item, category)
   );
 }
 
@@ -2173,13 +2199,14 @@ const bibliotecaHTML = `
         <input id="libraryName" type="text" placeholder="Ej: Cat Camel, Sentadilla, Drop Jump..." required />
       </div>
 
-      <div>
-        <label for="libraryCategory">Categoría</label>
-        <select id="libraryCategory" required>
-          <option value="Movilidad">Movilidad</option>
-          <option value="Activación">Activación</option>
-          <option value="Sesión Principal">Sesión Principal</option>
-        </select>
+      <div class="field-full">
+        <label>Categorías del ejercicio</label>
+        <div class="library-category-checks" id="libraryCategoryChecks">
+          <label><input type="checkbox" name="libraryCategories" value="Movilidad" /> <span>Movilidad</span></label>
+          <label><input type="checkbox" name="libraryCategories" value="Activación" /> <span>Activación</span></label>
+          <label><input type="checkbox" name="libraryCategories" value="Sesión Principal" /> <span>Sesión Principal</span></label>
+        </div>
+        <small class="form-hint">Puedes marcar varias. El ejercicio aparecerá en creación de sesiones en todas las categorías marcadas.</small>
       </div>
 
       <div>
@@ -2222,7 +2249,7 @@ function renderLibraryList() {
   const filter = document.getElementById("libraryFilter");
   if (!list) return;
 
-  const visible = exerciseLibrary.filter(item => !filter?.value || item.category === filter.value);
+  const visible = exerciseLibrary.filter(item => libraryHasCategory(item, filter?.value || ""));
 
   if (visible.length === 0) {
     list.innerHTML = `<p>No hay ejercicios en la biblioteca todavía.</p>`;
@@ -2232,12 +2259,13 @@ function renderLibraryList() {
   list.innerHTML = visible.map(item => `
     <article class="library-card">
       <div class="library-card-header">
-        <span class="file-type">${item.category}</span>
+        <span class="file-type">${getLibraryCategories(item).join(" · ") || "Sin categoría"}</span>
         <span class="history-date">${item.type || "-"}</span>
       </div>
       <h3>${item.name}</h3>
       <p>${item.description || "Sin descripción."}</p>
       <div class="patient-tags">
+        ${renderLibraryCategoryBadges(item)}
         ${item.url ? `<span>URL guardada</span>` : `<span>Sin URL</span>`}
       </div>
       <div class="file-actions">
@@ -2269,10 +2297,18 @@ function bindLibraryForm() {
     event.preventDefault();
 
     const editingId = document.getElementById("libraryEditingId").value;
+    const selectedCategories = getSelectedLibraryCategories();
+
+    if (selectedCategories.length === 0) {
+      alert("Marca al menos una categoría.");
+      return;
+    }
+
     const payload = {
       id: editingId || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
       name: document.getElementById("libraryName").value.trim(),
-      category: document.getElementById("libraryCategory").value,
+      category: selectedCategories[0],
+      categories: selectedCategories,
       type: document.getElementById("libraryType").value.trim(),
       url: document.getElementById("libraryUrl").value.trim(),
       description: document.getElementById("libraryDescription").value.trim()
@@ -2280,8 +2316,8 @@ function bindLibraryForm() {
 
     const duplicated = exerciseLibrary.some(item =>
       item.name.toLowerCase() === payload.name.toLowerCase() &&
-      item.category === payload.category &&
-      item.id !== editingId
+      item.id !== editingId &&
+      getLibraryCategories(item).some(category => selectedCategories.includes(category))
     );
 
     if (duplicated) {
@@ -2297,6 +2333,7 @@ function bindLibraryForm() {
 
     localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
     form.reset();
+    document.querySelectorAll('input[name="libraryCategories"]').forEach(input => input.checked = false);
     document.getElementById("libraryEditingId").value = "";
     document.getElementById("librarySubmitBtn").textContent = "Guardar ejercicio";
     renderLibraryList();
@@ -2313,7 +2350,10 @@ function editLibraryExercise(id) {
   setTimeout(() => {
     document.getElementById("libraryEditingId").value = item.id;
     document.getElementById("libraryName").value = item.name;
-    document.getElementById("libraryCategory").value = item.category;
+    const itemCategories = getLibraryCategories(item);
+    document.querySelectorAll('input[name="libraryCategories"]').forEach(input => {
+      input.checked = itemCategories.includes(input.value);
+    });
     document.getElementById("libraryType").value = item.type || "";
     document.getElementById("libraryUrl").value = item.url || "";
     document.getElementById("libraryDescription").value = item.description || "";
@@ -2321,6 +2361,9 @@ function editLibraryExercise(id) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, 0);
 }
+
+window.editLibraryExercise = editLibraryExercise;
+window.deleteLibraryExercise = deleteLibraryExercise;
 
 function deleteLibraryExercise(id) {
   const item = exerciseLibrary.find(exercise => exercise.id === id);
@@ -4233,4 +4276,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 window.manualSupabaseSyncFromSystem = manualSupabaseSyncFromSystem;
+
+
+// PM FIX: logout admin global para botón de cabecera
+window.PM_ADMIN_LOGOUT = function PM_ADMIN_LOGOUT() {
+  localStorage.removeItem("currentUser");
+  window.location.href = "index.html";
+};
+
+document.addEventListener("click", function(event) {
+  const btn = event.target.closest("#adminHeaderLogoutBtn");
+  if (!btn) return;
+  event.preventDefault();
+  window.PM_ADMIN_LOGOUT();
+});
+
 })();

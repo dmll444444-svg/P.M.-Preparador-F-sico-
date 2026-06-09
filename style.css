@@ -3180,3 +3180,254 @@ button.pwa-install-btn {
   .client-mobile-tab small { display: block !important; font-size: 10px !important; line-height: 1 !important; white-space: nowrap !important; pointer-events: none !important; }
   .client-mobile-tab.active { background: linear-gradient(135deg, rgba(34,197,94,.38), rgba(20,184,166,.26)) !important; color: #f8fafc !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 24px rgba(34,197,94,.14) !important; }
 }
+
+
+
+/* =========================================================
+   PM FIX · Orden sesiones cliente + Radar PRO en sesión próxima
+   ========================================================= */
+
+.client-next-radar-card {
+  margin-bottom: 18px;
+}
+
+.client-radar-pro-wrap {
+  min-height: 360px;
+}
+
+.client-radar-data-area {
+  fill: url(#clientRadarGlow);
+}
+
+.client-next-radar-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.client-next-radar-summary span {
+  border-radius: 999px;
+  padding: 8px 10px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.client-next-radar-summary strong {
+  color: #86efac;
+}
+
+@media (max-width: 800px) {
+  .client-next-radar-card {
+    margin-bottom: 14px;
+  }
+
+  .client-radar-pro-wrap {
+    min-height: 300px;
+  }
+
+  .client-next-radar-card .radar-pro2-svg {
+    width: min(100%, 340px);
+  }
+
+  .client-next-radar-summary {
+    justify-content: center;
+  }
+}
+
+
+
+
+
+
+/* =========================================================
+   PM Radar PRO · Tooltip flotante estilo tarjeta PRO
+   ========================================================= */
+
+.client-radar-tooltip-box {
+  display: none !important;
+}
+
+.client-radar-tooltip-point {
+  cursor: pointer;
+  outline: none;
+}
+
+.client-radar-tooltip-point .radar-point-hit,
+.client-radar-tooltip-point .radar-point-core {
+  transition: transform .18s ease, fill .18s ease, stroke .18s ease, filter .18s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.client-radar-tooltip-point:hover .radar-point-hit,
+.client-radar-tooltip-point.active .radar-point-hit {
+  fill: rgba(34, 197, 94, 0.34);
+  stroke: rgba(134, 239, 172, 0.95);
+  transform: scale(1.25);
+}
+
+.client-radar-tooltip-point:hover .radar-point-core,
+.client-radar-tooltip-point.active .radar-point-core {
+  fill: #22c55e;
+  filter: drop-shadow(0 0 18px rgba(34, 197, 94, 0.85));
+  transform: scale(1.25);
+}
+
+.radar-mouse-tooltip,
+.radar-mouse-tooltip-pro {
+  position: absolute;
+  z-index: 2147483647;
+  pointer-events: none;
+  min-width: 170px;
+  padding: 13px 15px;
+  border-radius: 18px;
+  background: rgba(2, 6, 23, 0.94);
+  border: 1px solid rgba(34, 197, 94, 0.36);
+  box-shadow:
+    0 18px 40px rgba(0,0,0,.34),
+    0 0 24px rgba(34,197,94,.14);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  transform: translateY(8px) scale(.98);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.radar-mouse-tooltip.show,
+.radar-mouse-tooltip-pro.show {
+  opacity: .96;
+  transform: translateY(0) scale(1);
+}
+
+.radar-mouse-tooltip span,
+.radar-mouse-tooltip-pro span {
+  display: block;
+  color: #86efac;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 4px;
+}
+
+.radar-mouse-tooltip strong,
+.radar-mouse-tooltip-pro strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 20px;
+  font-weight: 950;
+  margin-bottom: 3px;
+}
+
+.radar-mouse-tooltip p,
+.radar-mouse-tooltip-pro p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+
+
+
+
+
+
+
+
+
+/* =========================================================
+   PM FIX FINAL · Admin logout activo + sidebar alineada
+   ========================================================= */
+
+.header-user-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
+
+.header-user-text > span {
+  display: block;
+  line-height: 1.05;
+}
+
+.header-logout-pill {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(127, 29, 29, 0.88));
+  color: #fff1f2;
+  border-radius: 12px;
+  padding: 9px 15px;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow:
+    0 12px 28px rgba(127, 29, 29, 0.28),
+    inset 0 1px 0 rgba(255,255,255,.12);
+  transition: transform .16s ease, filter .16s ease, border-color .16s ease;
+}
+
+.header-logout-pill:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  border-color: rgba(248, 113, 113, 0.62);
+}
+
+.admin-logout-pill {
+  font-size: 13px;
+  padding: 9px 15px;
+}
+
+.admin-user {
+  align-items: center;
+  gap: 11px;
+}
+
+.sidebar .logout,
+.admin-sidebar .logout,
+.client-sidebar .logout,
+#logoutBtn,
+#clientLogoutBtn {
+  display: none !important;
+}
+
+/* Sidebar: redondeada y a altura visual completa del panel derecho */
+.admin-sidebar,
+.client-sidebar,
+aside.admin-sidebar,
+aside.client-sidebar {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  min-height: calc(100vh - 12px);
+  height: calc(100vh - 12px);
+  margin-bottom: 12px;
+  border-bottom-right-radius: 30px;
+  overflow: hidden;
+  box-shadow: 18px 0 50px rgba(0,0,0,.20);
+}
+
+@media (max-width: 800px), (pointer: coarse) and (max-width: 1024px) {
+  .admin-sidebar,
+  .client-sidebar,
+  aside.admin-sidebar,
+  aside.client-sidebar {
+    position: fixed;
+    height: auto;
+    min-height: 0;
+    margin-bottom: 0;
+  }
+
+  .header-logout-pill {
+    padding: 7px 12px !important;
+    font-size: 11px !important;
+  }
+}
