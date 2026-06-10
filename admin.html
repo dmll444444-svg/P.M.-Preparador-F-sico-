@@ -47,7 +47,10 @@
           <h1 id="sectionTitle">Paciente</h1>
         </div>
         <div class="admin-user">
-          <span id="adminName">Administrador</span>
+          <div class="admin-user-stack">
+            <span id="adminName">Administrador</span>
+            <button id="adminHeaderLogoutBtn" class="admin-header-logout-btn" type="button" onclick="localStorage.removeItem('currentUser'); window.location.href='index.html';">Cerrar sesión</button>
+          </div>
           <div class="avatar">A</div>
         </div>
       </header>

@@ -4206,12 +4206,16 @@ navItems.forEach(item => {
   });
 });
 
-document.getElementById("logoutBtn").addEventListener("click", () => {
-  localStorage.removeItem("currentUser");
-  window.location.href = "index.html";
-});
+const sidebarLogoutBtn = document.getElementById("logoutBtn");
+if (sidebarLogoutBtn) {
+  sidebarLogoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
+  });
+}
 
 updateCounters();
+navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === "paciente"));
 renderSection("paciente");
 
 
@@ -4278,17 +4282,149 @@ document.addEventListener("DOMContentLoaded", () => {
 window.manualSupabaseSyncFromSystem = manualSupabaseSyncFromSystem;
 
 
-// PM FIX: logout admin global para botón de cabecera
+
+
+// PM FIX DEFINITIVO: insertar botón cerrar sesión bajo Administrador en cabecera
+function ensureAdminHeaderLogoutButton() {
+  const adminUser = document.querySelector(".admin-user");
+  if (!adminUser) return;
+
+  const avatar = adminUser.querySelector(".avatar");
+
+  let wrapper = adminUser.querySelector(".admin-header-user-text");
+  if (!wrapper) {
+    const oldName = adminUser.querySelector("#adminHeaderName, .admin-header-name, span");
+    const labelText = oldName ? oldName.textContent.trim() : "Administrador";
+    if (oldName) oldName.remove();
+
+    wrapper = document.createElement("div");
+    wrapper.className = "header-user-text admin-header-user-text";
+
+    const label = document.createElement("span");
+    label.className = "admin-header-name";
+    label.id = "adminHeaderName";
+    label.textContent = labelText || "Administrador";
+
+    wrapper.appendChild(label);
+
+    if (avatar) adminUser.insertBefore(wrapper, avatar);
+    else adminUser.appendChild(wrapper);
+  }
+
+  let btn = document.getElementById("adminHeaderLogoutBtn");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "adminHeaderLogoutBtn";
+    btn.className = "header-logout-pill admin-logout-pill";
+    btn.type = "button";
+    btn.textContent = "Cerrar sesión";
+    wrapper.appendChild(btn);
+  }
+
+  btn.onclick = function () {
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
+  };
+}
+
 window.PM_ADMIN_LOGOUT = function PM_ADMIN_LOGOUT() {
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 };
 
+document.addEventListener("DOMContentLoaded", ensureAdminHeaderLogoutButton);
+setTimeout(ensureAdminHeaderLogoutButton, 0);
+setTimeout(ensureAdminHeaderLogoutButton, 250);
 document.addEventListener("click", function(event) {
   const btn = event.target.closest("#adminHeaderLogoutBtn");
   if (!btn) return;
   event.preventDefault();
   window.PM_ADMIN_LOGOUT();
 });
+
+
+
+// PM FIX FINAL: botón logout admin + KPIs activos robustos
+function pmRefreshAdminRuntimeData() {
+  try { patients = JSON.parse(localStorage.getItem("patients") || "[]"); } catch (_) { patients = []; }
+  try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
+  try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
+
+  const p = document.getElementById("patientCounter");
+  const h = document.getElementById("historyCounter");
+  const f = document.getElementById("fileCounter");
+
+  if (p) p.textContent = patients.length;
+  if (h) h.textContent = histories.length;
+  if (f) f.textContent = patientFiles.length;
+}
+
+function pmBindAdminHeaderLogout() {
+  const btn = document.getElementById("adminHeaderLogoutBtn");
+  if (btn) {
+    btn.onclick = function () {
+      localStorage.removeItem("currentUser");
+      window.location.href = "index.html";
+    };
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  pmBindAdminHeaderLogout();
+  pmRefreshAdminRuntimeData();
+  setTimeout(pmRefreshAdminRuntimeData, 250);
+  setTimeout(pmRefreshAdminRuntimeData, 900);
+});
+
+setTimeout(() => {
+  pmBindAdminHeaderLogout();
+  pmRefreshAdminRuntimeData();
+}, 0);
+
+if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
+  window.PPF_SUPABASE_READY.then(() => {
+    pmRefreshAdminRuntimeData();
+    if (typeof renderPatientList === "function") renderPatientList();
+  }).catch(() => {});
+}
+
+
+
+// PM FIX: KPI pacientes y arranque directo en pestaña Paciente
+async function pmRefreshPatientsKpiAndPage() {
+  try {
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
+      await window.PPF_SUPABASE.pull();
+    }
+  } catch (error) {
+    console.warn("No se pudo refrescar Supabase para KPI pacientes:", error);
+  }
+
+  try { patients = JSON.parse(localStorage.getItem("patients") || "[]"); } catch (_) { patients = []; }
+  try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
+  try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
+
+  if (patientCounter) patientCounter.textContent = patients.length;
+  if (historyCounter) historyCounter.textContent = histories.length;
+  if (fileCounter) fileCounter.textContent = patientFiles.length;
+
+  if (document.querySelector('.nav-item.active')?.dataset.section === "paciente") {
+    if (typeof renderPatientList === "function") renderPatientList();
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === "paciente"));
+  if (typeof renderSection === "function") renderSection("paciente");
+  pmRefreshPatientsKpiAndPage();
+});
+
+setTimeout(pmRefreshPatientsKpiAndPage, 250);
+setTimeout(pmRefreshPatientsKpiAndPage, 1000);
+setTimeout(pmRefreshPatientsKpiAndPage, 2500);
+
+if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
+  window.PPF_SUPABASE_READY.then(pmRefreshPatientsKpiAndPage).catch(() => {});
+}
 
 })();

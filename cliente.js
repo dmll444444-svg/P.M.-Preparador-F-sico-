@@ -967,15 +967,6 @@ document.addEventListener("click", function(event) {
   event.preventDefault();
   window.PM_MOBILE_NAV(tab.dataset.clientSection || "inicio", tab);
 });
-
-  const clientHeaderLogoutBtn = document.getElementById("clientHeaderLogoutBtn");
-  if (clientHeaderLogoutBtn) {
-    clientHeaderLogoutBtn.addEventListener("click", () => {
-      localStorage.removeItem("currentUser");
-      window.location.href = "index.html";
-    });
-  }
-
 renderClientSection("inicio");
 
 if (typeof isSessionCompletedForClient === "function") {
@@ -1059,6 +1050,21 @@ window.completeClientSession = completeClientSession;
     point.classList.remove("active");
     tooltip.classList.remove("show");
   });
+
+
+// PM FIX: cerrar sesión cliente cabecera
+function pmClientLogout() {
+  localStorage.removeItem("currentUser");
+  window.location.href = "index.html";
+}
+
+document.addEventListener("click", function(event) {
+  const btn = event.target.closest("#clientHeaderLogoutBtn");
+  if (!btn) return;
+  event.preventDefault();
+  pmClientLogout();
+});
+
 })();
 
 })();

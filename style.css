@@ -3341,93 +3341,209 @@ button.pwa-install-btn {
 
 
 /* =========================================================
-   PM FIX FINAL · Admin logout activo + sidebar alineada
+   PM FIX DEFINITIVO · Botón logout Admin visible
    ========================================================= */
 
-.header-user-text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 7px;
-  min-width: 0;
-}
-
-.header-user-text > span {
-  display: block;
-  line-height: 1.05;
-}
-
-.header-logout-pill {
-  appearance: none;
-  -webkit-appearance: none;
-  border: 1px solid rgba(248, 113, 113, 0.38);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(127, 29, 29, 0.88));
-  color: #fff1f2;
-  border-radius: 12px;
-  padding: 9px 15px;
-  font-size: 13px;
-  font-weight: 950;
-  line-height: 1;
-  cursor: pointer;
-  box-shadow:
-    0 12px 28px rgba(127, 29, 29, 0.28),
-    inset 0 1px 0 rgba(255,255,255,.12);
-  transition: transform .16s ease, filter .16s ease, border-color .16s ease;
-}
-
-.header-logout-pill:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.08);
-  border-color: rgba(248, 113, 113, 0.62);
-}
-
-.admin-logout-pill {
-  font-size: 13px;
-  padding: 9px 15px;
-}
-
 .admin-user {
-  align-items: center;
-  gap: 11px;
+  display: flex !important;
+  align-items: center !important;
+  gap: 11px !important;
 }
 
-.sidebar .logout,
-.admin-sidebar .logout,
-.client-sidebar .logout,
+.admin-header-user-text,
+.header-user-text.admin-header-user-text {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  min-width: 0 !important;
+}
+
+.admin-header-name,
+.admin-header-user-text > span {
+  color: #f8fafc !important;
+  font-weight: 950 !important;
+  line-height: 1.05 !important;
+}
+
+#adminHeaderLogoutBtn,
+.admin-logout-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: 1px solid rgba(248, 113, 113, 0.42) !important;
+  background: linear-gradient(135deg, #ef4444, #7f1d1d) !important;
+  color: #fff1f2 !important;
+  border-radius: 12px !important;
+  padding: 9px 15px !important;
+  font-size: 13px !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  box-shadow: 0 12px 28px rgba(127, 29, 29, 0.30), inset 0 1px 0 rgba(255,255,255,.12) !important;
+}
+
+#adminHeaderLogoutBtn:hover {
+  filter: brightness(1.08) !important;
+  transform: translateY(-1px) !important;
+}
+
 #logoutBtn,
-#clientLogoutBtn {
+.admin-sidebar .logout,
+.sidebar .logout {
   display: none !important;
 }
 
-/* Sidebar: redondeada y a altura visual completa del panel derecho */
+
+
+
+
+/* =========================================================
+   PM FIX · Sidebar igual de larga que el panel derecho
+   ========================================================= */
+
+/* El layout manda: la barra lateral se estira con el contenido real */
+.admin-layout,
+.client-layout {
+  display: flex !important;
+  align-items: stretch !important;
+  min-height: 100vh !important;
+}
+
+/* Main y sidebar comparten altura de la pestaña activa */
+.admin-main,
+.client-main {
+  flex: 1 1 auto !important;
+  min-height: 100vh !important;
+}
+
+.sidebar,
 .admin-sidebar,
 .client-sidebar,
+aside.sidebar,
 aside.admin-sidebar,
 aside.client-sidebar {
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  min-height: calc(100vh - 12px);
-  height: calc(100vh - 12px);
-  margin-bottom: 12px;
-  border-bottom-right-radius: 30px;
-  overflow: hidden;
-  box-shadow: 18px 0 50px rgba(0,0,0,.20);
+  position: relative !important;
+  align-self: stretch !important;
+  height: auto !important;
+  min-height: 100vh !important;
+  max-height: none !important;
+  margin-bottom: 0 !important;
+  border-bottom-right-radius: 30px !important;
+  overflow: hidden !important;
+}
+
+/* El contenido dinámico empuja el layout y la sidebar baja con él */
+.content-card,
+#contentArea,
+#clientContentArea {
+  min-height: 0 !important;
+}
+
+/* En pantallas grandes, nada de sticky/fixed que corte la barra */
+@media (min-width: 801px) {
+  .sidebar,
+  .admin-sidebar,
+  .client-sidebar,
+  aside.sidebar,
+  aside.admin-sidebar,
+  aside.client-sidebar {
+    position: relative !important;
+    top: auto !important;
+    bottom: auto !important;
+  }
+}
+
+/* En móvil se mantiene el comportamiento app: sidebar oculta/compacta */
+@media (max-width: 800px), (pointer: coarse) and (max-width: 1024px) {
+  .admin-layout,
+  .client-layout {
+    display: block !important;
+    min-height: 100vh !important;
+  }
+
+  .client-sidebar {
+    display: none !important;
+  }
+
+  .sidebar,
+  .admin-sidebar,
+  aside.sidebar,
+  aside.admin-sidebar {
+    min-height: auto !important;
+    height: auto !important;
+  }
+}
+
+
+/* =========================================================
+   PM FIX · Botón cerrar sesión Cliente elegante
+   ========================================================= */
+
+.client-top-user {
+  display: flex !important;
+  align-items: center !important;
+  gap: 11px !important;
+}
+
+.client-user-stack {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  min-width: 0 !important;
+}
+
+.client-user-stack #clientHeaderName {
+  display: block !important;
+  color: #f8fafc !important;
+  font-weight: 950 !important;
+  line-height: 1.05 !important;
+  max-width: 210px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#clientHeaderLogoutBtn,
+.client-header-logout-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: 1px solid rgba(248, 113, 113, 0.34) !important;
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.34), rgba(69, 10, 10, 0.22)) !important;
+  color: #fecaca !important;
+  border-radius: 999px !important;
+  padding: 7px 12px !important;
+  font-size: 11px !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  box-shadow: 0 10px 22px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.06) !important;
+  transition: transform .16s ease, filter .16s ease, border-color .16s ease !important;
+}
+
+#clientHeaderLogoutBtn:hover,
+.client-header-logout-btn:hover {
+  transform: translateY(-1px) !important;
+  filter: brightness(1.08) !important;
+  border-color: rgba(248, 113, 113, 0.55) !important;
 }
 
 @media (max-width: 800px), (pointer: coarse) and (max-width: 1024px) {
-  .admin-sidebar,
-  .client-sidebar,
-  aside.admin-sidebar,
-  aside.client-sidebar {
-    position: fixed;
-    height: auto;
-    min-height: 0;
-    margin-bottom: 0;
+  .client-user-stack #clientHeaderName {
+    max-width: 145px !important;
   }
 
-  .header-logout-pill {
-    padding: 7px 12px !important;
-    font-size: 11px !important;
+  #clientHeaderLogoutBtn,
+  .client-header-logout-btn {
+    padding: 6px 10px !important;
+    font-size: 10px !important;
   }
 }
