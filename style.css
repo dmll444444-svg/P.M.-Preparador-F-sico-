@@ -3547,3 +3547,167 @@ aside.client-sidebar {
     font-size: 10px !important;
   }
 }
+
+
+
+/* =========================================================
+   PM FIX · Valoraciones editar + PDF
+   ========================================================= */
+
+.valuation-card .file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.valuation-card .secondary-btn {
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+  border-radius: 12px;
+  padding: 10px 13px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.valuation-card .secondary-btn:hover {
+  background: rgba(34, 197, 94, 0.20);
+  border-color: rgba(34, 197, 94, 0.42);
+}
+
+
+
+/* =========================================================
+   PM Valoraciones PRO · Gráficas numéricas Fase 1
+   ========================================================= */
+
+.valuation-charts-panel {
+  margin-top: 26px;
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.58);
+  border: 1px solid rgba(34, 197, 94, 0.16);
+}
+
+.valuation-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.valuation-chart-card {
+  border-radius: 22px;
+  padding: 18px;
+  background: rgba(2, 6, 23, 0.58);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.valuation-chart-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.valuation-chart-head span {
+  color: #86efac;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.valuation-chart-head h4 {
+  margin: 5px 0 3px;
+  color: #f8fafc;
+  font-size: 1.05rem;
+}
+
+.valuation-chart-head p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: .82rem;
+  font-weight: 750;
+}
+
+.valuation-chart-head strong {
+  color: #bbf7d0;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.valuation-line-chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.valuation-chart-axis {
+  stroke: rgba(148, 163, 184, 0.22);
+  stroke-width: 1;
+}
+
+.valuation-chart-line {
+  stroke: #22c55e;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.28));
+}
+
+.valuation-chart-point circle {
+  fill: #86efac;
+  stroke: #052e16;
+  stroke-width: 2;
+}
+
+.valuation-chart-point text {
+  fill: #e2e8f0;
+  font-size: 12px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: rgba(2, 6, 23, 0.92);
+  stroke-width: 4px;
+}
+
+.valuation-chart-date {
+  fill: #94a3b8;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.valuation-chart-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.valuation-chart-footer span {
+  border-radius: 999px;
+  padding: 7px 9px;
+  background: rgba(34, 197, 94, 0.10);
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  color: #cbd5e1;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.valuation-chart-footer b {
+  color: #86efac;
+}
+
+.valuation-chart-empty {
+  margin: 12px 0 0;
+  color: #94a3b8;
+  font-weight: 800;
+}
+
+@media (max-width: 1100px) {
+  .valuation-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}

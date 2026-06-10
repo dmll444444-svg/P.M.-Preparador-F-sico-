@@ -5,17 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Panel Cliente</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="icon" href="favicon.ico?v=2" />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2" />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#22c55e" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 </head>
 <body>
   <div class="client-layout">
     <aside class="client-sidebar">
       <div class="sidebar-brand">
-        <div class="logo small">PM</div>
+        <div class="logo small">PF</div>
         <div>
           <h2>Cliente</h2>
           <span>Área personal</span>
@@ -23,25 +18,24 @@
       </div>
 
       <nav class="sidebar-nav">
-        <button class="client-nav-item active" data-client-section="inicio"><span>📊</span> Dashboard</button>
+        <button class="client-nav-item active" data-client-section="dashboard"><span>📊</span> Dashboard</button>
         <button class="client-nav-item" data-client-section="proxima"><span>🎯</span> Sesión próxima</button>
         <button class="client-nav-item" data-client-section="sesiones"><span>🏋️</span> Mis sesiones</button>
         <button class="client-nav-item" data-client-section="historial"><span>📁</span> Mi historial</button>
         <button class="client-nav-item" data-client-section="archivos"><span>🗂️</span> Mis archivos</button>
       </nav>
-</aside>
+
+      <button id="clientLogoutBtn" class="logout">Cerrar sesión</button>
+    </aside>
 
     <main class="client-main">
       <header class="admin-header">
         <div>
-          <p class="eyebrow">P.M. Preparador Físico</p>
+          <p class="eyebrow">Programa Preparador Físico</p>
           <h1 id="clientSectionTitle">Dashboard Cliente PRO</h1>
         </div>
-        <div class="admin-user client-top-user">
-          <div class="client-user-stack">
-            <span id="clientHeaderName">Cliente</span>
-            <button id="clientHeaderLogoutBtn" class="client-header-logout-btn" type="button">Cerrar sesión</button>
-          </div>
+        <div class="admin-user">
+          <span id="clientHeaderName">Cliente</span>
           <div class="avatar" id="clientAvatar">C</div>
         </div>
       </header>
@@ -50,35 +44,9 @@
     </main>
   </div>
 
-  <nav class="client-mobile-bottom-nav" aria-label="Navegación móvil cliente">
-    <button class="client-mobile-tab active" data-client-section="inicio" type="button">
-      <span>🏠</span>
-      <small>Inicio</small>
-    </button>
-    <button class="client-mobile-tab" data-client-section="proxima" type="button">
-      <span>📅</span>
-      <small>Sesión</small>
-    </button>
-    <button class="client-mobile-tab" data-client-section="sesiones" type="button">
-      <span>🏋️</span>
-      <small>Sesiones</small>
-    </button>
-    <button class="client-mobile-tab" data-client-section="archivos" type="button">
-      <span>📁</span>
-      <small>Archivos</small>
-    </button>
-    <button class="client-mobile-tab" data-client-section="perfil" type="button">
-      <span>👤</span>
-      <small>Perfil</small>
-    </button>
-  </nav>
-
-
-
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
   <script src="supabase-sync.js"></script>
   <script src="cliente.js"></script>
-<script src="pwa-register.js"></script>
 </body>
 </html>

@@ -5,22 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Panel Administrador</title>
   <link rel="stylesheet" href="style.css" />
-
-  <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#22c55e" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="PM Online" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <link rel="icon" href="favicon.ico?v=4" />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=4" />
 </head>
 <body>
   <div class="admin-layout">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="logo small">PM</div>
+        <div class="logo small">PF</div>
         <div>
           <h2>Admin</h2>
           <span>Panel principal</span>
@@ -38,19 +28,18 @@
         <button class="nav-item" data-section="valoraciones"><span>📊</span> Valoraciones</button>
               <button class="nav-item" data-section="sistema"><span>⚙️</span> Sistema</button>
       </nav>
-</aside>
+
+      <button id="logoutBtn" class="logout">Cerrar sesión</button>
+    </aside>
 
     <main class="admin-main">
       <header class="admin-header">
         <div>
-          <p class="eyebrow">P.M Preparador Físico Online</p>
+          <p class="eyebrow">Programa Preparador Físico</p>
           <h1 id="sectionTitle">Paciente</h1>
         </div>
         <div class="admin-user">
-          <div class="admin-user-stack">
-            <span id="adminName">Administrador</span>
-            <button id="adminHeaderLogoutBtn" class="admin-header-logout-btn" type="button" onclick="localStorage.removeItem('currentUser'); window.location.href='index.html';">Cerrar sesión</button>
-          </div>
+          <span id="adminName">Administrador</span>
           <div class="avatar">A</div>
         </div>
       </header>
@@ -69,6 +58,5 @@
   <script src="supabase-config.js"></script>
   <script src="supabase-sync.js"></script>
   <script src="admin.js"></script>
-  <script src="pwa-register.js"></script>
 </body>
 </html>

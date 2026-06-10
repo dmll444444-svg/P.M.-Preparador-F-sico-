@@ -28,6 +28,7 @@ let patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
 let valoraciones = JSON.parse(localStorage.getItem("valoraciones")) || [];
 let sessions = JSON.parse(localStorage.getItem("sessions")) || [];
 let editingSessionId = null;
+let editingValuationId = null;
 let exerciseLibrary = JSON.parse(localStorage.getItem("exerciseLibrary")) || [];
 
 const defaultExerciseLibrary = [
@@ -3676,9 +3677,9 @@ function escapeValuationHtml(value = "") {
   }[char]));
 }
 
-function valuationUnitOptions(selected = "cm") {
-  return ["cm", "segundos", "N", "N/Kg peso", "m/s"]
-    .map(unit => `<option value="${unit}" ${unit === selected ? "selected" : ""}>${unit}</option>`)
+function valuationUnitOptions(selected = "") {
+  return ["", "cm", "m", "kg", "segundos", "ms", "N", "N/Kg peso", "m/s", "%", "puntos"]
+    .map(unit => `<option value="${unit}" ${unit === selected ? "selected" : ""}>${unit || ""}</option>`)
     .join("");
 }
 
@@ -3721,6 +3722,155 @@ function refreshValuationNumbers() {
   });
 }
 
+
+function parseValuationNumber(value = "") {
+  const raw = String(value || "").trim().replace(",", ".");
+  if (!raw) return null;
+
+  const match = raw.match(/-?\d+(\.\d+)?/);
+  if (!match) return null;
+
+  const number = Number(match[0]);
+  return Number.isFinite(number) ? number : null;
+}
+
+function getValuationNumericValue(test = {}) {
+  const values = [test.intento1, test.intento2, test.intento3]
+    .map(parseValuationNumber)
+    .filter(value => value !== null);
+
+  if (!values.length) return null;
+
+  const sum = values.reduce((acc, value) => acc + value, 0);
+  return Number((sum / values.length).toFixed(2));
+}
+
+function getValuationChartGroups(filterNickname = "") {
+  const groups = {};
+
+  valoraciones
+    .filter(item => !filterNickname || item.patientNickname === filterNickname)
+    .slice()
+    .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .forEach(item => {
+      const patient = patients.find(p => p.nickname === item.patientNickname);
+      const patientName = patient ? patient.nombre : item.patientNickname;
+
+      (item.tests || []).forEach(test => {
+        const value = getValuationNumericValue(test);
+        const testName = String(test.nombre || "").trim();
+
+        if (!testName || value === null) return;
+
+        const unit = String(test.unidad || "").trim();
+        const key = `${item.patientNickname}__${testName.toLowerCase()}__${unit}`;
+
+        if (!groups[key]) {
+          groups[key] = {
+            patientNickname: item.patientNickname,
+            patientName,
+            testName,
+            unit,
+            points: []
+          };
+        }
+
+        groups[key].points.push({
+          fecha: item.fecha || "-",
+          value
+        });
+      });
+    });
+
+  return Object.values(groups)
+    .filter(group => group.points.length > 0)
+    .sort((a, b) => a.patientName.localeCompare(b.patientName, "es") || a.testName.localeCompare(b.testName, "es"));
+}
+
+function renderValuationMiniChart(group) {
+  const points = group.points;
+  const values = points.map(point => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const width = 520;
+  const height = 220;
+  const padX = 34;
+  const padY = 26;
+
+  const coords = points.map((point, index) => {
+    const x = points.length === 1
+      ? width / 2
+      : padX + (index * ((width - padX * 2) / (points.length - 1)));
+    const y = height - padY - (((point.value - min) / range) * (height - padY * 2));
+    return { ...point, x, y };
+  });
+
+  const polyline = coords.map(point => `${point.x},${point.y}`).join(" ");
+  const last = coords[coords.length - 1];
+  const first = coords[0];
+  const trend = last.value - first.value;
+  const trendLabel = trend > 0 ? `+${Number(trend.toFixed(2))}` : Number(trend.toFixed(2));
+
+  return `
+    <article class="valuation-chart-card">
+      <div class="valuation-chart-head">
+        <div>
+          <span>${escapeValuationHtml(group.patientName)}</span>
+          <h4>${escapeValuationHtml(group.testName)}</h4>
+          <p>${points.length} registro${points.length === 1 ? "" : "s"}${group.unit ? ` · ${escapeValuationHtml(group.unit)}` : ""}</p>
+        </div>
+        <strong>${escapeValuationHtml(String(last.value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
+      </div>
+
+      <svg class="valuation-line-chart" viewBox="0 0 ${width} ${height}" role="img">
+        <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="valuation-chart-axis" />
+        <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" class="valuation-chart-axis" />
+
+        <polyline points="${polyline}" class="valuation-chart-line" fill="none" />
+
+        ${coords.map(point => `
+          <g class="valuation-chart-point">
+            <title>${escapeValuationHtml(point.fecha)} · ${escapeValuationHtml(String(point.value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
+            <circle cx="${point.x}" cy="${point.y}" r="6"></circle>
+            <text x="${point.x}" y="${point.y - 12}" text-anchor="middle">${escapeValuationHtml(String(point.value))}</text>
+          </g>
+        `).join("")}
+
+        ${coords.map((point, index) => {
+          if (points.length > 6 && index !== 0 && index !== points.length - 1) return "";
+          return `<text x="${point.x}" y="${height - 6}" text-anchor="middle" class="valuation-chart-date">${escapeValuationHtml(point.fecha)}</text>`;
+        }).join("")}
+      </svg>
+
+      <div class="valuation-chart-footer">
+        <span>Inicial: <b>${escapeValuationHtml(String(first.value))}</b></span>
+        <span>Actual: <b>${escapeValuationHtml(String(last.value))}</b></span>
+        <span>Tendencia: <b>${escapeValuationHtml(String(trendLabel))}</b></span>
+      </div>
+    </article>
+  `;
+}
+
+function renderValuationCharts(filterNickname = "") {
+  const area = document.getElementById("valuationChartsArea");
+  if (!area) return;
+
+  const groups = getValuationChartGroups(filterNickname);
+
+  if (!groups.length) {
+    area.innerHTML = `<p class="valuation-chart-empty">No hay todavía tests con datos numéricos para generar gráficas.</p>`;
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="valuation-charts-grid">
+      ${groups.map(renderValuationMiniChart).join("")}
+    </div>
+  `;
+}
+
+
 function renderValuationsList(filterNickname = "") {
   const list = document.getElementById("valuationsList");
   if (!list) return;
@@ -3754,6 +3904,8 @@ function renderValuationsList(filterNickname = "") {
           `).join("")}
         </div>
         <div class="file-actions">
+          <button class="secondary-btn" type="button" onclick="editValuation('${item.id}')">Editar</button>
+          <button class="secondary-btn" type="button" onclick="generateValuationPDF('${item.id}')">Generar PDF</button>
           <button class="danger-btn" type="button" onclick="deleteValuation('${item.id}')">Eliminar</button>
         </div>
       </article>
@@ -3771,6 +3923,7 @@ function bindValoracionesForm() {
 
   setTodayIfEmpty("valuationDate");
   renderValuationsList();
+  renderValuationCharts();
 
   addBtn?.addEventListener("click", () => {
     testsArea.insertAdjacentHTML("beforeend", valuationTestRow(testsArea.querySelectorAll("[data-valuation-row]").length + 1));
@@ -3791,7 +3944,10 @@ function bindValoracionesForm() {
     refreshValuationNumbers();
   });
 
-  filter?.addEventListener("change", () => renderValuationsList(filter.value));
+  filter?.addEventListener("change", () => {
+    renderValuationsList(filter.value);
+    renderValuationCharts(filter.value);
+  });
 
   form.addEventListener("submit", event => {
     event.preventDefault();
@@ -3809,7 +3965,7 @@ function bindValoracionesForm() {
       intento1: row.querySelector(".valuation-attempt-1")?.value.trim() || "",
       intento2: row.querySelector(".valuation-attempt-2")?.value.trim() || "",
       intento3: row.querySelector(".valuation-attempt-3")?.value.trim() || "",
-      unidad: row.querySelector(".valuation-unit")?.value || "cm",
+      unidad: row.querySelector(".valuation-unit")?.value || "",
       observaciones: row.querySelector(".valuation-observations")?.value.trim() || ""
     })).filter(test => test.nombre || test.intento1 || test.intento2 || test.intento3 || test.observaciones);
 
@@ -3818,15 +3974,22 @@ function bindValoracionesForm() {
       return;
     }
 
+    const existing = editingValuationId ? valoraciones.find(item => item.id === editingValuationId) : null;
     const payload = {
-      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+      id: editingValuationId || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
       patientNickname,
       fecha,
       tests,
-      createdAt: new Date().toISOString()
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
-    valoraciones.push(payload);
+    if (editingValuationId) {
+      valoraciones = valoraciones.map(item => item.id === editingValuationId ? payload : item);
+    } else {
+      valoraciones.push(payload);
+    }
+
     localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
 
     if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
@@ -3834,18 +3997,174 @@ function bindValoracionesForm() {
     }
 
     form.reset();
+    editingValuationId = null;
     testsArea.innerHTML = valuationTestRow(1);
     setTodayIfEmpty("valuationDate");
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = "Guardar valoración";
     renderValuationsList(filter?.value || "");
+    renderValuationCharts(filter?.value || "");
     alert("Valoración guardada correctamente.");
   });
 }
 
+
+function editValuation(id) {
+  const item = valoraciones.find(value => value.id === id);
+  if (!item) return;
+
+  editingValuationId = id;
+  renderSection("valoraciones");
+
+  const patientInput = document.getElementById("valuationPatient");
+  const dateInput = document.getElementById("valuationDate");
+  const testsArea = document.getElementById("valuationTestsArea");
+  const form = document.getElementById("valuationsForm");
+
+  if (patientInput) patientInput.value = item.patientNickname || "";
+  if (dateInput) dateInput.value = item.fecha || "";
+
+  if (testsArea) {
+    const tests = item.tests && item.tests.length ? item.tests : [{}];
+    testsArea.innerHTML = tests.map((test, index) => valuationTestRow(index + 1)).join("");
+
+    testsArea.querySelectorAll("[data-valuation-row]").forEach((row, index) => {
+      const test = tests[index] || {};
+      const name = row.querySelector(".valuation-test-name");
+      const attempt1 = row.querySelector(".valuation-attempt-1");
+      const attempt2 = row.querySelector(".valuation-attempt-2");
+      const attempt3 = row.querySelector(".valuation-attempt-3");
+      const unit = row.querySelector(".valuation-unit");
+      const observations = row.querySelector(".valuation-observations");
+
+      if (name) name.value = test.nombre || "";
+      if (attempt1) attempt1.value = test.intento1 || "";
+      if (attempt2) attempt2.value = test.intento2 || "";
+      if (attempt3) attempt3.value = test.intento3 || "";
+      if (unit) unit.value = test.unidad || "";
+      if (observations) observations.value = test.observaciones || "";
+    });
+
+    refreshValuationNumbers();
+  }
+
+  const submitBtn = form?.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.textContent = "Actualizar valoración";
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function valuationHasRegisteredData(test = {}) {
+  return Boolean(
+    String(test.intento1 || "").trim() ||
+    String(test.intento2 || "").trim() ||
+    String(test.intento3 || "").trim() ||
+    String(test.observaciones || "").trim()
+  );
+}
+
+function generateValuationPDF(id) {
+  const item = valoraciones.find(value => value.id === id);
+  if (!item) return;
+
+  const tests = (item.tests || []).filter(valuationHasRegisteredData);
+
+  if (!tests.length) {
+    alert("Esta valoración no tiene datos registrados para generar PDF.");
+    return;
+  }
+
+  const patient = patients.find(p => p.nickname === item.patientNickname);
+  const patientName = patient ? patient.nombre : item.patientNickname;
+
+  const rows = tests.map((test, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${escapeValuationHtml(test.nombre || "-")}</td>
+      <td>${escapeValuationHtml(test.intento1 || "-")}</td>
+      <td>${escapeValuationHtml(test.intento2 || "-")}</td>
+      <td>${escapeValuationHtml(test.intento3 || "-")}</td>
+      <td>${escapeValuationHtml(test.unidad || "")}</td>
+      <td>${escapeValuationHtml(test.observaciones || "-")}</td>
+    </tr>
+  `).join("");
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Valoración ${escapeValuationHtml(patientName)}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; }
+        .header { border-bottom: 3px solid #22c55e; padding-bottom: 14px; margin-bottom: 22px; }
+        .brand { color: #16a34a; font-weight: 800; font-size: 14px; text-transform: uppercase; }
+        h1 { margin: 8px 0 4px; font-size: 26px; }
+        .meta { color: #475569; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+        th { background: #0f172a; color: #fff; text-align: left; padding: 10px; }
+        td { border: 1px solid #cbd5e1; padding: 9px; vertical-align: top; }
+        tr:nth-child(even) td { background: #f8fafc; }
+        .footer { margin-top: 24px; color: #64748b; font-size: 12px; }
+        @media print { body { padding: 18px; } }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="brand">P.M Preparador Físico Online</div>
+        <h1>Informe de valoración</h1>
+        <div class="meta"><strong>Paciente:</strong> ${escapeValuationHtml(patientName)} · <strong>Fecha:</strong> ${escapeValuationHtml(item.fecha || "-")}</div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Test</th>
+            <th>Intento 1</th>
+            <th>Intento 2</th>
+            <th>Intento 3</th>
+            <th>Registro</th>
+            <th>Observaciones cualitativas</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div class="footer">Documento generado automáticamente. Solo se incluyen los test con datos registrados.</div>
+    </body>
+    </html>
+  `;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("Permite ventanas emergentes para generar el PDF.");
+    return;
+  }
+
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+
+  setTimeout(() => {
+    win.print();
+  }, 450);
+}
+
+
 function deleteValuation(id) {
   if (!confirm("¿Eliminar esta valoración?")) return;
   valoraciones = valoraciones.filter(item => item.id !== id);
+  if (editingValuationId === id) editingValuationId = null;
   localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
+
+  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+    window.PPF_SUPABASE.pushKey("valoraciones").catch(error => console.warn("No se pudo sincronizar valoraciones:", error));
+  }
+
   renderValuationsList(document.getElementById("valuationsFilter")?.value || "");
+  renderValuationCharts(document.getElementById("valuationsFilter")?.value || "");
 }
 
 const sections = {
@@ -4185,6 +4504,16 @@ const sections = {
         </select>
       </div>
 
+      <section class="valuation-charts-panel">
+        <div class="module-panel-header">
+          <div>
+            <p class="eyebrow">Evolución de tests</p>
+            <h3>Gráficas automáticas por test numérico</h3>
+          </div>
+        </div>
+        <div id="valuationChartsArea"></div>
+      </section>
+
       <div class="history-list" id="valuationsList"></div>
     `,
     afterRender: bindValoracionesForm
@@ -4230,6 +4559,9 @@ window.editPatient = editPatient;
 window.deletePatient = deletePatient;
 window.renderSection = renderSection;
 window.deleteValuation = deleteValuation;
+window.editValuation = editValuation;
+window.generateValuationPDF = generateValuationPDF;
+window.renderValuationCharts = renderValuationCharts;
 
 
 
