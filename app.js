@@ -113,3 +113,6 @@ if (form) {
     }, 350);
   });
 }
+
+
+window.addEventListener("pageshow", () => { if (window.PPF_SYNC_ON_OPEN) window.PPF_SYNC_ON_OPEN("login-open"); });

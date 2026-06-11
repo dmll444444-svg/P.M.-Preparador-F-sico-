@@ -13,17 +13,18 @@ if (!currentUser || currentUser.role !== "client") {
   window.location.href = "index.html";
 }
 
-const patients = JSON.parse(localStorage.getItem("patients")) || [];
-const sessions = JSON.parse(localStorage.getItem("sessions")) || [];
-const histories = JSON.parse(localStorage.getItem("histories")) || [];
-const patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
+let patients = JSON.parse(localStorage.getItem("patients")) || [];
+let sessions = JSON.parse(localStorage.getItem("sessions")) || [];
+let histories = JSON.parse(localStorage.getItem("histories")) || [];
+let patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
 let completedSessions = JSON.parse(localStorage.getItem("completedSessions")) || [];
 
-const currentPatient = patients.find(patient => patient.nickname === currentUser.nickname);
-const currentClient = currentPatient;
+let currentPatient = patients.find(patient => patient.nickname === currentUser.nickname);
+let currentClient = currentPatient;
 
 if (!currentPatient) {
   alert("No se han encontrado tus datos de cliente.");
+  if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 }
@@ -1062,6 +1063,7 @@ clientNavItems.forEach(item => {
 const logoutBtn = document.getElementById("clientLogoutBtn");
 if (logoutBtn) {
   logoutBtn.addEventListener("click", () => {
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
     localStorage.removeItem("currentUser");
     window.location.href = "index.html";
   });
@@ -1070,6 +1072,7 @@ if (logoutBtn) {
 const clientHeaderLogoutBtn = document.getElementById("clientHeaderLogoutBtn");
 if (clientHeaderLogoutBtn) {
   clientHeaderLogoutBtn.addEventListener("click", () => {
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
     localStorage.removeItem("currentUser");
     window.location.href = "index.html";
   });
@@ -1183,6 +1186,7 @@ window.completeClientSession = completeClientSession;
 
 // PM FIX: cerrar sesión cliente cabecera
 function pmClientLogout() {
+  if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 }
@@ -1256,6 +1260,7 @@ setTimeout(pmEnsureClientMobileNav, 700);
 /* PM FINAL FIX · Cliente móvil completo + cierre de sesión + refresco de datos */
 (function pmFinalClientMobileFix(){
   function logoutClient(){
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
     try { localStorage.removeItem("currentUser"); } catch (_) {}
     window.location.href = "index.html";
   }
@@ -1299,6 +1304,38 @@ setTimeout(pmEnsureClientMobileNav, 700);
   setTimeout(function(){ if (typeof pmClientRefreshCloudData === "function") pmClientRefreshCloudData(); }, 1200);
 })();
 })();
+
+
+
+/* PM SYNC PRO · refrescar cliente cuando Supabase actualiza localStorage */
+function pmClientReloadRuntimeFromStorage() {
+  try { patients = JSON.parse(localStorage.getItem("patients") || "[]"); } catch (_) { patients = []; }
+  try { sessions = JSON.parse(localStorage.getItem("sessions") || "[]"); } catch (_) { sessions = []; }
+  try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
+  try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
+  try { completedSessions = JSON.parse(localStorage.getItem("completedSessions") || "[]"); } catch (_) { completedSessions = []; }
+  currentPatient = patients.find(patient => patient.nickname === currentUser.nickname) || currentPatient;
+  currentClient = currentPatient;
+  if (currentPatient) {
+    const name = document.getElementById("clientHeaderName");
+    const avatar = document.getElementById("clientAvatar");
+    if (name) name.textContent = currentPatient.nombre || currentUser.nickname;
+    if (avatar) avatar.textContent = String(currentPatient.nombre || currentUser.nickname || "?").charAt(0).toUpperCase();
+  }
+}
+
+function pmClientRefreshVisibleSectionAfterSync() {
+  pmClientReloadRuntimeFromStorage();
+  if (typeof pmClientCleanFakeValuations === "function") pmClientCleanFakeValuations(false);
+  const active = document.querySelector(".client-nav-item.active")?.dataset.clientSection || document.querySelector("#pmClientBottomNav button.active")?.dataset.clientSection || "dashboard";
+  if (typeof renderClientSection === "function") renderClientSection(active);
+}
+
+window.addEventListener("PPF_APP_DATA_REFRESH", pmClientRefreshVisibleSectionAfterSync);
+window.addEventListener("PPF_SUPABASE_SYNCED", function(event){
+  if (event.detail && event.detail.direction === "pull") pmClientRefreshVisibleSectionAfterSync();
+});
+setTimeout(function(){ if (window.PPF_SYNC_ON_OPEN) window.PPF_SYNC_ON_OPEN("client-start"); }, 500);
 
 })();
 

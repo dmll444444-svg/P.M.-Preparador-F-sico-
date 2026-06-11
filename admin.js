@@ -5036,6 +5036,7 @@ navItems.forEach(item => {
 const sidebarLogoutBtn = document.getElementById("logoutBtn");
 if (sidebarLogoutBtn) {
   sidebarLogoutBtn.addEventListener("click", () => {
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
     localStorage.removeItem("currentUser");
     window.location.href = "index.html";
   });
@@ -5153,12 +5154,14 @@ function ensureAdminHeaderLogoutButton() {
   }
 
   btn.onclick = function () {
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
     localStorage.removeItem("currentUser");
     window.location.href = "index.html";
   };
 }
 
 window.PM_ADMIN_LOGOUT = function PM_ADMIN_LOGOUT() {
+  if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 };
@@ -5257,5 +5260,31 @@ setTimeout(pmRefreshPatientsKpiAndPage, 2500);
 if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
   window.PPF_SUPABASE_READY.then(pmRefreshPatientsKpiAndPage).catch(() => {});
 }
+
+
+
+/* PM SYNC PRO · refrescar panel admin cuando Supabase actualiza localStorage */
+function pmAdminReloadRuntimeFromStorage() {
+  try { patients = JSON.parse(localStorage.getItem("patients") || "[]"); } catch (_) { patients = []; }
+  try { sessions = JSON.parse(localStorage.getItem("sessions") || "[]"); } catch (_) { sessions = []; }
+  try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
+  try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
+  try { valoraciones = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) { valoraciones = []; }
+  try { exerciseLibrary = JSON.parse(localStorage.getItem("exerciseLibrary") || "[]"); } catch (_) { exerciseLibrary = []; }
+  if (typeof pmCleanFakeValuationRecords === "function") pmCleanFakeValuationRecords(false);
+  if (typeof updateCounters === "function") updateCounters();
+}
+
+function pmAdminRefreshVisibleSectionAfterSync() {
+  pmAdminReloadRuntimeFromStorage();
+  const active = document.querySelector(".nav-item.active")?.dataset.section || "paciente";
+  if (typeof renderSection === "function") renderSection(active);
+}
+
+window.addEventListener("PPF_APP_DATA_REFRESH", pmAdminRefreshVisibleSectionAfterSync);
+window.addEventListener("PPF_SUPABASE_SYNCED", function(event){
+  if (event.detail && event.detail.direction === "pull") pmAdminRefreshVisibleSectionAfterSync();
+});
+setTimeout(function(){ if (window.PPF_SYNC_ON_OPEN) window.PPF_SYNC_ON_OPEN("admin-start"); }, 500);
 
 })();
