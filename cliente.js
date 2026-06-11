@@ -928,13 +928,31 @@ function parseClientValuationNumber(value = "") {
   return Number.isFinite(n) ? n : null;
 }
 
+
+function clientValuationDateOrder(value = "") {
+  const raw = String(value || "").trim();
+  const time = Date.parse(raw);
+  if (Number.isFinite(time)) return time;
+  const parts = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (parts) {
+    const year = parts[3].length === 2 ? `20${parts[3]}` : parts[3];
+    return Date.parse(`${year}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")}`);
+  }
+  return 0;
+}
+
+function clientNormalize(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
 function clientValuationGroups() {
   let all = [];
   try { all = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) {}
-  const nickname = currentUser?.nickname || currentUser?.user || currentUser?.username || "";
+  const nickname = currentPatient?.nickname || currentUser?.nickname || currentUser?.user || currentUser?.username || "";
+  const nickSet = new Set([nickname, currentUser?.nickname, currentPatient?.nickname, currentPatient?.nombre, currentUser?.username, currentUser?.user].map(clientNormalize).filter(Boolean));
   const groups = {};
 
-  all.filter(v => v.patientNickname === nickname).forEach(v => {
+  all.filter(v => nickSet.has(clientNormalize(v.patientNickname)) || nickSet.has(clientNormalize(v.patientName)) || nickSet.has(clientNormalize(v.nombrePaciente))).forEach(v => {
     (v.tests || []).forEach(test => {
       const name = String(test.nombre || "").trim();
       const unit = String(test.unidad || "").trim();
@@ -950,7 +968,7 @@ function clientValuationGroups() {
 
   return Object.values(groups).map(g => ({
     ...g,
-    days: Object.values(g.days).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))).map(d => ({
+    days: Object.values(g.days).sort((a,b)=>clientValuationDateOrder(a.fecha) - clientValuationDateOrder(b.fecha) || String(a.fecha).localeCompare(String(b.fecha))).map(d => ({
       ...d,
       mean: Number((d.attempts.reduce((a,v)=>a+v,0)/d.attempts.length).toFixed(2))
     }))
@@ -979,7 +997,7 @@ function clientValuationChartSVG(group) {
           const cx=xFor(di); const total=day.attempts.length*barW+(day.attempts.length-1)*4; const start=cx-total/2;
           return day.attempts.map((v,ai)=>{
             const x=start+ai*(barW+4), y=yFor(v), h=Math.max(2,height-padY-y);
-            return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" class="client-chart-bar"><title>${escapeHTML(day.fecha)} · Intento ${ai+1}: ${escapeHTML(String(v))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></rect>`;
+            return `<g><rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" class="client-chart-bar"><title>${escapeHTML(day.fecha)} · Intento ${ai+1}: ${escapeHTML(String(v))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></rect><text x="${x + barW/2}" y="${height-padY-8}" text-anchor="middle" class="client-chart-bar-value">${escapeHTML(String(v))}</text></g>`;
           }).join("");
         }).join("")}
         <polyline points="${mean.map(p=>`${p.x},${p.y}`).join(" ")}" class="client-chart-line" fill="none"/>

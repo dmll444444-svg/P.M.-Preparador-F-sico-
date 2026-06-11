@@ -12,6 +12,7 @@ const PPF_SYNC_KEYS = [
   "sessions",
   "histories",
   "patientFiles",
+  "valoraciones",
   "exerciseLibrary",
   "completedSessions"
 ];

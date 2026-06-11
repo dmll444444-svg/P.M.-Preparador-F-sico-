@@ -4214,3 +4214,334 @@ aside.client-sidebar {
     box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 24px rgba(34,197,94,.14) !important;
   }
 }
+
+/* =========================================================
+   DISEÑO FINAL APP · Admin valoraciones estilo dark premium
+   ========================================================= */
+:root {
+  --ppf-bg-a: #020817;
+  --ppf-bg-b: #071426;
+  --ppf-card: rgba(15, 23, 42, 0.72);
+  --ppf-card-strong: rgba(2, 8, 23, 0.84);
+  --ppf-line: rgba(148, 163, 184, 0.18);
+  --ppf-blue: #2f81ff;
+  --ppf-green: #22c55e;
+  --ppf-text: #f8fafc;
+  --ppf-muted: #9db2cc;
+}
+
+body {
+  background:
+    radial-gradient(circle at 22% 0%, rgba(47, 129, 255, 0.18), transparent 34%),
+    radial-gradient(circle at 88% 8%, rgba(34, 197, 94, 0.16), transparent 30%),
+    linear-gradient(135deg, var(--ppf-bg-a), var(--ppf-bg-b) 55%, #020617) !important;
+}
+
+.admin-layout {
+  background: transparent !important;
+}
+
+.sidebar {
+  background: linear-gradient(180deg, rgba(3, 11, 25, .96), rgba(2, 6, 23, .92)) !important;
+  border-right: 1px solid rgba(47, 129, 255, .18) !important;
+  box-shadow: 16px 0 50px rgba(0, 0, 0, .28) !important;
+}
+
+.sidebar-brand,
+.content-card,
+.stat-card,
+.valuation-charts-panel,
+.valuation-chart-card,
+.patient-form {
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+}
+
+.nav-item.active,
+.nav-item:hover {
+  background: linear-gradient(135deg, rgba(47, 129, 255, .92), rgba(20, 184, 166, .55)) !important;
+  border-color: rgba(147, 197, 253, .42) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 35px rgba(47, 129, 255, .20) !important;
+}
+
+.content-card,
+.stat-card,
+.patient-form,
+.valuation-charts-panel {
+  background: linear-gradient(180deg, rgba(15, 23, 42, .72), rgba(2, 8, 23, .70)) !important;
+  border: 1px solid rgba(148, 163, 184, .16) !important;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255,255,255,.045) !important;
+}
+
+.valuation-charts-panel {
+  padding: clamp(16px, 2.2vw, 28px) !important;
+  border-radius: 28px !important;
+}
+
+.module-panel-header h3,
+#sectionTitle {
+  color: var(--ppf-text) !important;
+  letter-spacing: -.03em !important;
+}
+
+.module-panel-header .eyebrow,
+.eyebrow {
+  color: #6ee7b7 !important;
+}
+
+.valuation-chart-pro-card {
+  position: relative !important;
+  overflow: hidden !important;
+  background:
+    radial-gradient(circle at 72% 0%, rgba(47, 129, 255, .16), transparent 32%),
+    linear-gradient(180deg, rgba(15, 23, 42, .84), rgba(2, 6, 23, .78)) !important;
+  border: 1px solid rgba(148, 163, 184, .18) !important;
+  box-shadow: 0 24px 80px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+
+.valuation-chart-pro-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(255,255,255,.035), transparent 18%, transparent 82%, rgba(255,255,255,.03));
+}
+
+.pro-chart-head h4 {
+  color: #f8fafc !important;
+  text-transform: uppercase !important;
+  font-size: clamp(1.02rem, 2vw, 1.34rem) !important;
+}
+
+.pro-chart-head p {
+  color: var(--ppf-muted) !important;
+}
+
+.pro-chart-head strong {
+  background: linear-gradient(135deg, rgba(34,197,94,.18), rgba(20,184,166,.10)) !important;
+  border-color: rgba(34,197,94,.35) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+
+.valuation-pro-chart {
+  min-height: 430px !important;
+  margin-top: 6px !important;
+}
+
+.valuation-bar-group rect {
+  fill: #16a34a;
+  stroke: rgba(134, 239, 172, .68) !important;
+  stroke-width: 1.2 !important;
+  filter: drop-shadow(0 0 10px rgba(34, 197, 94, .24));
+}
+
+.valuation-bar-group text,
+.valuation-bar-value {
+  display: block !important;
+  fill: #f0fdf4 !important;
+  font-size: 10px !important;
+  font-weight: 950 !important;
+  paint-order: stroke !important;
+  stroke: rgba(5, 46, 22, .76) !important;
+  stroke-width: 3px !important;
+  pointer-events: none !important;
+}
+
+.valuation-mean-point text,
+.valuation-mean-value {
+  display: block !important;
+  fill: #dbeafe !important;
+  font-size: 12px !important;
+  font-weight: 950 !important;
+  paint-order: stroke !important;
+  stroke: rgba(2, 6, 23, .82) !important;
+  stroke-width: 4px !important;
+  pointer-events: none !important;
+}
+
+.valuation-mean-line {
+  stroke: var(--ppf-blue) !important;
+  stroke-width: 5 !important;
+  filter: drop-shadow(0 0 14px rgba(47,129,255,.45)) !important;
+}
+
+.valuation-mean-point circle {
+  fill: var(--ppf-blue) !important;
+  stroke: #bfdbfe !important;
+  stroke-width: 3 !important;
+}
+
+.valuation-chart-scale,
+.valuation-chart-date {
+  fill: #a8bdd7 !important;
+  font-weight: 950 !important;
+}
+
+.valuation-chart-summary {
+  grid-template-columns: repeat(4, minmax(0, 170px)) !important;
+}
+
+.valuation-chart-summary div {
+  background: linear-gradient(180deg, rgba(15, 23, 42, .86), rgba(2, 6, 23, .72)) !important;
+  border-color: rgba(148, 163, 184, .18) !important;
+}
+
+.valuation-chart-summary div:last-child strong {
+  color: #86efac !important;
+}
+
+.valuation-chart-note {
+  color: #b6c4d7 !important;
+}
+
+/* Admin móvil: mostrar gráficos reales y navegación usable */
+@media (max-width: 800px) {
+  body:has(.admin-layout) {
+    overflow-x: hidden !important;
+  }
+
+  .admin-layout {
+    display: block !important;
+    min-height: 100dvh !important;
+  }
+
+  .admin-main {
+    width: 100% !important;
+    padding: calc(14px + env(safe-area-inset-top)) 12px 30px !important;
+  }
+
+  .sidebar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 50 !important;
+    width: 100% !important;
+    min-height: auto !important;
+    height: auto !important;
+    padding: 10px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid rgba(47, 129, 255, .22) !important;
+  }
+
+  .sidebar-brand {
+    display: none !important;
+  }
+
+  .sidebar-nav {
+    display: flex !important;
+    overflow-x: auto !important;
+    gap: 8px !important;
+    padding-bottom: 4px !important;
+    scrollbar-width: none !important;
+  }
+
+  .sidebar-nav::-webkit-scrollbar { display: none !important; }
+
+  .nav-item {
+    flex: 0 0 auto !important;
+    min-width: 118px !important;
+    justify-content: center !important;
+    border-radius: 16px !important;
+    padding: 11px 12px !important;
+    font-size: 12px !important;
+  }
+
+  .sidebar .logout {
+    display: none !important;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .content-card,
+  .patient-form,
+  .valuation-charts-panel,
+  .valuation-chart-pro-card {
+    border-radius: 22px !important;
+    padding: 14px !important;
+  }
+
+  .valuation-charts-grid,
+  .valuation-charts-grid-pro {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  #valuationChartsArea,
+  .valuation-charts-panel {
+    display: block !important;
+    min-height: 120px !important;
+    overflow: visible !important;
+  }
+
+  .valuation-pro-chart {
+    width: 100% !important;
+    min-height: 260px !important;
+  }
+
+  .pro-chart-head {
+    display: block !important;
+  }
+
+  .pro-chart-head strong {
+    display: inline-flex !important;
+    margin-top: 10px !important;
+  }
+
+  .valuation-chart-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .valuation-chart-summary div {
+    padding: 11px !important;
+    border-radius: 14px !important;
+  }
+
+  .valuation-chart-note {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  .valuation-bar-value {
+    font-size: 9px !important;
+  }
+
+  .valuation-mean-value {
+    font-size: 10px !important;
+  }
+}
+
+/* PPF FINAL MOBILE/VALUACIONES FIX 2026-06-11
+   - Etiquetas de barras abajo, dentro de cada barra.
+   - Ejes sin números.
+   - Sincronización de valoraciones incluida en Supabase/localStorage. */
+.valuation-chart-scale { display: none !important; }
+.valuation-bar-value-bottom,
+.valuation-bar-group .valuation-bar-value-bottom {
+  fill: #f0fdf4 !important;
+  font-size: 10px !important;
+  font-weight: 950 !important;
+  paint-order: stroke !important;
+  stroke: rgba(5, 46, 22, .88) !important;
+  stroke-width: 3px !important;
+  pointer-events: none !important;
+}
+.client-chart-bar-value {
+  fill: #f0fdf4 !important;
+  font-size: 9px !important;
+  font-weight: 950 !important;
+  paint-order: stroke !important;
+  stroke: rgba(5, 46, 22, .88) !important;
+  stroke-width: 2.8px !important;
+  pointer-events: none !important;
+}
+.client-chart-date { fill: #a8bdd7; font-weight: 900; font-size: 10px; }
+@media (max-width: 720px) {
+  .client-valuations-pro { padding-bottom: 92px !important; }
+  .client-valuation-chart-card { overflow: hidden; }
+  .client-valuation-chart-svg { min-height: 210px; }
+}

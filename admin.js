@@ -3740,13 +3740,25 @@ function getValuationAttempts(test = {}) {
     .filter(value => value !== null);
 }
 
+function valuationDateOrder(value = "") {
+  const raw = String(value || "").trim();
+  const time = Date.parse(raw);
+  if (Number.isFinite(time)) return time;
+  const parts = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (parts) {
+    const year = parts[3].length === 2 ? `20${parts[3]}` : parts[3];
+    return Date.parse(`${year}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")}`);
+  }
+  return 0;
+}
+
 function getValuationChartGroups(filterNickname = "") {
   const groups = {};
 
   valoraciones
     .filter(item => !filterNickname || item.patientNickname === filterNickname)
     .slice()
-    .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .sort((a, b) => valuationDateOrder(a.fecha) - valuationDateOrder(b.fecha) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
     .forEach(item => {
       const patient = patients.find(p => p.nickname === item.patientNickname);
       const patientName = patient ? patient.nombre : item.patientNickname;
@@ -3778,7 +3790,7 @@ function getValuationChartGroups(filterNickname = "") {
     .map(group => ({
       ...group,
       days: Object.values(group.days)
-        .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))
+        .sort((a, b) => valuationDateOrder(a.fecha) - valuationDateOrder(b.fecha) || String(a.fecha || "").localeCompare(String(b.fecha || "")))
         .map(day => {
           const mean = day.attempts.reduce((acc, value) => acc + value, 0) / day.attempts.length;
           return { ...day, mean: Number(mean.toFixed(2)) };
@@ -3822,8 +3834,11 @@ function renderValuationMiniChart(group) {
   const trendLabel = trend > 0 ? `+${trend}` : String(trend);
   const trendPct = first.mean ? Number(((trend / first.mean) * 100).toFixed(2)) : 0;
   const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
+  const directionLabel = trend > 0 ? "↗ Ascendente" : trend < 0 ? "↘ Descendente" : "→ Estable";
+  const directionText = trend > 0 ? "Progresión positiva" : trend < 0 ? "Revisar evolución" : "Sin cambios relevantes";
 
   const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+  const gradientId = `barGradient-${Math.abs(`${group.patientNickname}-${group.testName}-${group.unit}`.split("").reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0))}`;
 
   return `
     <article class="valuation-chart-card valuation-chart-pro-card">
@@ -3838,7 +3853,7 @@ function renderValuationMiniChart(group) {
 
       <svg class="valuation-line-chart valuation-pro-chart" viewBox="0 0 ${width} ${height}" role="img">
         <defs>
-          <linearGradient id="barGradient-${escapeValuationHtml(group.patientNickname)}-${escapeValuationHtml(group.testName).replace(/\s+/g, "-")}" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="${gradientId}" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#86efac"></stop>
             <stop offset="100%" stop-color="#16a34a"></stop>
           </linearGradient>
@@ -3848,7 +3863,6 @@ function renderValuationMiniChart(group) {
           const y = yForValue(tick);
           return `
             <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="valuation-grid-line" />
-            <text x="${padX - 12}" y="${y + 4}" text-anchor="end" class="valuation-chart-scale">${escapeValuationHtml(String(tick))}</text>
           `;
         }).join("")}
 
@@ -3869,7 +3883,8 @@ function renderValuationMiniChart(group) {
                  data-label="Intento ${attemptIndex + 1}"
                  data-value="${escapeValuationHtml(String(value))}"
                  data-unit="${escapeValuationHtml(group.unit || "")}">
-                <rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="6"></rect>
+                <rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="6" fill="url(#${gradientId})"></rect>
+                <text x="${x + barWidth / 2}" y="${height - padY - 10}" text-anchor="middle" class="valuation-bar-value valuation-bar-value-bottom">${escapeValuationHtml(String(value))}</text>
               </g>
             `;
           }).join("");
@@ -3906,9 +3921,14 @@ function renderValuationMiniChart(group) {
           <small>${escapeValuationHtml(last.fecha)}</small>
         </div>
         <div>
-          <span>Tendencia</span>
+          <span>Mejora</span>
           <strong>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
           <small>${escapeValuationHtml(trendPctLabel)}</small>
+        </div>
+        <div>
+          <span>Tendencia</span>
+          <strong>${escapeValuationHtml(directionLabel)}</strong>
+          <small>${escapeValuationHtml(directionText)}</small>
         </div>
       </div>
 
@@ -4248,6 +4268,7 @@ function renderValuationPdfChart(group) {
   const trendPct = oldest.mean ? Number(((trend / oldest.mean) * 100).toFixed(2)) : 0;
   const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
   const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+  const gradientId = `barGradient-${Math.abs(`${group.patientNickname}-${group.testName}-${group.unit}`.split("").reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0))}`;
 
   return `
     <section class="pdf-chart-card">
