@@ -889,8 +889,8 @@ const clientSections = {
     html: () => `<h2>Mis sesiones</h2><p>Sesiones terminadas y acumuladas en tus gráficas.</p>${renderClientSessions()}`
   },
   historial: {
-    title: "Mi historial",
-    html: () => `<h2>Mi historial</h2><p>Valoraciones, registros y evolución guardados por tu preparador.</p>${clientValuationChartsHTML()}${renderClientHistory()}`
+    title: "Valoraciones",
+    html: () => `<h2>Valoraciones</h2><p>Gráficas de evolución y tendencia con los mismos datos que ve tu preparador.</p>${clientValuationChartsHTML()}${renderClientHistory()}`
   },
   archivos: {
     title: "Mis archivos",
@@ -1006,29 +1006,52 @@ function clientValuationChartSVG(group) {
   const scaleMin = minRaw >= 0 ? 0 : minRaw;
   const rangeRaw = maxRaw - scaleMin || Math.max(Math.abs(maxRaw), 1);
   const min = scaleMin, max = maxRaw + rangeRaw * .18, range = max - min || 1;
-  const width = 520, height = 230, padX = 36, padY = 28;
+  const width = 760, height = 360, padX = 58, padY = 46;
   const chartW = width - padX*2, chartH = height - padY*2;
   const xFor = i => days.length === 1 ? width/2 : padX + i*(chartW/(days.length-1));
   const yFor = v => height - padY - (((v-min)/range)*chartH);
   const maxAttempts = Math.max(...days.map(d=>d.attempts.length),1);
-  const barW = Math.max(7, Math.min(14, (Math.min(70, chartW/Math.max(days.length,1)) - (maxAttempts-1)*4)/maxAttempts));
+  const daySlot = days.length === 1 ? chartW * 0.44 : Math.min(84, chartW / Math.max(days.length,1));
+  const barGap = 6;
+  const barW = Math.max(9, Math.min(18, (daySlot - (maxAttempts-1)*barGap)/maxAttempts));
   const mean = days.map((d,i)=>({...d,x:xFor(i),y:yFor(d.mean)}));
+  const first = mean[0];
+  const last = mean[mean.length - 1];
+  const trend = Number((last.mean - first.mean).toFixed(2));
+  const trendLabel = trend > 0 ? `+${trend}` : String(trend);
+  const trendPct = first.mean ? Number(((trend / first.mean) * 100).toFixed(2)) : 0;
+  const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
+  const directionLabel = trend > 0 ? "↗ Ascendente" : trend < 0 ? "↘ Descendente" : "→ Estable";
+  const directionText = trend > 0 ? "Progresión positiva" : trend < 0 ? "Revisar evolución" : "Sin cambios relevantes";
   return `
-    <article class="client-valuation-chart-card">
-      <div class="client-valuation-chart-head"><h3>${escapeHTML(group.name)}${group.unit ? ` (${escapeHTML(group.unit)})` : ""}</h3><strong>${escapeHTML(String(mean[mean.length-1].mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong></div>
-      <svg viewBox="0 0 ${width} ${height}" class="client-valuation-chart-svg">
-        <line x1="${padX}" y1="${height-padY}" x2="${width-padX}" y2="${height-padY}" class="client-chart-axis"/>
+    <article class="client-valuation-chart-card valuation-chart-card valuation-chart-pro-card">
+      <div class="client-valuation-chart-head pro-chart-head">
+        <div>
+          <h3>${escapeHTML(group.name)}${group.unit ? ` (${escapeHTML(group.unit)})` : ""}</h3>
+          <p>Barras verdes = datos individuales · Línea azul = media diaria</p>
+        </div>
+        <strong>${escapeHTML(String(last.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong>
+      </div>
+      <svg viewBox="0 0 ${width} ${height}" class="client-valuation-chart-svg valuation-line-chart valuation-pro-chart" role="img">
+        <line x1="${padX}" y1="${height-padY}" x2="${width-padX}" y2="${height-padY}" class="client-chart-axis valuation-chart-axis"/>
         ${days.map((day,di)=>{
-          const cx=xFor(di); const total=day.attempts.length*barW+(day.attempts.length-1)*4; const start=cx-total/2;
+          const cx=xFor(di); const total=day.attempts.length*barW+(day.attempts.length-1)*barGap; const start=cx-total/2;
           return day.attempts.map((v,ai)=>{
-            const x=start+ai*(barW+4), y=yFor(v), h=Math.max(2,height-padY-y);
-            return `<g><rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" class="client-chart-bar"><title>${escapeHTML(day.fecha)} · Intento ${ai+1}: ${escapeHTML(String(v))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></rect><text x="${x + barW/2}" y="${height-padY-8}" text-anchor="middle" class="client-chart-bar-value">${escapeHTML(String(v))}</text></g>`;
+            const x=start+ai*(barW+barGap), y=yFor(v), h=Math.max(2,height-padY-y);
+            return `<g><rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" class="client-chart-bar"><title>${escapeHTML(day.fecha)} · Intento ${ai+1}: ${escapeHTML(String(v))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></rect><text x="${x + barW/2}" y="${height-padY-10}" text-anchor="middle" class="client-chart-bar-value valuation-bar-value-bottom">${escapeHTML(String(v))}</text></g>`;
           }).join("");
         }).join("")}
-        <polyline points="${mean.map(p=>`${p.x},${p.y}`).join(" ")}" class="client-chart-line" fill="none"/>
-        ${mean.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="5" class="client-chart-point"><title>${escapeHTML(p.fecha)} · Media: ${escapeHTML(String(p.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></circle>`).join("")}
-        ${mean.map((p,i)=> days.length>5 && i!==0 && i!==days.length-1 ? "" : `<text x="${p.x}" y="${height-6}" text-anchor="middle" class="client-chart-date">${escapeHTML(p.fecha)}</text>`).join("")}
+        <polyline points="${mean.map(p=>`${p.x},${p.y}`).join(" ")}" class="client-chart-line valuation-chart-line valuation-mean-line" fill="none"/>
+        ${mean.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="6.5" class="client-chart-point"><title>${escapeHTML(p.fecha)} · Media: ${escapeHTML(String(p.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></circle>`).join("")}
+        ${mean.map((p,i)=> days.length>8 && i!==0 && i!==days.length-1 ? "" : `<text x="${p.x}" y="${height-10}" text-anchor="middle" class="client-chart-date valuation-chart-date">${escapeHTML(p.fecha)}</text>`).join("")}
       </svg>
+      <div class="valuation-chart-summary client-valuation-summary">
+        <div><span>Inicial</span><strong>${escapeHTML(String(first.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(first.fecha)}</small></div>
+        <div><span>Actual</span><strong>${escapeHTML(String(last.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(last.fecha)}</small></div>
+        <div><span>Mejora</span><strong>${escapeHTML(trendLabel)}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(trendPctLabel)}</small></div>
+        <div><span>Tendencia</span><strong>${escapeHTML(directionLabel)}</strong><small>${escapeHTML(directionText)}</small></div>
+      </div>
+      <p class="valuation-chart-note">Las gráficas usan el mismo motor de valoraciones que el panel admin para evitar diferencias de sincronización.</p>
     </article>`;
 }
 
