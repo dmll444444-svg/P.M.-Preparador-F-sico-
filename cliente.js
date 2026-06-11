@@ -889,7 +889,7 @@ const clientSections = {
   },
   historial: {
     title: "Mi historial",
-    html: () => `<h2>Mi historial</h2><p>Registros y evolución guardados por tu preparador.</p>${renderClientHistory()}`
+    html: () => `<h2>Mi historial</h2><p>Valoraciones, registros y evolución guardados por tu preparador.</p>${clientValuationChartsHTML()}${renderClientHistory()}`
   },
   archivos: {
     title: "Mis archivos",
@@ -945,6 +945,29 @@ function clientNormalize(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+function pmClientIsFakeValuationRecord(item) {
+  const fecha = String(item?.fecha || "");
+  const patient = clientNormalize(item?.patientNickname || item?.patientName || item?.nombrePaciente || "");
+  return fecha === "2026-06-10" && patient.includes("david") && (item.tests || []).some(test => {
+    const name = clientNormalize(test?.nombre || "");
+    const values = [test?.intento1, test?.intento2, test?.intento3].map(v => String(v ?? "").replace(",", ".").trim());
+    return name.includes("cmj") && values.join("|") === "50|50|50.5";
+  });
+}
+
+function pmClientCleanFakeValuations(pushCloud = false) {
+  let all = [];
+  all = pmClientCleanFakeValuations(false);
+  const clean = (Array.isArray(all) ? all : []).filter(item => !pmClientIsFakeValuationRecord(item));
+  if (clean.length !== all.length) {
+    localStorage.setItem("valoraciones", JSON.stringify(clean));
+    if (pushCloud && window.PPF_SUPABASE?.pushKey) window.PPF_SUPABASE.pushKey("valoraciones").catch(()=>{});
+  }
+  return clean;
+}
+
+pmClientCleanFakeValuations(false);
+
 function clientValuationGroups() {
   let all = [];
   try { all = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) {}
@@ -979,8 +1002,9 @@ function clientValuationChartSVG(group) {
   const days = group.days;
   const values = days.flatMap(d => [...d.attempts, d.mean]);
   const minRaw = Math.min(...values), maxRaw = Math.max(...values);
-  const rangeRaw = maxRaw - minRaw || 1;
-  const min = minRaw - rangeRaw * .1, max = maxRaw + rangeRaw * .16, range = max - min || 1;
+  const scaleMin = minRaw >= 0 ? 0 : minRaw;
+  const rangeRaw = maxRaw - scaleMin || Math.max(Math.abs(maxRaw), 1);
+  const min = scaleMin, max = maxRaw + rangeRaw * .18, range = max - min || 1;
   const width = 520, height = 230, padX = 36, padY = 28;
   const chartW = width - padX*2, chartH = height - padY*2;
   const xFor = i => days.length === 1 ? width/2 : padX + i*(chartW/(days.length-1));
@@ -1019,9 +1043,7 @@ function renderClientSection(key) {
   if (!section || !clientSectionTitle || !clientContentArea) return;
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-  if (key === "historial" && typeof clientValuationChartsHTML === "function") {
-    clientContentArea.insertAdjacentHTML("beforeend", clientValuationChartsHTML());
-  }
+  if (sectionKey === "historial") { pmClientCleanFakeValuations(true); }
 
   document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.clientSection === sectionKey || (sectionKey === "dashboard" && tab.dataset.clientSection === "inicio"));
@@ -1187,9 +1209,9 @@ function pmEnsureClientMobileNav() {
     nav.innerHTML = `
       <button type="button" data-client-section="dashboard"><span>🏠</span><small>Inicio</small></button>
       <button type="button" data-client-section="proxima"><span>📅</span><small>Sesión</small></button>
-      <button type="button" data-client-section="dashboard"><span>📊</span><small>Dashboard</small></button>
+      <button type="button" data-client-section="historial"><span>📊</span><small>Valoraciones</small></button>
       <button type="button" data-client-section="archivos"><span>📁</span><small>Archivos</small></button>
-      <button type="button" data-client-section="historial"><span>👤</span><small>Perfil</small></button>
+      <button type="button" data-client-section="perfil"><span>👤</span><small>Perfil</small></button>
     `;
     document.body.appendChild(nav);
   }
@@ -1209,6 +1231,21 @@ function pmEnsureClientMobileNav() {
   const activeSection = document.querySelector(".client-nav-item.active")?.dataset.clientSection || "dashboard";
   nav.querySelectorAll("button").forEach(btn => btn.classList.toggle("active", btn.dataset.clientSection === activeSection));
 }
+
+async function pmClientRefreshCloudData() {
+  try {
+    if (window.PPF_SUPABASE?.pull) await window.PPF_SUPABASE.pull();
+    pmClientCleanFakeValuations(true);
+    const active = document.querySelector(".client-nav-item.active")?.dataset.clientSection || document.querySelector("#pmClientBottomNav button.active")?.dataset.clientSection || "dashboard";
+    if (typeof renderClientSection === "function") renderClientSection(active);
+  } catch (error) {
+    console.warn("No se pudo refrescar datos cliente:", error);
+  }
+}
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pmClientRefreshCloudData(); });
+window.addEventListener("storage", event => { if (["valoraciones","patients","histories"].includes(event.key)) pmClientRefreshCloudData(); });
+setTimeout(pmClientRefreshCloudData, 900);
 
 document.addEventListener("DOMContentLoaded", pmEnsureClientMobileNav);
 setTimeout(pmEnsureClientMobileNav, 0);

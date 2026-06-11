@@ -26,6 +26,26 @@ let patients = JSON.parse(localStorage.getItem("patients")) || [];
 let histories = JSON.parse(localStorage.getItem("histories")) || [];
 let patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
 let valoraciones = JSON.parse(localStorage.getItem("valoraciones")) || [];
+
+function pmIsFakeValuationRecord(item) {
+  const fecha = String(item?.fecha || "");
+  const patient = String(item?.patientNickname || item?.patientName || item?.nombrePaciente || "").toLowerCase();
+  return fecha === "2026-06-10" && patient.includes("david") && (item.tests || []).some(test => {
+    const name = String(test?.nombre || "").toLowerCase();
+    const values = [test?.intento1, test?.intento2, test?.intento3].map(v => String(v ?? "").replace(",", ".").trim());
+    return name.includes("cmj") && values.join("|") === "50|50|50.5";
+  });
+}
+
+function pmCleanFakeValuationRecords(pushCloud = false) {
+  const before = Array.isArray(valoraciones) ? valoraciones.length : 0;
+  valoraciones = (Array.isArray(valoraciones) ? valoraciones : []).filter(item => !pmIsFakeValuationRecord(item));
+  if (valoraciones.length !== before) {
+    localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
+    if (pushCloud && window.PPF_SUPABASE?.pushKey) window.PPF_SUPABASE.pushKey("valoraciones").catch(()=>{});
+  }
+}
+pmCleanFakeValuationRecords(false);
 let sessions = JSON.parse(localStorage.getItem("sessions")) || [];
 let editingSessionId = null;
 let editingValuationId = null;
@@ -3805,9 +3825,10 @@ function renderValuationMiniChart(group) {
   const allValues = days.flatMap(day => [...day.attempts, day.mean]);
   const minRaw = Math.min(...allValues);
   const maxRaw = Math.max(...allValues);
-  const rangeRaw = maxRaw - minRaw || 1;
-  const min = minRaw - rangeRaw * 0.10;
-  const max = maxRaw + rangeRaw * 0.16;
+  const scaleMin = minRaw >= 0 ? 0 : minRaw;
+  const rangeRaw = maxRaw - scaleMin || Math.max(Math.abs(maxRaw), 1);
+  const min = scaleMin;
+  const max = maxRaw + rangeRaw * 0.18;
   const range = max - min || 1;
 
   const width = 760;
@@ -3837,7 +3858,7 @@ function renderValuationMiniChart(group) {
   const directionLabel = trend > 0 ? "↗ Ascendente" : trend < 0 ? "↘ Descendente" : "→ Estable";
   const directionText = trend > 0 ? "Progresión positiva" : trend < 0 ? "Revisar evolución" : "Sin cambios relevantes";
 
-  const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+  const yTicks = [maxRaw, (maxRaw + min) / 2, min].map(value => Number(value.toFixed(2)));
   const gradientId = `barGradient-${Math.abs(`${group.patientNickname}-${group.testName}-${group.unit}`.split("").reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0))}`;
 
   return `
@@ -4239,9 +4260,10 @@ function renderValuationPdfChart(group) {
   const allValues = days.flatMap(day => [...day.attempts, day.mean]);
   const minRaw = Math.min(...allValues);
   const maxRaw = Math.max(...allValues);
-  const rangeRaw = maxRaw - minRaw || 1;
-  const min = minRaw - rangeRaw * 0.10;
-  const max = maxRaw + rangeRaw * 0.16;
+  const scaleMin = minRaw >= 0 ? 0 : minRaw;
+  const rangeRaw = maxRaw - scaleMin || Math.max(Math.abs(maxRaw), 1);
+  const min = scaleMin;
+  const max = maxRaw + rangeRaw * 0.18;
   const range = max - min || 1;
 
   const width = 720;
@@ -4267,7 +4289,7 @@ function renderValuationPdfChart(group) {
   const trendLabel = trend > 0 ? `+${trend}` : String(trend);
   const trendPct = oldest.mean ? Number(((trend / oldest.mean) * 100).toFixed(2)) : 0;
   const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
-  const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+  const yTicks = [maxRaw, (maxRaw + min) / 2, min].map(value => Number(value.toFixed(2)));
   const gradientId = `barGradient-${Math.abs(`${group.patientNickname}-${group.testName}-${group.unit}`.split("").reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0))}`;
 
   return `
