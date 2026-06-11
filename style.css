@@ -2681,7 +2681,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .client-nav-item[data-client-section="dashboard"]::after { content: "Inicio"; }
   .client-nav-item[data-client-section="proxima"]::after { content: "Próxima"; }
   .client-nav-item[data-client-section="sesiones"]::after { content: "Sesiones"; }
-  .client-nav-item[data-client-section="historial"]::after { content: "Historial"; }
+  .client-nav-item[data-client-section="historial"]::after { content: "Valoraciones"; }
   .client-nav-item[data-client-section="archivos"]::after { content: "Archivos"; }
 
   .client-nav-item.active {
@@ -4594,5 +4594,97 @@ body {
   }
   .client-valuation-chart-head {
     align-items: flex-start;
+  }
+}
+
+
+/* PM FIX · Cliente valoraciones final */
+.client-sidebar > #clientLogoutBtn,
+.client-sidebar .logout#clientLogoutBtn {
+  display: none !important;
+}
+.client-nav-item[data-client-section="historial"] span,
+.client-mobile-tab[data-client-section="historial"] span,
+#pmClientBottomNav button[data-client-section="historial"] span {
+  font-size: 0 !important;
+}
+.client-nav-item[data-client-section="historial"] span::before,
+.client-mobile-tab[data-client-section="historial"] span::before,
+#pmClientBottomNav button[data-client-section="historial"] span::before {
+  content: "📊";
+  font-size: 22px !important;
+  line-height: 1;
+}
+.client-nav-item[data-client-section="historial"] {
+  white-space: nowrap;
+}
+.client-valuations-pro + p,
+.client-valuations-pro ~ p {
+  display: none !important;
+}
+.client-valuation-summary {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px !important;
+}
+.client-valuation-summary > div {
+  min-width: 0;
+}
+@media (max-width: 720px) {
+  .client-main {
+    padding-bottom: 104px !important;
+  }
+  .client-valuations-pro {
+    padding: 14px 10px 108px !important;
+    overflow: visible !important;
+  }
+  .client-valuation-grid {
+    display: grid !important;
+    gap: 14px !important;
+  }
+  .client-valuation-chart-card {
+    padding: 12px !important;
+    overflow: visible !important;
+  }
+  .client-valuation-chart-head {
+    gap: 8px !important;
+    align-items: flex-start !important;
+  }
+  .client-valuation-chart-head h3 {
+    font-size: 14px !important;
+    line-height: 1.2 !important;
+  }
+  .client-valuation-chart-head p {
+    font-size: 11px !important;
+  }
+  .client-valuation-chart-svg {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 210px !important;
+    max-height: 260px !important;
+    display: block !important;
+  }
+  .client-valuation-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+  }
+  .client-valuation-summary > div {
+    padding: 10px !important;
+    border-radius: 14px !important;
+  }
+  .client-valuation-summary span {
+    font-size: 9px !important;
+  }
+  .client-valuation-summary strong {
+    font-size: 13px !important;
+    line-height: 1.15 !important;
+  }
+  .client-valuation-summary small {
+    font-size: 10px !important;
+  }
+  .valuation-chart-note {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
   }
 }

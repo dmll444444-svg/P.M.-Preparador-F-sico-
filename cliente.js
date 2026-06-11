@@ -890,7 +890,7 @@ const clientSections = {
   },
   historial: {
     title: "Valoraciones",
-    html: () => `<h2>Valoraciones</h2><p>Gráficas de evolución y tendencia con los mismos datos que ve tu preparador.</p>${clientValuationChartsHTML()}${renderClientHistory()}`
+    html: () => `<h2>Valoraciones</h2><p>Gráficas de evolución y tendencia con los mismos datos que ve tu preparador.</p>${clientValuationChartsHTML()}`
   },
   archivos: {
     title: "Mis archivos",
