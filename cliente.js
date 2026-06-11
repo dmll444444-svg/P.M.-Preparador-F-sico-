@@ -957,7 +957,7 @@ function pmClientIsFakeValuationRecord(item) {
 
 function pmClientCleanFakeValuations(pushCloud = false) {
   let all = [];
-  all = pmClientCleanFakeValuations(false);
+  try { all = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) { all = []; }
   const clean = (Array.isArray(all) ? all : []).filter(item => !pmClientIsFakeValuationRecord(item));
   if (clean.length !== all.length) {
     localStorage.setItem("valoraciones", JSON.stringify(clean));
@@ -972,7 +972,7 @@ function clientValuationGroups() {
   let all = [];
   try { all = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) {}
   const nickname = currentPatient?.nickname || currentUser?.nickname || currentUser?.user || currentUser?.username || "";
-  const nickSet = new Set([nickname, currentUser?.nickname, currentPatient?.nickname, currentPatient?.nombre, currentUser?.username, currentUser?.user].map(clientNormalize).filter(Boolean));
+  const nickSet = new Set([nickname, currentUser?.nickname, currentPatient?.nickname, currentPatient?.nombre, currentUser?.username, currentUser?.user, currentUser?.name, currentUser?.nombre].map(clientNormalize).filter(Boolean));
   const groups = {};
 
   all.filter(v => nickSet.has(clientNormalize(v.patientNickname)) || nickSet.has(clientNormalize(v.patientName)) || nickSet.has(clientNormalize(v.nombrePaciente))).forEach(v => {
@@ -1251,6 +1251,53 @@ document.addEventListener("DOMContentLoaded", pmEnsureClientMobileNav);
 setTimeout(pmEnsureClientMobileNav, 0);
 setTimeout(pmEnsureClientMobileNav, 700);
 
+
+
+/* PM FINAL FIX · Cliente móvil completo + cierre de sesión + refresco de datos */
+(function pmFinalClientMobileFix(){
+  function logoutClient(){
+    try { localStorage.removeItem("currentUser"); } catch (_) {}
+    window.location.href = "index.html";
+  }
+
+  function activateClientSection(section){
+    const key = section || "dashboard";
+    if (typeof renderClientSection === "function") renderClientSection(key);
+    document.querySelectorAll(".client-nav-item").forEach(item => {
+      item.classList.toggle("active", item.dataset.clientSection === key || (key === "dashboard" && item.dataset.clientSection === "inicio"));
+    });
+    document.querySelectorAll(".client-mobile-tab, #pmClientBottomNav button").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.clientSection === key || (key === "dashboard" && btn.dataset.clientSection === "inicio"));
+    });
+  }
+
+  document.addEventListener("click", function(event){
+    const logout = event.target.closest("#clientLogoutBtn, #clientHeaderLogoutBtn, [data-client-logout]");
+    if (logout) {
+      event.preventDefault();
+      logoutClient();
+      return;
+    }
+    const tab = event.target.closest(".client-mobile-tab, #pmClientBottomNav button");
+    if (tab) {
+      event.preventDefault();
+      activateClientSection(tab.dataset.clientSection || "dashboard");
+      try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+    }
+  }, true);
+
+  function ensureVisibleClientContent(){
+    const area = document.getElementById("clientContentArea");
+    if (area && !String(area.innerHTML || "").trim()) activateClientSection("dashboard");
+    const main = document.querySelector(".client-main");
+    if (main) main.style.display = "block";
+  }
+
+  window.PM_FINAL_CLIENT_SECTION = activateClientSection;
+  setTimeout(ensureVisibleClientContent, 50);
+  setTimeout(ensureVisibleClientContent, 600);
+  setTimeout(function(){ if (typeof pmClientRefreshCloudData === "function") pmClientRefreshCloudData(); }, 1200);
+})();
 })();
 
 })();

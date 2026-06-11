@@ -1,4 +1,4 @@
-const PM_CACHE = "pm-online-v1.4.1-pdf-filtros";
+const PM_CACHE = "pm-online-v1.4.2-pdf-orden-cliente-movil";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
   "./app.js", "./admin.js", "./cliente.js", "./supabase-config.js", "./supabase-sync.js",

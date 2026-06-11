@@ -4427,8 +4427,8 @@ function renderValuationPdfChart(group) {
 
   const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
   const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
-  const newest = meanPoints[0];
-  const oldest = meanPoints[meanPoints.length - 1];
+  const oldest = meanPoints[0];
+  const newest = meanPoints[meanPoints.length - 1];
   const trend = Number((newest.mean - oldest.mean).toFixed(2));
   const trendLabel = trend > 0 ? `+${trend}` : String(trend);
   const trendPct = oldest.mean ? Number(((trend / oldest.mean) * 100).toFixed(2)) : 0;
@@ -4451,7 +4451,6 @@ function renderValuationPdfChart(group) {
           const y = yForValue(tick);
           return `
             <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="pdf-grid" />
-            <text x="${padX - 10}" y="${y + 4}" text-anchor="end" class="pdf-scale">${escapeValuationHtml(String(tick))}</text>
           `;
         }).join("")}
 
@@ -4470,6 +4469,7 @@ function renderValuationPdfChart(group) {
               <rect class="pdf-bar" x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4">
                 <title>${escapeValuationHtml(day.fecha)} · Intento ${attemptIndex + 1}: ${escapeValuationHtml(String(value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
               </rect>
+              <text x="${x + barWidth / 2}" y="${height - padY - 9}" text-anchor="middle" class="pdf-bar-label">${escapeValuationHtml(String(value))}</text>
             `;
           }).join("");
         }).join("")}
@@ -4487,8 +4487,8 @@ function renderValuationPdfChart(group) {
       </svg>
 
       <div class="pdf-chart-summary">
-        <div><span>Más antigua</span><b>${escapeValuationHtml(String(oldest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(oldest.fecha)}</small></div>
-        <div><span>Más reciente</span><b>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(newest.fecha)}</small></div>
+        <div><span>Anterior (Antes)</span><b>${escapeValuationHtml(String(oldest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(group.unit || "Registro numérico")} · ${escapeValuationHtml(oldest.fecha)}</small></div>
+        <div><span>Posterior (Actual)</span><b>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(group.unit || "Registro numérico")} · ${escapeValuationHtml(newest.fecha)}</small></div>
         <div><span>Tendencia</span><b>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(trendPctLabel)}</small></div>
       </div>
     </section>
@@ -4569,6 +4569,8 @@ function generateValuationPDF(id = null, options = null) {
         .pdf-scale { fill:#64748b; font-size:11px; font-weight:700; }
         .pdf-date { fill:#475569; font-size:11px; font-weight:700; }
         .pdf-bar { fill:#22c55e; stroke:#16a34a; stroke-width:1; }
+        .pdf-bar-label { fill:#ffffff; font-size:10px; font-weight:900; paint-order:stroke; stroke:#15803d; stroke-width:3px; stroke-linejoin:round; }
+        .pdf-scale { display:none; }
         .pdf-mean-line { stroke:#2563eb; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
         .pdf-mean-point { fill:#3b82f6; stroke:#eff6ff; stroke-width:2; }
         .pdf-chart-summary { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:12px; }
