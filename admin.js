@@ -3610,7 +3610,7 @@ function renderSystemStats() {
 
 
 function manualSupabaseSyncFromSystem() {
-  if (!window.PPF_SUPABASE || typeof window.PPF_SUPABASE.push !== "function") {
+  if (!window.PPF_SUPABASE || typeof window.PPF_SUPABASE.pull !== "function") {
     alert("Supabase no está cargado o no está configurado.");
     return;
   }
@@ -3620,28 +3620,29 @@ function manualSupabaseSyncFromSystem() {
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = "Sincronizando...";
+    btn.textContent = "Descargando...";
   }
 
-  window.PPF_SUPABASE.push()
+  window.PPF_SUPABASE.pull()
     .then(() => {
-      alert("Supabase actualizado correctamente.");
+      patients = JSON.parse(localStorage.getItem("patients")) || [];
+      histories = JSON.parse(localStorage.getItem("histories")) || [];
+      patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
+      sessions = JSON.parse(localStorage.getItem("sessions")) || [];
+      valoraciones = JSON.parse(localStorage.getItem("valoraciones")) || [];
+      exerciseLibrary = JSON.parse(localStorage.getItem("exerciseLibrary")) || [];
+      updateCounters();
+      alert("Datos descargados desde Supabase correctamente.");
       if (typeof renderSystemStats === "function") renderSystemStats();
-
-  document.getElementById("syncSupabaseBtn")?.addEventListener("click", event => {
-    event.preventDefault();
-    manualSupabaseSyncFromSystem();
-  });
-
     })
     .catch(error => {
-      console.error("Error sincronizando Supabase:", error);
-      alert("Error sincronizando Supabase. Revisa la consola.");
+      console.error("Error descargando Supabase:", error);
+      alert("Error descargando Supabase. Revisa la consola.");
     })
     .finally(() => {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = previousText || "Actualizar Supabase";
+        btn.textContent = previousText || "Descargar Supabase";
       }
     });
 }
@@ -3655,8 +3656,14 @@ function bindSystemPanel() {
         alert("Supabase no está cargado.");
         return;
       }
-      await window.PPF_SUPABASE.push();
-      alert("Datos sincronizados con Supabase.");
+      await window.PPF_SUPABASE.pull();
+      patients = JSON.parse(localStorage.getItem("patients")) || [];
+      histories = JSON.parse(localStorage.getItem("histories")) || [];
+      patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
+      sessions = JSON.parse(localStorage.getItem("sessions")) || [];
+      valoraciones = JSON.parse(localStorage.getItem("valoraciones")) || [];
+      updateCounters();
+      alert("Datos descargados desde Supabase.");
     });
   }
 
@@ -4922,7 +4929,7 @@ const sections = {
 
         <div class="system-actions">
           <button class="primary-btn" id="backupBtn" type="button">Crear backup</button>
-          <button class="primary-btn" id="syncSupabaseBtn" type="button">Sincronizar Supabase</button>
+          <button class="primary-btn" id="syncSupabaseBtn" type="button">Descargar Supabase</button>
           <label class="primary-btn restore-label">
             Cargar backup
             <input id="restoreInput" type="file" accept="application/json" hidden />
@@ -5093,7 +5100,7 @@ function ensureSupabaseButtonInSystem() {
   btn.className = "primary-btn";
   btn.id = "syncSupabaseBtn";
   btn.type = "button";
-  btn.textContent = "Actualizar Supabase";
+  btn.textContent = "Descargar Supabase";
   btn.addEventListener("click", manualSupabaseSyncFromSystem);
 
   actions.appendChild(btn);

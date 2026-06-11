@@ -17,6 +17,56 @@ const PPF_SYNC_KEYS = [
   "completedSessions"
 ];
 
+/* PM DATA GUARD · protección anti-sobrescritura Supabase */
+const PPF_PROTECTED_SYNC_KEYS = ["patients", "valoraciones", "sessions", "histories", "patientFiles"];
+
+function ppfArrayLength(value) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function ppfSnapshotLocalState(label = "auto") {
+  try {
+    const snapshot = {
+      label,
+      createdAt: new Date().toISOString(),
+      data: {}
+    };
+    PPF_SYNC_KEYS.forEach(key => { snapshot.data[key] = ppfReadLocalJson(key); });
+    const old = JSON.parse(localStorage.getItem("ppfLocalSnapshots") || "[]");
+    old.unshift(snapshot);
+    localStorage.setItem("ppfLocalSnapshots", JSON.stringify(old.slice(0, 8)));
+  } catch (error) {
+    console.warn("No se pudo crear snapshot local:", error);
+  }
+}
+
+async function ppfReadCloudValue(key) {
+  const client = ppfCreateClient();
+  if (!client || !PPF_SYNC_KEYS.includes(key)) return null;
+  const { data, error } = await client
+    .from("app_state")
+    .select("value,updated_at")
+    .eq("key", key)
+    .maybeSingle();
+  if (error) {
+    console.warn("Supabase cloud read error:", key, error.message);
+    return null;
+  }
+  return data || null;
+}
+
+function ppfIsDangerousShrink(key, localValue, cloudValue) {
+  if (!PPF_PROTECTED_SYNC_KEYS.includes(key)) return false;
+  const localCount = ppfArrayLength(localValue);
+  const cloudCount = ppfArrayLength(cloudValue);
+  if (cloudCount === 0) return false;
+  if (localCount === 0 && cloudCount > 0) return true;
+  // Bloquea pérdidas accidentales: local tiene menos registros que nube.
+  return localCount < cloudCount;
+}
+
+window.PPF_ALLOW_DESTRUCTIVE_SYNC_ONCE = false;
+
 function ppfSupabaseIsConfigured() {
   const cfg = window.PPF_SUPABASE_CONFIG || {};
   return Boolean(
@@ -78,9 +128,21 @@ async function ppfPullCloudToLocal() {
     return false;
   }
 
+  // Antes de bajar nube, guarda copia local por si hubiera que recuperar.
+  ppfSnapshotLocalState("antes_pull_supabase");
+
   (data || []).forEach(row => {
     if (PPF_SYNC_KEYS.includes(row.key)) {
-      ppfWriteLocalJson(row.key, row.value || []);
+      const cloudValue = Array.isArray(row.value) ? row.value : [];
+      const localValue = ppfReadLocalJson(row.key);
+
+      // Si nube viene vacía pero local tiene datos protegidos, no borres local.
+      if (PPF_PROTECTED_SYNC_KEYS.includes(row.key) && cloudValue.length === 0 && localValue.length > 0) {
+        console.warn(`Pull protegido: ${row.key} nube vacía, se conserva local (${localValue.length}).`);
+        return;
+      }
+
+      ppfWriteLocalJson(row.key, cloudValue);
     }
   });
 
@@ -91,11 +153,25 @@ async function ppfPullCloudToLocal() {
   return true;
 }
 
-async function ppfPushKeyToCloud(key) {
+async function ppfPushKeyToCloud(key, options = {}) {
   const client = ppfCreateClient();
   if (!client || !PPF_SYNC_KEYS.includes(key)) return false;
 
   const value = ppfReadLocalJson(key);
+  const force = Boolean(options.force || window.PPF_ALLOW_DESTRUCTIVE_SYNC_ONCE);
+
+  const cloudRow = await ppfReadCloudValue(key);
+  const cloudValue = Array.isArray(cloudRow?.value) ? cloudRow.value : [];
+
+  if (!force && ppfIsDangerousShrink(key, value, cloudValue)) {
+    const msg = `SYNC BLOQUEADA: ${key}. Local=${value.length}, nube=${cloudValue.length}. No se sube una versión con menos datos.`;
+    console.warn(msg);
+    try { localStorage.setItem("ppfLastSyncGuardWarning", msg); } catch (_) {}
+    return false;
+  }
+
+  // Guarda snapshot antes de subir una versión válida.
+  ppfSnapshotLocalState(`antes_push_${key}`);
 
   const { error } = await client
     .from("app_state")
@@ -110,16 +186,17 @@ async function ppfPushKeyToCloud(key) {
     return false;
   }
 
+  window.PPF_ALLOW_DESTRUCTIVE_SYNC_ONCE = false;
   localStorage.setItem("ppfSupabaseLastPush", new Date().toISOString());
   return true;
 }
 
-async function ppfPushAllToCloud() {
+async function ppfPushAllToCloud(options = {}) {
   const client = ppfCreateClient();
   if (!client) return false;
 
   for (const key of PPF_SYNC_KEYS) {
-    await ppfPushKeyToCloud(key);
+    await ppfPushKeyToCloud(key, options);
   }
 
   try {
@@ -169,7 +246,9 @@ window.PPF_SUPABASE = {
   push: ppfPushAllToCloud,
   pushKey: ppfPushKeyToCloud,
   status: () => window.PPF_SUPABASE_STATUS || "disabled",
-  keys: PPF_SYNC_KEYS
+  keys: PPF_SYNC_KEYS,
+  snapshot: ppfSnapshotLocalState,
+  forcePush: () => ppfPushAllToCloud({ force: true })
 };
 
 
