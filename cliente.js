@@ -917,12 +917,93 @@ const clientSections = {
   }
 };
 
+function escapeHTML(value=''){return String(value).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+
+
+function parseClientValuationNumber(value = "") {
+  const raw = String(value || "").trim().replace(",", ".");
+  const match = raw.match(/-?\d+(\.\d+)?/);
+  if (!match) return null;
+  const n = Number(match[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function clientValuationGroups() {
+  let all = [];
+  try { all = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) {}
+  const nickname = currentUser?.nickname || currentUser?.user || currentUser?.username || "";
+  const groups = {};
+
+  all.filter(v => v.patientNickname === nickname).forEach(v => {
+    (v.tests || []).forEach(test => {
+      const name = String(test.nombre || "").trim();
+      const unit = String(test.unidad || "").trim();
+      const attempts = [test.intento1, test.intento2, test.intento3].map(parseClientValuationNumber).filter(v => v !== null);
+      if (!name || !attempts.length) return;
+      const key = `${name.toLowerCase()}__${unit}`;
+      if (!groups[key]) groups[key] = { name, unit, days: {} };
+      const fecha = v.fecha || "-";
+      if (!groups[key].days[fecha]) groups[key].days[fecha] = { fecha, attempts: [] };
+      groups[key].days[fecha].attempts.push(...attempts);
+    });
+  });
+
+  return Object.values(groups).map(g => ({
+    ...g,
+    days: Object.values(g.days).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))).map(d => ({
+      ...d,
+      mean: Number((d.attempts.reduce((a,v)=>a+v,0)/d.attempts.length).toFixed(2))
+    }))
+  })).filter(g => g.days.length);
+}
+
+function clientValuationChartSVG(group) {
+  const days = group.days;
+  const values = days.flatMap(d => [...d.attempts, d.mean]);
+  const minRaw = Math.min(...values), maxRaw = Math.max(...values);
+  const rangeRaw = maxRaw - minRaw || 1;
+  const min = minRaw - rangeRaw * .1, max = maxRaw + rangeRaw * .16, range = max - min || 1;
+  const width = 520, height = 230, padX = 36, padY = 28;
+  const chartW = width - padX*2, chartH = height - padY*2;
+  const xFor = i => days.length === 1 ? width/2 : padX + i*(chartW/(days.length-1));
+  const yFor = v => height - padY - (((v-min)/range)*chartH);
+  const maxAttempts = Math.max(...days.map(d=>d.attempts.length),1);
+  const barW = Math.max(7, Math.min(14, (Math.min(70, chartW/Math.max(days.length,1)) - (maxAttempts-1)*4)/maxAttempts));
+  const mean = days.map((d,i)=>({...d,x:xFor(i),y:yFor(d.mean)}));
+  return `
+    <article class="client-valuation-chart-card">
+      <div class="client-valuation-chart-head"><h3>${escapeHTML(group.name)}${group.unit ? ` (${escapeHTML(group.unit)})` : ""}</h3><strong>${escapeHTML(String(mean[mean.length-1].mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong></div>
+      <svg viewBox="0 0 ${width} ${height}" class="client-valuation-chart-svg">
+        <line x1="${padX}" y1="${height-padY}" x2="${width-padX}" y2="${height-padY}" class="client-chart-axis"/>
+        ${days.map((day,di)=>{
+          const cx=xFor(di); const total=day.attempts.length*barW+(day.attempts.length-1)*4; const start=cx-total/2;
+          return day.attempts.map((v,ai)=>{
+            const x=start+ai*(barW+4), y=yFor(v), h=Math.max(2,height-padY-y);
+            return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" class="client-chart-bar"><title>${escapeHTML(day.fecha)} · Intento ${ai+1}: ${escapeHTML(String(v))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></rect>`;
+          }).join("");
+        }).join("")}
+        <polyline points="${mean.map(p=>`${p.x},${p.y}`).join(" ")}" class="client-chart-line" fill="none"/>
+        ${mean.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="5" class="client-chart-point"><title>${escapeHTML(p.fecha)} · Media: ${escapeHTML(String(p.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></circle>`).join("")}
+        ${mean.map((p,i)=> days.length>5 && i!==0 && i!==days.length-1 ? "" : `<text x="${p.x}" y="${height-6}" text-anchor="middle" class="client-chart-date">${escapeHTML(p.fecha)}</text>`).join("")}
+      </svg>
+    </article>`;
+}
+
+function clientValuationChartsHTML() {
+  const groups = clientValuationGroups();
+  if (!groups.length) return `<section class="content-card"><h2>Valoraciones</h2><p>No hay tests numéricos registrados todavía.</p></section>`;
+  return `<section class="content-card client-valuations-pro"><p class="eyebrow">Valoraciones</p><h2>Gráficas de evolución</h2><div class="client-valuation-grid">${groups.map(clientValuationChartSVG).join("")}</div></section>`;
+}
+
 function renderClientSection(key) {
   const sectionKey = clientSections[key] ? key : "inicio";
   const section = clientSections[sectionKey];
   if (!section || !clientSectionTitle || !clientContentArea) return;
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
+  if (key === "historial" && typeof clientValuationChartsHTML === "function") {
+    clientContentArea.insertAdjacentHTML("beforeend", clientValuationChartsHTML());
+  }
 
   document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.clientSection === sectionKey || (sectionKey === "dashboard" && tab.dataset.clientSection === "inicio"));
@@ -941,6 +1022,14 @@ clientNavItems.forEach(item => {
 const logoutBtn = document.getElementById("clientLogoutBtn");
 if (logoutBtn) {
   logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
+  });
+}
+
+const clientHeaderLogoutBtn = document.getElementById("clientHeaderLogoutBtn");
+if (clientHeaderLogoutBtn) {
+  clientHeaderLogoutBtn.addEventListener("click", () => {
     localStorage.removeItem("currentUser");
     window.location.href = "index.html";
   });
@@ -1064,6 +1153,48 @@ document.addEventListener("click", function(event) {
   event.preventDefault();
   pmClientLogout();
 });
+
+
+
+/* PM FIX · Navegación inferior móvil cliente funcional */
+function pmEnsureClientMobileNav() {
+  const isClientPage = document.body && document.querySelector(".client-layout");
+  if (!isClientPage) return;
+
+  let nav = document.getElementById("pmClientBottomNav");
+  if (!nav) {
+    nav = document.createElement("nav");
+    nav.id = "pmClientBottomNav";
+    nav.className = "pm-client-bottom-nav";
+    nav.innerHTML = `
+      <button type="button" data-client-section="dashboard"><span>🏠</span><small>Inicio</small></button>
+      <button type="button" data-client-section="proxima"><span>📅</span><small>Sesión</small></button>
+      <button type="button" data-client-section="dashboard"><span>📊</span><small>Dashboard</small></button>
+      <button type="button" data-client-section="archivos"><span>📁</span><small>Archivos</small></button>
+      <button type="button" data-client-section="historial"><span>👤</span><small>Perfil</small></button>
+    `;
+    document.body.appendChild(nav);
+  }
+
+  nav.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      const section = btn.dataset.clientSection || "dashboard";
+      document.querySelectorAll(".client-nav-item").forEach(item => {
+        item.classList.toggle("active", item.dataset.clientSection === section);
+      });
+      nav.querySelectorAll("button").forEach(b => b.classList.toggle("active", b === btn));
+      if (typeof renderClientSection === "function") renderClientSection(section);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+  });
+
+  const activeSection = document.querySelector(".client-nav-item.active")?.dataset.clientSection || "dashboard";
+  nav.querySelectorAll("button").forEach(btn => btn.classList.toggle("active", btn.dataset.clientSection === activeSection));
+}
+
+document.addEventListener("DOMContentLoaded", pmEnsureClientMobileNav);
+setTimeout(pmEnsureClientMobileNav, 0);
+setTimeout(pmEnsureClientMobileNav, 700);
 
 })();
 

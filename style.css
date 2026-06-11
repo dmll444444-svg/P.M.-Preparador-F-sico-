@@ -3711,3 +3711,506 @@ aside.client-sidebar {
     grid-template-columns: 1fr;
   }
 }
+
+
+
+
+
+
+/* =========================================================
+   PM Valoraciones PRO · Estilo barras + línea + tooltip
+   ========================================================= */
+
+.valuation-charts-grid-pro {
+  grid-template-columns: 1fr !important;
+}
+
+.valuation-chart-pro-card {
+  padding: 28px !important;
+  border-radius: 26px !important;
+  background:
+    radial-gradient(circle at 50% 15%, rgba(56, 189, 248, 0.08), transparent 36%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.76), rgba(2, 6, 23, 0.68)) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+}
+
+.pro-chart-head {
+  margin-bottom: 22px !important;
+}
+
+.pro-chart-head h4 {
+  font-size: 1.4rem !important;
+}
+
+.pro-chart-head strong {
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.09);
+  border-radius: 14px;
+  padding: 11px 14px;
+  color: #86efac !important;
+}
+
+.valuation-pro-chart {
+  width: 100%;
+  min-height: 390px;
+  overflow: visible;
+}
+
+.valuation-grid-line {
+  stroke: rgba(148, 163, 184, 0.13);
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+}
+
+.valuation-pro-chart .valuation-chart-axis {
+  stroke: rgba(148, 163, 184, 0.24);
+}
+
+.valuation-bar-group rect {
+  fill: rgba(34, 197, 94, 0.72);
+  stroke: rgba(134, 239, 172, 0.55);
+  stroke-width: 1;
+  filter: drop-shadow(0 0 8px rgba(34,197,94,.20));
+  transition: filter .16s ease, opacity .16s ease;
+}
+
+.valuation-bar-group:hover rect {
+  filter: drop-shadow(0 0 16px rgba(34,197,94,.42));
+  opacity: .95;
+}
+
+.valuation-mean-line {
+  stroke: #3b82f6 !important;
+  stroke-width: 4 !important;
+  filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.36));
+}
+
+.valuation-mean-point circle {
+  fill: #3b82f6 !important;
+  stroke: #dbeafe !important;
+  stroke-width: 2.3 !important;
+  filter: drop-shadow(0 0 9px rgba(59, 130, 246, 0.48));
+}
+
+.valuation-chart-scale {
+  fill: #94a3b8;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.valuation-chart-date {
+  fill: #94a3b8;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.valuation-chart-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 170px));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.valuation-chart-summary div {
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.valuation-chart-summary span {
+  display: block;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.valuation-chart-summary strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 1.08rem;
+  margin-bottom: 5px;
+}
+
+.valuation-chart-summary small {
+  color: #94a3b8;
+  font-weight: 800;
+}
+
+.valuation-chart-note {
+  margin: 18px 0 0;
+  color: #94a3b8;
+  font-weight: 750;
+}
+
+.valuation-chart-tooltip {
+  position: absolute;
+  z-index: 2147483647;
+  min-width: 210px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px) scale(.98);
+  transition: opacity .14s ease, transform .14s ease;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 18px 42px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.06);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.valuation-chart-tooltip.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.valuation-chart-tooltip strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 950;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.valuation-chart-tooltip .tooltip-line {
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 850;
+  margin-top: 6px;
+}
+
+.valuation-chart-tooltip .tooltip-main::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: #86efac;
+}
+
+.valuation-chart-tooltip .tooltip-extra::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: #3b82f6;
+}
+
+@media (max-width: 900px) {
+  .valuation-chart-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .valuation-pro-chart {
+    min-height: 300px;
+  }
+}
+
+
+/* =========================================================
+   PM FIX · Gráfica barras sin datos visibles, solo tooltip
+   ========================================================= */
+
+.valuation-bar-group text {
+  display: none !important;
+}
+
+
+/* =========================================================
+   PM FIX · Ocultar números en barras y puntos de media
+   ========================================================= */
+.valuation-bar-group text,
+.valuation-mean-point text {
+  display: none !important;
+}
+
+/* =========================================================
+   PM FIX · Barra inferior móvil cliente funcional
+   ========================================================= */
+.pm-client-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 800px), (pointer: coarse) and (max-width: 1024px) {
+  body:has(.client-layout) {
+    padding-bottom: 82px !important;
+  }
+
+  .client-sidebar {
+    display: none !important;
+  }
+
+  .pm-client-bottom-nav {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 99999;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    padding: 8px;
+    border-radius: 24px;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 18px 42px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.06);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .pm-client-bottom-nav button {
+    min-width: 0;
+    border: 0;
+    border-radius: 18px;
+    background: transparent;
+    color: #cbd5e1;
+    padding: 7px 3px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .pm-client-bottom-nav button.active {
+    color: #fff;
+    background: rgba(34, 197, 94, 0.20);
+    box-shadow: inset 0 0 0 1px rgba(34,197,94,.22);
+  }
+
+  .pm-client-bottom-nav span {
+    display: block;
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .pm-client-bottom-nav small {
+    display: block;
+    font-size: 10px;
+    margin-top: 3px;
+    white-space: nowrap;
+  }
+
+  .client-main {
+    padding-bottom: 96px !important;
+  }
+}
+
+/* Cliente · gráficas valoraciones */
+.client-valuations-pro {
+  margin-top: 18px;
+}
+
+.client-valuation-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.client-valuation-chart-card {
+  border-radius: 22px;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.58);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.client-valuation-chart-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.client-valuation-chart-head h3 {
+  margin: 0;
+  color: #f8fafc;
+}
+
+.client-valuation-chart-head strong {
+  color: #86efac;
+}
+
+.client-valuation-chart-svg {
+  width: 100%;
+  height: auto;
+}
+
+.client-chart-axis {
+  stroke: rgba(148,163,184,.24);
+}
+
+.client-chart-bar {
+  fill: rgba(34,197,94,.72);
+  stroke: rgba(134,239,172,.55);
+}
+
+.client-chart-line {
+  stroke: #3b82f6;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.client-chart-point {
+  fill: #3b82f6;
+  stroke: #dbeafe;
+  stroke-width: 2;
+}
+
+.client-chart-date {
+  fill: #94a3b8;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+/* =========================================================
+   PM FIX FINAL · Cliente móvil navegación fija + logout cabecera
+   ========================================================= */
+.client-header-user {
+  align-items: center !important;
+}
+
+.client-user-stack {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+
+.client-user-stack #clientHeaderName {
+  display: block !important;
+  max-width: 220px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: #f8fafc !important;
+  font-weight: 950 !important;
+  line-height: 1.1 !important;
+}
+
+#clientHeaderLogoutBtn.client-header-logout-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  min-height: 28px !important;
+  padding: 7px 12px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(248, 113, 113, 0.38) !important;
+  background: rgba(248, 113, 113, 0.14) !important;
+  color: #fecaca !important;
+  font-size: 11px !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+}
+
+.client-mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 800px), (pointer: coarse) and (max-width: 1024px) {
+  body:has(.client-layout) {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important;
+  }
+
+  .client-layout {
+    display: block !important;
+    min-height: 100dvh !important;
+  }
+
+  .client-sidebar {
+    display: none !important;
+  }
+
+  .client-main {
+    width: 100% !important;
+    padding: calc(14px + env(safe-area-inset-top)) 12px calc(108px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .client-main > .admin-header {
+    gap: 12px !important;
+  }
+
+  .client-user-stack {
+    align-items: flex-end !important;
+  }
+
+  .client-user-stack #clientHeaderName {
+    max-width: 145px !important;
+  }
+
+  #clientHeaderLogoutBtn.client-header-logout-btn {
+    padding: 6px 10px !important;
+    font-size: 10px !important;
+  }
+
+  .client-mobile-bottom-nav {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    z-index: 2147483647 !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+    padding: 8px !important;
+    border-radius: 24px !important;
+    background: rgba(2, 6, 23, 0.95) !important;
+    border: 1px solid rgba(34, 197, 94, 0.34) !important;
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255,255,255,.07) !important;
+    backdrop-filter: blur(22px) !important;
+    -webkit-backdrop-filter: blur(22px) !important;
+    pointer-events: auto !important;
+  }
+
+  .client-mobile-tab {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    min-width: 0 !important;
+    height: 58px !important;
+    border: 0 !important;
+    border-radius: 18px !important;
+    padding: 7px 3px !important;
+    background: transparent !important;
+    color: #94a3b8 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    font-weight: 900 !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  .client-mobile-tab span {
+    display: block !important;
+    font-size: 22px !important;
+    line-height: 1 !important;
+    pointer-events: none !important;
+  }
+
+  .client-mobile-tab small {
+    display: block !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    pointer-events: none !important;
+  }
+
+  .client-mobile-tab.active {
+    color: #f8fafc !important;
+    background: linear-gradient(135deg, rgba(34,197,94,.38), rgba(20,184,166,.26)) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 24px rgba(34,197,94,.14) !important;
+  }
+}
