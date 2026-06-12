@@ -26,6 +26,26 @@ let patients = JSON.parse(localStorage.getItem("patients")) || [];
 let histories = JSON.parse(localStorage.getItem("histories")) || [];
 let patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
 let valoraciones = JSON.parse(localStorage.getItem("valoraciones")) || [];
+
+function pmIsFakeValuationRecord(item) {
+  const fecha = String(item?.fecha || "");
+  const patient = String(item?.patientNickname || item?.patientName || item?.nombrePaciente || "").toLowerCase();
+  return fecha === "2026-06-10" && patient.includes("david") && (item.tests || []).some(test => {
+    const name = String(test?.nombre || "").toLowerCase();
+    const values = [test?.intento1, test?.intento2, test?.intento3].map(v => String(v ?? "").replace(",", ".").trim());
+    return name.includes("cmj") && values.join("|") === "50|50|50.5";
+  });
+}
+
+function pmCleanFakeValuationRecords(pushCloud = false) {
+  const before = Array.isArray(valoraciones) ? valoraciones.length : 0;
+  valoraciones = (Array.isArray(valoraciones) ? valoraciones : []).filter(item => !pmIsFakeValuationRecord(item));
+  if (valoraciones.length !== before) {
+    localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
+    if (pushCloud && window.PPF_SUPABASE?.pushKey) window.PPF_SUPABASE.pushKey("valoraciones").catch(()=>{});
+  }
+}
+pmCleanFakeValuationRecords(false);
 let sessions = JSON.parse(localStorage.getItem("sessions")) || [];
 let editingSessionId = null;
 let editingValuationId = null;
@@ -912,9 +932,7 @@ function bindPatientForm() {
       notas: document.getElementById("notas")?.value.trim() || ""
     };
 
-    const wasEditingPatient = Boolean(editingPatientNickname);
-
-    if (wasEditingPatient) {
+    if (editingPatientNickname) {
       const previousNickname = editingPatientNickname;
       const index = patients.findIndex(patient => patient.nickname === previousNickname);
 
@@ -930,35 +948,21 @@ function bindPatientForm() {
         sessions = sessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item);
 
         const completedSessions = JSON.parse(localStorage.getItem("completedSessions")) || [];
-        const updatedCompletedSessions = completedSessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item);
-        localStorage.setItem("completedSessions", JSON.stringify(updatedCompletedSessions));
-        if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("completedSessions", updatedCompletedSessions);
+        localStorage.setItem("completedSessions", JSON.stringify(
+          completedSessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item)
+        ));
       }
+
+      alert("Paciente actualizado correctamente.");
     } else {
       patients.push(newPatient);
+      alert("Paciente guardado correctamente.");
     }
 
-    try {
-      localStorage.setItem("patients", JSON.stringify(patients));
-      localStorage.setItem("histories", JSON.stringify(histories));
-      localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
-      localStorage.setItem("sessions", JSON.stringify(sessions));
-
-      if (window.PPF_SUPABASE?.pushValue) {
-        const pushed = await window.PPF_SUPABASE.pushValue("patients", patients);
-        if (!pushed) {
-          alert("El paciente se ha guardado en la app, pero Supabase no confirmó la sincronización. Revisa la consola antes de cerrar.");
-        } else {
-          alert(wasEditingPatient ? "Paciente actualizado y sincronizado correctamente." : "Paciente guardado y sincronizado correctamente.");
-        }
-      } else {
-        alert(wasEditingPatient ? "Paciente actualizado correctamente." : "Paciente guardado correctamente.");
-      }
-    } catch (error) {
-      console.error("Error guardando paciente:", error);
-      alert("No se pudo guardar el paciente. Revisa la consola para ver el error.");
-      return;
-    }
+    localStorage.setItem("patients", JSON.stringify(patients));
+    localStorage.setItem("histories", JSON.stringify(histories));
+    localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
+    localStorage.setItem("sessions", JSON.stringify(sessions));
 
     currentPhoto = "";
     resetPatientFormState();
@@ -3756,13 +3760,25 @@ function getValuationAttempts(test = {}) {
     .filter(value => value !== null);
 }
 
+function valuationDateOrder(value = "") {
+  const raw = String(value || "").trim();
+  const time = Date.parse(raw);
+  if (Number.isFinite(time)) return time;
+  const parts = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (parts) {
+    const year = parts[3].length === 2 ? `20${parts[3]}` : parts[3];
+    return Date.parse(`${year}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")}`);
+  }
+  return 0;
+}
+
 function getValuationChartGroups(filterNickname = "") {
   const groups = {};
 
   valoraciones
     .filter(item => !filterNickname || item.patientNickname === filterNickname)
     .slice()
-    .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .sort((a, b) => valuationDateOrder(a.fecha) - valuationDateOrder(b.fecha) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
     .forEach(item => {
       const patient = patients.find(p => p.nickname === item.patientNickname);
       const patientName = patient ? patient.nombre : item.patientNickname;
@@ -3794,7 +3810,7 @@ function getValuationChartGroups(filterNickname = "") {
     .map(group => ({
       ...group,
       days: Object.values(group.days)
-        .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))
+        .sort((a, b) => valuationDateOrder(a.fecha) - valuationDateOrder(b.fecha) || String(a.fecha || "").localeCompare(String(b.fecha || "")))
         .map(day => {
           const mean = day.attempts.reduce((acc, value) => acc + value, 0) / day.attempts.length;
           return { ...day, mean: Number(mean.toFixed(2)) };
@@ -3809,9 +3825,10 @@ function renderValuationMiniChart(group) {
   const allValues = days.flatMap(day => [...day.attempts, day.mean]);
   const minRaw = Math.min(...allValues);
   const maxRaw = Math.max(...allValues);
-  const rangeRaw = maxRaw - minRaw || 1;
-  const min = minRaw - rangeRaw * 0.10;
-  const max = maxRaw + rangeRaw * 0.16;
+  const scaleMin = minRaw >= 0 ? 0 : minRaw;
+  const rangeRaw = maxRaw - scaleMin || Math.max(Math.abs(maxRaw), 1);
+  const min = scaleMin;
+  const max = maxRaw + rangeRaw * 0.18;
   const range = max - min || 1;
 
   const width = 760;
@@ -3838,8 +3855,11 @@ function renderValuationMiniChart(group) {
   const trendLabel = trend > 0 ? `+${trend}` : String(trend);
   const trendPct = first.mean ? Number(((trend / first.mean) * 100).toFixed(2)) : 0;
   const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
+  const directionLabel = trend > 0 ? "↗ Ascendente" : trend < 0 ? "↘ Descendente" : "→ Estable";
+  const directionText = trend > 0 ? "Progresión positiva" : trend < 0 ? "Revisar evolución" : "Sin cambios relevantes";
 
-  const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+  const yTicks = [maxRaw, (maxRaw + min) / 2, min].map(value => Number(value.toFixed(2)));
+  const gradientId = `barGradient-${Math.abs(`${group.patientNickname}-${group.testName}-${group.unit}`.split("").reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0))}`;
 
   return `
     <article class="valuation-chart-card valuation-chart-pro-card">
@@ -3854,7 +3874,7 @@ function renderValuationMiniChart(group) {
 
       <svg class="valuation-line-chart valuation-pro-chart" viewBox="0 0 ${width} ${height}" role="img">
         <defs>
-          <linearGradient id="barGradient-${escapeValuationHtml(group.patientNickname)}-${escapeValuationHtml(group.testName).replace(/\s+/g, "-")}" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="${gradientId}" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#86efac"></stop>
             <stop offset="100%" stop-color="#16a34a"></stop>
           </linearGradient>
@@ -3864,7 +3884,6 @@ function renderValuationMiniChart(group) {
           const y = yForValue(tick);
           return `
             <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="valuation-grid-line" />
-            <text x="${padX - 12}" y="${y + 4}" text-anchor="end" class="valuation-chart-scale">${escapeValuationHtml(String(tick))}</text>
           `;
         }).join("")}
 
@@ -3885,7 +3904,8 @@ function renderValuationMiniChart(group) {
                  data-label="Intento ${attemptIndex + 1}"
                  data-value="${escapeValuationHtml(String(value))}"
                  data-unit="${escapeValuationHtml(group.unit || "")}">
-                <rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="6"></rect>
+                <rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="6" fill="url(#${gradientId})"></rect>
+                <text x="${x + barWidth / 2}" y="${height - padY - 10}" text-anchor="middle" class="valuation-bar-value valuation-bar-value-bottom">${escapeValuationHtml(String(value))}</text>
               </g>
             `;
           }).join("");
@@ -3922,9 +3942,14 @@ function renderValuationMiniChart(group) {
           <small>${escapeValuationHtml(last.fecha)}</small>
         </div>
         <div>
-          <span>Tendencia</span>
+          <span>Mejora</span>
           <strong>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
           <small>${escapeValuationHtml(trendPctLabel)}</small>
+        </div>
+        <div>
+          <span>Tendencia</span>
+          <strong>${escapeValuationHtml(directionLabel)}</strong>
+          <small>${escapeValuationHtml(directionText)}</small>
         </div>
       </div>
 
@@ -4033,7 +4058,7 @@ function renderValuationsList(filterNickname = "") {
         </div>
         <div class="file-actions">
           <button class="secondary-btn" type="button" onclick="editValuation('${item.id}')">Editar</button>
-          <button class="secondary-btn" type="button" onclick="generateValuationPDF('${item.id}')">Generar PDF</button>
+          <button class="secondary-btn" type="button" onclick="generateValuationPDF('${item.id}')">PDF opciones</button>
           <button class="danger-btn" type="button" onclick="deleteValuation('${item.id}')">Eliminar</button>
         </div>
       </article>
@@ -4076,6 +4101,7 @@ function bindValoracionesForm() {
   }
   renderValuationsList();
   renderValuationCharts();
+  renderValuationPdfTools(filter?.value || "");
   ensureValuationChartTooltip();
   pmRefreshValoracionesFromSupabase();
 
@@ -4101,7 +4127,11 @@ function bindValoracionesForm() {
   filter?.addEventListener("change", () => {
     renderValuationsList(filter.value);
     renderValuationCharts(filter.value);
+    renderValuationPdfTools(filter.value);
   });
+
+  document.getElementById("valuationPdfPatient")?.addEventListener("change", () => renderValuationPdfTools(document.getElementById("valuationPdfPatient")?.value || ""));
+  document.getElementById("generateFilteredValuationPdfBtn")?.addEventListener("click", generateValuationPdfFromTools);
 
   form.addEventListener("submit", event => {
     event.preventDefault();
@@ -4158,6 +4188,7 @@ function bindValoracionesForm() {
     if (submitBtn) submitBtn.textContent = "Guardar valoración";
     renderValuationsList(filter?.value || "");
     renderValuationCharts(filter?.value || "");
+    renderValuationPdfTools(filter?.value || "");
     alert("Valoración guardada correctamente.");
   });
 }
@@ -4219,11 +4250,149 @@ function valuationHasRegisteredData(test = {}) {
 
 
 
-function getValuationPdfChartGroupsForPatient(patientNickname) {
-  return getValuationChartGroups(patientNickname)
+
+function normalizeValuationTestName(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getValuationTestsForPatient(patientNickname = "") {
+  const found = new Map();
+  valoraciones
+    .filter(item => !patientNickname || item.patientNickname === patientNickname)
+    .forEach(item => {
+      (item.tests || []).forEach(test => {
+        const testName = String(test.nombre || "").trim();
+        const unit = String(test.unidad || "").trim();
+        const attempts = getValuationAttempts(test);
+        if (!testName || !attempts.length) return;
+        const key = `${normalizeValuationTestName(testName)}__${unit.toLowerCase()}`;
+        if (!found.has(key)) found.set(key, { testName, unit });
+      });
+    });
+
+  return [...found.values()].sort((a, b) => a.testName.localeCompare(b.testName, "es") || a.unit.localeCompare(b.unit, "es"));
+}
+
+function valuationTestMatches(test = {}, selected = {}) {
+  if (!selected || !selected.testName) return true;
+  const sameName = normalizeValuationTestName(test.nombre) === normalizeValuationTestName(selected.testName);
+  const selectedUnit = String(selected.unit || "").trim().toLowerCase();
+  const testUnit = String(test.unidad || "").trim().toLowerCase();
+  return sameName && (!selectedUnit || selectedUnit === testUnit);
+}
+
+function getValuationRowsForPdf(patientNickname = "", selectedTest = null, onlyValuationId = "") {
+  return valoraciones
+    .filter(value => value.patientNickname === patientNickname)
+    .filter(value => !onlyValuationId || value.id === onlyValuationId)
+    .slice()
+    .sort((a, b) => valuationDateOrder(a.fecha) - valuationDateOrder(b.fecha) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .flatMap(valuation =>
+      (valuation.tests || [])
+        .filter(valuationHasRegisteredData)
+        .filter(test => valuationTestMatches(test, selectedTest))
+        .map((test, index) => `
+          <tr>
+            <td>${escapeValuationHtml(valuation.fecha || "-")}</td>
+            <td>${index + 1}</td>
+            <td>${escapeValuationHtml(test.nombre || "-")}</td>
+            <td>${escapeValuationHtml(test.intento1 || "-")}</td>
+            <td>${escapeValuationHtml(test.intento2 || "-")}</td>
+            <td>${escapeValuationHtml(test.intento3 || "-")}</td>
+            <td>${escapeValuationHtml(test.unidad || "")}</td>
+            <td>${escapeValuationHtml(test.observaciones || "-")}</td>
+          </tr>
+        `)
+    ).join("");
+}
+
+function renderValuationPdfTools(filterNickname = "") {
+  const patientSelect = document.getElementById("valuationPdfPatient");
+  const testSelect = document.getElementById("valuationPdfTest");
+  if (!patientSelect || !testSelect) return;
+
+  const selectedPatient = patientSelect.value || filterNickname || "";
+  patientSelect.innerHTML = `<option value="">Selecciona paciente</option>${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}`;
+  if (selectedPatient) patientSelect.value = selectedPatient;
+
+  const tests = patientSelect.value ? getValuationTestsForPatient(patientSelect.value) : [];
+  testSelect.innerHTML = `<option value="">Todos los tests del paciente</option>${tests.map(test => {
+    const value = `${test.testName}||${test.unit}`;
+    return `<option value="${escapeValuationHtml(value)}">${escapeValuationHtml(test.testName)}${test.unit ? ` (${escapeValuationHtml(test.unit)})` : ""}</option>`;
+  }).join("")}`;
+}
+
+function selectedPdfToolTest() {
+  const raw = document.getElementById("valuationPdfTest")?.value || "";
+  if (!raw) return null;
+  const [testName, unit = ""] = raw.split("||");
+  return { testName, unit };
+}
+
+function generateValuationPdfFromTools() {
+  const patientNickname = document.getElementById("valuationPdfPatient")?.value || document.getElementById("valuationsFilter")?.value || "";
+  if (!patientNickname) {
+    alert("Selecciona primero un paciente para generar el PDF.");
+    return;
+  }
+  generateValuationPDF(null, {
+    patientNickname,
+    selectedTest: selectedPdfToolTest(),
+    scope: "patient"
+  });
+}
+
+function chooseValuationPdfOptions(item) {
+  const tests = getValuationTestsForPatient(item.patientNickname);
+  const answer = prompt(
+    "Elige tipo de PDF:\n\n" +
+    "1 = Solo esta valoración con su gráfica\n" +
+    "2 = Todas las valoraciones del paciente con todas sus gráficas\n" +
+    "3 = Solo un test específico del paciente, por ejemplo CMJ, con su gráfica\n\n" +
+    "Escribe 1, 2 o 3:",
+    "1"
+  );
+  if (answer === null) return null;
+  const option = String(answer).trim();
+  if (option === "2") return { patientNickname: item.patientNickname, scope: "patient" };
+  if (option === "3") {
+    if (!tests.length) {
+      alert("Este paciente no tiene tests numéricos para generar una gráfica específica.");
+      return null;
+    }
+    const list = tests.map((test, index) => `${index + 1}. ${test.testName}${test.unit ? ` (${test.unit})` : ""}`).join("\n");
+    const selected = prompt(`Elige el test:\n\n${list}\n\nEscribe el número:`, "1");
+    if (selected === null) return null;
+    const index = Number(String(selected).trim()) - 1;
+    if (!tests[index]) {
+      alert("Selección no válida.");
+      return null;
+    }
+    return { patientNickname: item.patientNickname, selectedTest: tests[index], scope: "patient" };
+  }
+  return { patientNickname: item.patientNickname, selectedTest: null, scope: "valuation", onlyValuationId: item.id };
+}
+
+function getValuationPdfChartGroupsForPatient(patientNickname, selectedTest = null, onlyValuationId = "") {
+  let groups = getValuationChartGroups(patientNickname);
+
+  if (selectedTest && selectedTest.testName) {
+    groups = groups.filter(group => valuationTestMatches({ nombre: group.testName, unidad: group.unit }, selectedTest));
+  }
+
+  if (onlyValuationId) {
+    const valuation = valoraciones.find(item => item.id === onlyValuationId);
+    const allowedDate = valuation?.fecha || "";
+    groups = groups.map(group => ({
+      ...group,
+      days: [...(group.days || [])].filter(day => day.fecha === allowedDate)
+    }));
+  }
+
+  return groups
     .map(group => ({
       ...group,
-      days: [...(group.days || [])].sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")))
+      days: [...(group.days || [])].sort((a, b) => valuationDateOrder(a.fecha) - valuationDateOrder(b.fecha) || String(a.fecha || "").localeCompare(String(b.fecha || "")))
     }))
     .filter(group => group.days.length);
 }
@@ -4235,9 +4404,10 @@ function renderValuationPdfChart(group) {
   const allValues = days.flatMap(day => [...day.attempts, day.mean]);
   const minRaw = Math.min(...allValues);
   const maxRaw = Math.max(...allValues);
-  const rangeRaw = maxRaw - minRaw || 1;
-  const min = minRaw - rangeRaw * 0.10;
-  const max = maxRaw + rangeRaw * 0.16;
+  const scaleMin = minRaw >= 0 ? 0 : minRaw;
+  const rangeRaw = maxRaw - scaleMin || Math.max(Math.abs(maxRaw), 1);
+  const min = scaleMin;
+  const max = maxRaw + rangeRaw * 0.18;
   const range = max - min || 1;
 
   const width = 720;
@@ -4257,20 +4427,21 @@ function renderValuationPdfChart(group) {
 
   const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
   const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
-  const newest = meanPoints[0];
-  const oldest = meanPoints[meanPoints.length - 1];
+  const oldest = meanPoints[0];
+  const newest = meanPoints[meanPoints.length - 1];
   const trend = Number((newest.mean - oldest.mean).toFixed(2));
   const trendLabel = trend > 0 ? `+${trend}` : String(trend);
   const trendPct = oldest.mean ? Number(((trend / oldest.mean) * 100).toFixed(2)) : 0;
   const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
-  const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+  const yTicks = [maxRaw, (maxRaw + min) / 2, min].map(value => Number(value.toFixed(2)));
+  const gradientId = `barGradient-${Math.abs(`${group.patientNickname}-${group.testName}-${group.unit}`.split("").reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0))}`;
 
   return `
     <section class="pdf-chart-card">
       <div class="pdf-chart-title">
         <div>
           <h2>${escapeValuationHtml(group.testName)}${group.unit ? ` (${escapeValuationHtml(group.unit)})` : ""}</h2>
-          <p>Fechas ordenadas de más nueva a más antigua · barras: intentos individuales · línea: media diaria</p>
+          <p>Fechas ordenadas de antigua a nueva · barras: intentos individuales · línea: media diaria</p>
         </div>
         <strong>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
       </div>
@@ -4280,7 +4451,6 @@ function renderValuationPdfChart(group) {
           const y = yForValue(tick);
           return `
             <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="pdf-grid" />
-            <text x="${padX - 10}" y="${y + 4}" text-anchor="end" class="pdf-scale">${escapeValuationHtml(String(tick))}</text>
           `;
         }).join("")}
 
@@ -4299,6 +4469,7 @@ function renderValuationPdfChart(group) {
               <rect class="pdf-bar" x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4">
                 <title>${escapeValuationHtml(day.fecha)} · Intento ${attemptIndex + 1}: ${escapeValuationHtml(String(value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
               </rect>
+              <text x="${x + barWidth / 2}" y="${height - padY - 9}" text-anchor="middle" class="pdf-bar-label">${escapeValuationHtml(String(value))}</text>
             `;
           }).join("");
         }).join("")}
@@ -4316,53 +4487,55 @@ function renderValuationPdfChart(group) {
       </svg>
 
       <div class="pdf-chart-summary">
-        <div><span>Más antigua</span><b>${escapeValuationHtml(String(oldest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(oldest.fecha)}</small></div>
-        <div><span>Más reciente</span><b>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(newest.fecha)}</small></div>
+        <div><span>Anterior (Antes)</span><b>${escapeValuationHtml(String(oldest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(group.unit || "Registro numérico")} · ${escapeValuationHtml(oldest.fecha)}</small></div>
+        <div><span>Posterior (Actual)</span><b>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(group.unit || "Registro numérico")} · ${escapeValuationHtml(newest.fecha)}</small></div>
         <div><span>Tendencia</span><b>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(trendPctLabel)}</small></div>
       </div>
     </section>
   `;
 }
 
-function generateValuationPDF(id) {
-  const item = valoraciones.find(value => value.id === id);
-  if (!item) return;
+function generateValuationPDF(id = null, options = null) {
+  let item = id ? valoraciones.find(value => value.id === id) : null;
+  if (id && !item) return;
 
-  const tests = (item.tests || []).filter(valuationHasRegisteredData);
+  const pdfOptions = options || (item ? chooseValuationPdfOptions(item) : null);
+  if (!pdfOptions) return;
 
-  if (!tests.length) {
-    alert("Esta valoración no tiene datos registrados para generar PDF.");
+  const patientNickname = pdfOptions.patientNickname || item?.patientNickname || "";
+  if (!patientNickname) {
+    alert("Selecciona un paciente para generar el PDF.");
     return;
   }
 
-  const patient = patients.find(p => p.nickname === item.patientNickname);
-  const patientName = patient ? patient.nombre : item.patientNickname;
+  if (!item) {
+    item = valoraciones
+      .filter(value => value.patientNickname === patientNickname)
+      .slice()
+      .sort((a, b) => valuationDateOrder(b.fecha) - valuationDateOrder(a.fecha))[0] || null;
+  }
 
-  const patientValuations = valoraciones
-    .filter(value => value.patientNickname === item.patientNickname)
-    .slice()
-    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const patient = patients.find(p => p.nickname === patientNickname);
+  const patientName = patient ? patient.nombre : patientNickname;
+  const selectedTest = pdfOptions.selectedTest || null;
+  const onlyValuationId = pdfOptions.scope === "valuation" ? (pdfOptions.onlyValuationId || id || "") : "";
 
-  const rows = patientValuations.flatMap(valuation =>
-    (valuation.tests || [])
-      .filter(valuationHasRegisteredData)
-      .map((test, index) => `
-        <tr>
-          <td>${escapeValuationHtml(valuation.fecha || "-")}</td>
-          <td>${index + 1}</td>
-          <td>${escapeValuationHtml(test.nombre || "-")}</td>
-          <td>${escapeValuationHtml(test.intento1 || "-")}</td>
-          <td>${escapeValuationHtml(test.intento2 || "-")}</td>
-          <td>${escapeValuationHtml(test.intento3 || "-")}</td>
-          <td>${escapeValuationHtml(test.unidad || "")}</td>
-          <td>${escapeValuationHtml(test.observaciones || "-")}</td>
-        </tr>
-      `)
-  ).join("");
+  const rows = getValuationRowsForPdf(patientNickname, selectedTest, onlyValuationId);
+  const chartGroups = getValuationPdfChartGroupsForPatient(patientNickname, selectedTest, onlyValuationId);
 
-  const chartGroups = getValuationPdfChartGroupsForPatient(item.patientNickname);
+  if (!rows && !chartGroups.length) {
+    alert("No hay datos registrados para generar ese PDF.");
+    return;
+  }
+
+  const reportType = onlyValuationId
+    ? "Informe de valoración individual"
+    : selectedTest?.testName
+      ? `Informe específico: ${selectedTest.testName}${selectedTest.unit ? ` (${selectedTest.unit})` : ""}`
+      : "Informe completo de valoraciones";
+
   const chartsHtml = chartGroups.length
-    ? `<div class="pdf-section-break"></div><h1 class="pdf-section-title">Gráficas de evolución por test</h1>${chartGroups.map(renderValuationPdfChart).join("")}`
+    ? `<div class="pdf-section-break"></div><h1 class="pdf-section-title">Gráficas de evolución${selectedTest?.testName ? ` · ${escapeValuationHtml(selectedTest.testName)}` : " por test"}</h1>${chartGroups.map(renderValuationPdfChart).join("")}`
     : "";
 
   const html = `
@@ -4396,6 +4569,8 @@ function generateValuationPDF(id) {
         .pdf-scale { fill:#64748b; font-size:11px; font-weight:700; }
         .pdf-date { fill:#475569; font-size:11px; font-weight:700; }
         .pdf-bar { fill:#22c55e; stroke:#16a34a; stroke-width:1; }
+        .pdf-bar-label { fill:#ffffff; font-size:10px; font-weight:900; paint-order:stroke; stroke:#15803d; stroke-width:3px; stroke-linejoin:round; }
+        .pdf-scale { display:none; }
         .pdf-mean-line { stroke:#2563eb; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
         .pdf-mean-point { fill:#3b82f6; stroke:#eff6ff; stroke-width:2; }
         .pdf-chart-summary { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:12px; }
@@ -4413,8 +4588,8 @@ function generateValuationPDF(id) {
     <body>
       <div class="header">
         <div class="brand">P.M Preparador Físico Online</div>
-        <h1>Informe completo de valoraciones</h1>
-        <div class="meta"><strong>Paciente:</strong> ${escapeValuationHtml(patientName)} · <strong>Generado desde valoración:</strong> ${escapeValuationHtml(item.fecha || "-")}</div>
+        <h1>${escapeValuationHtml(reportType)}</h1>
+        <div class="meta"><strong>Paciente:</strong> ${escapeValuationHtml(patientName)}${item?.fecha ? ` · <strong>Fecha referencia:</strong> ${escapeValuationHtml(item.fecha)}` : ""}</div>
       </div>
 
       <table>
@@ -4435,7 +4610,7 @@ function generateValuationPDF(id) {
 
       ${chartsHtml}
 
-      <div class="footer">Documento generado automáticamente. Incluye todos los datos registrados del paciente y las gráficas numéricas agrupadas por test.</div>
+      <div class="footer">Documento generado automáticamente. Incluye únicamente los datos y gráficas seleccionados.</div>
     </body>
     </html>
   `;
@@ -4469,6 +4644,7 @@ function deleteValuation(id) {
 
   renderValuationsList(document.getElementById("valuationsFilter")?.value || "");
   renderValuationCharts(document.getElementById("valuationsFilter")?.value || "");
+  renderValuationPdfTools(document.getElementById("valuationsFilter")?.value || "");
 }
 
 const sections = {
@@ -4808,6 +4984,24 @@ const sections = {
         </select>
       </div>
 
+      <div class="patient-form valuation-pdf-panel" style="margin-top:18px;">
+        <h3>Generar PDF filtrado</h3>
+        <p>Elige un paciente y, si quieres, un test concreto como CMJ, Sprint 10m, Yo-Yo, etc. Si dejas “Todos los tests”, saldrá el informe completo del paciente.</p>
+        <div class="form-grid-2">
+          <div>
+            <label for="valuationPdfPatient">Paciente del PDF</label>
+            <select id="valuationPdfPatient"><option value="">Selecciona paciente</option></select>
+          </div>
+          <div>
+            <label for="valuationPdfTest">Test del PDF</label>
+            <select id="valuationPdfTest"><option value="">Todos los tests del paciente</option></select>
+          </div>
+        </div>
+        <div class="form-actions valuation-actions">
+          <button class="primary-btn" id="generateFilteredValuationPdfBtn" type="button">Generar PDF seleccionado</button>
+        </div>
+      </div>
+
       <section class="valuation-charts-panel">
         <div class="module-panel-header">
           <div>
@@ -4842,6 +5036,7 @@ navItems.forEach(item => {
 const sidebarLogoutBtn = document.getElementById("logoutBtn");
 if (sidebarLogoutBtn) {
   sidebarLogoutBtn.addEventListener("click", () => {
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
     localStorage.removeItem("currentUser");
     window.location.href = "index.html";
   });
@@ -4959,12 +5154,14 @@ function ensureAdminHeaderLogoutButton() {
   }
 
   btn.onclick = function () {
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
     localStorage.removeItem("currentUser");
     window.location.href = "index.html";
   };
 }
 
 window.PM_ADMIN_LOGOUT = function PM_ADMIN_LOGOUT() {
+  if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 };
@@ -5063,5 +5260,31 @@ setTimeout(pmRefreshPatientsKpiAndPage, 2500);
 if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
   window.PPF_SUPABASE_READY.then(pmRefreshPatientsKpiAndPage).catch(() => {});
 }
+
+
+
+/* PM SYNC PRO · refrescar panel admin cuando Supabase actualiza localStorage */
+function pmAdminReloadRuntimeFromStorage() {
+  try { patients = JSON.parse(localStorage.getItem("patients") || "[]"); } catch (_) { patients = []; }
+  try { sessions = JSON.parse(localStorage.getItem("sessions") || "[]"); } catch (_) { sessions = []; }
+  try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
+  try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
+  try { valoraciones = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) { valoraciones = []; }
+  try { exerciseLibrary = JSON.parse(localStorage.getItem("exerciseLibrary") || "[]"); } catch (_) { exerciseLibrary = []; }
+  if (typeof pmCleanFakeValuationRecords === "function") pmCleanFakeValuationRecords(false);
+  if (typeof updateCounters === "function") updateCounters();
+}
+
+function pmAdminRefreshVisibleSectionAfterSync() {
+  pmAdminReloadRuntimeFromStorage();
+  const active = document.querySelector(".nav-item.active")?.dataset.section || "paciente";
+  if (typeof renderSection === "function") renderSection(active);
+}
+
+window.addEventListener("PPF_APP_DATA_REFRESH", pmAdminRefreshVisibleSectionAfterSync);
+window.addEventListener("PPF_SUPABASE_SYNCED", function(event){
+  if (event.detail && event.detail.direction === "pull") pmAdminRefreshVisibleSectionAfterSync();
+});
+setTimeout(function(){ if (window.PPF_SYNC_ON_OPEN) window.PPF_SYNC_ON_OPEN("admin-start"); }, 500);
 
 })();

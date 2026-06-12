@@ -13,17 +13,18 @@ if (!currentUser || currentUser.role !== "client") {
   window.location.href = "index.html";
 }
 
-const patients = JSON.parse(localStorage.getItem("patients")) || [];
-const sessions = JSON.parse(localStorage.getItem("sessions")) || [];
-const histories = JSON.parse(localStorage.getItem("histories")) || [];
-const patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
+let patients = JSON.parse(localStorage.getItem("patients")) || [];
+let sessions = JSON.parse(localStorage.getItem("sessions")) || [];
+let histories = JSON.parse(localStorage.getItem("histories")) || [];
+let patientFiles = JSON.parse(localStorage.getItem("patientFiles")) || [];
 let completedSessions = JSON.parse(localStorage.getItem("completedSessions")) || [];
 
-const currentPatient = patients.find(patient => patient.nickname === currentUser.nickname);
-const currentClient = currentPatient;
+let currentPatient = patients.find(patient => patient.nickname === currentUser.nickname);
+let currentClient = currentPatient;
 
 if (!currentPatient) {
   alert("No se han encontrado tus datos de cliente.");
+  if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 }
@@ -888,8 +889,8 @@ const clientSections = {
     html: () => `<h2>Mis sesiones</h2><p>Sesiones terminadas y acumuladas en tus gráficas.</p>${renderClientSessions()}`
   },
   historial: {
-    title: "Mi historial",
-    html: () => `<h2>Mi historial</h2><p>Registros y evolución guardados por tu preparador.</p>${renderClientHistory()}`
+    title: "Valoraciones",
+    html: () => `<h2>Valoraciones</h2><p>Gráficas de evolución y tendencia con los mismos datos que ve tu preparador.</p>${clientValuationChartsHTML()}${renderClientHistory()}`
   },
   archivos: {
     title: "Mis archivos",
@@ -928,13 +929,54 @@ function parseClientValuationNumber(value = "") {
   return Number.isFinite(n) ? n : null;
 }
 
+
+function clientValuationDateOrder(value = "") {
+  const raw = String(value || "").trim();
+  const time = Date.parse(raw);
+  if (Number.isFinite(time)) return time;
+  const parts = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (parts) {
+    const year = parts[3].length === 2 ? `20${parts[3]}` : parts[3];
+    return Date.parse(`${year}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")}`);
+  }
+  return 0;
+}
+
+function clientNormalize(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function pmClientIsFakeValuationRecord(item) {
+  const fecha = String(item?.fecha || "");
+  const patient = clientNormalize(item?.patientNickname || item?.patientName || item?.nombrePaciente || "");
+  return fecha === "2026-06-10" && patient.includes("david") && (item.tests || []).some(test => {
+    const name = clientNormalize(test?.nombre || "");
+    const values = [test?.intento1, test?.intento2, test?.intento3].map(v => String(v ?? "").replace(",", ".").trim());
+    return name.includes("cmj") && values.join("|") === "50|50|50.5";
+  });
+}
+
+function pmClientCleanFakeValuations(pushCloud = false) {
+  let all = [];
+  try { all = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) { all = []; }
+  const clean = (Array.isArray(all) ? all : []).filter(item => !pmClientIsFakeValuationRecord(item));
+  if (clean.length !== all.length) {
+    localStorage.setItem("valoraciones", JSON.stringify(clean));
+    if (pushCloud && window.PPF_SUPABASE?.pushKey) window.PPF_SUPABASE.pushKey("valoraciones").catch(()=>{});
+  }
+  return clean;
+}
+
+pmClientCleanFakeValuations(false);
+
 function clientValuationGroups() {
   let all = [];
   try { all = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) {}
-  const nickname = currentUser?.nickname || currentUser?.user || currentUser?.username || "";
+  const nickname = currentPatient?.nickname || currentUser?.nickname || currentUser?.user || currentUser?.username || "";
+  const nickSet = new Set([nickname, currentUser?.nickname, currentPatient?.nickname, currentPatient?.nombre, currentUser?.username, currentUser?.user, currentUser?.name, currentUser?.nombre].map(clientNormalize).filter(Boolean));
   const groups = {};
 
-  all.filter(v => v.patientNickname === nickname).forEach(v => {
+  all.filter(v => nickSet.has(clientNormalize(v.patientNickname)) || nickSet.has(clientNormalize(v.patientName)) || nickSet.has(clientNormalize(v.nombrePaciente))).forEach(v => {
     (v.tests || []).forEach(test => {
       const name = String(test.nombre || "").trim();
       const unit = String(test.unidad || "").trim();
@@ -950,7 +992,7 @@ function clientValuationGroups() {
 
   return Object.values(groups).map(g => ({
     ...g,
-    days: Object.values(g.days).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))).map(d => ({
+    days: Object.values(g.days).sort((a,b)=>clientValuationDateOrder(a.fecha) - clientValuationDateOrder(b.fecha) || String(a.fecha).localeCompare(String(b.fecha))).map(d => ({
       ...d,
       mean: Number((d.attempts.reduce((a,v)=>a+v,0)/d.attempts.length).toFixed(2))
     }))
@@ -961,31 +1003,55 @@ function clientValuationChartSVG(group) {
   const days = group.days;
   const values = days.flatMap(d => [...d.attempts, d.mean]);
   const minRaw = Math.min(...values), maxRaw = Math.max(...values);
-  const rangeRaw = maxRaw - minRaw || 1;
-  const min = minRaw - rangeRaw * .1, max = maxRaw + rangeRaw * .16, range = max - min || 1;
-  const width = 520, height = 230, padX = 36, padY = 28;
+  const scaleMin = minRaw >= 0 ? 0 : minRaw;
+  const rangeRaw = maxRaw - scaleMin || Math.max(Math.abs(maxRaw), 1);
+  const min = scaleMin, max = maxRaw + rangeRaw * .18, range = max - min || 1;
+  const width = 760, height = 360, padX = 58, padY = 46;
   const chartW = width - padX*2, chartH = height - padY*2;
   const xFor = i => days.length === 1 ? width/2 : padX + i*(chartW/(days.length-1));
   const yFor = v => height - padY - (((v-min)/range)*chartH);
   const maxAttempts = Math.max(...days.map(d=>d.attempts.length),1);
-  const barW = Math.max(7, Math.min(14, (Math.min(70, chartW/Math.max(days.length,1)) - (maxAttempts-1)*4)/maxAttempts));
+  const daySlot = days.length === 1 ? chartW * 0.44 : Math.min(84, chartW / Math.max(days.length,1));
+  const barGap = 6;
+  const barW = Math.max(9, Math.min(18, (daySlot - (maxAttempts-1)*barGap)/maxAttempts));
   const mean = days.map((d,i)=>({...d,x:xFor(i),y:yFor(d.mean)}));
+  const first = mean[0];
+  const last = mean[mean.length - 1];
+  const trend = Number((last.mean - first.mean).toFixed(2));
+  const trendLabel = trend > 0 ? `+${trend}` : String(trend);
+  const trendPct = first.mean ? Number(((trend / first.mean) * 100).toFixed(2)) : 0;
+  const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
+  const directionLabel = trend > 0 ? "↗ Ascendente" : trend < 0 ? "↘ Descendente" : "→ Estable";
+  const directionText = trend > 0 ? "Progresión positiva" : trend < 0 ? "Revisar evolución" : "Sin cambios relevantes";
   return `
-    <article class="client-valuation-chart-card">
-      <div class="client-valuation-chart-head"><h3>${escapeHTML(group.name)}${group.unit ? ` (${escapeHTML(group.unit)})` : ""}</h3><strong>${escapeHTML(String(mean[mean.length-1].mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong></div>
-      <svg viewBox="0 0 ${width} ${height}" class="client-valuation-chart-svg">
-        <line x1="${padX}" y1="${height-padY}" x2="${width-padX}" y2="${height-padY}" class="client-chart-axis"/>
+    <article class="client-valuation-chart-card valuation-chart-card valuation-chart-pro-card">
+      <div class="client-valuation-chart-head pro-chart-head">
+        <div>
+          <h3>${escapeHTML(group.name)}${group.unit ? ` (${escapeHTML(group.unit)})` : ""}</h3>
+          <p>Barras verdes = datos individuales · Línea azul = media diaria</p>
+        </div>
+        <strong>${escapeHTML(String(last.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong>
+      </div>
+      <svg viewBox="0 0 ${width} ${height}" class="client-valuation-chart-svg valuation-line-chart valuation-pro-chart" role="img">
+        <line x1="${padX}" y1="${height-padY}" x2="${width-padX}" y2="${height-padY}" class="client-chart-axis valuation-chart-axis"/>
         ${days.map((day,di)=>{
-          const cx=xFor(di); const total=day.attempts.length*barW+(day.attempts.length-1)*4; const start=cx-total/2;
+          const cx=xFor(di); const total=day.attempts.length*barW+(day.attempts.length-1)*barGap; const start=cx-total/2;
           return day.attempts.map((v,ai)=>{
-            const x=start+ai*(barW+4), y=yFor(v), h=Math.max(2,height-padY-y);
-            return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" class="client-chart-bar"><title>${escapeHTML(day.fecha)} · Intento ${ai+1}: ${escapeHTML(String(v))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></rect>`;
+            const x=start+ai*(barW+barGap), y=yFor(v), h=Math.max(2,height-padY-y);
+            return `<g><rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" class="client-chart-bar"><title>${escapeHTML(day.fecha)} · Intento ${ai+1}: ${escapeHTML(String(v))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></rect><text x="${x + barW/2}" y="${height-padY-10}" text-anchor="middle" class="client-chart-bar-value valuation-bar-value-bottom">${escapeHTML(String(v))}</text></g>`;
           }).join("");
         }).join("")}
-        <polyline points="${mean.map(p=>`${p.x},${p.y}`).join(" ")}" class="client-chart-line" fill="none"/>
-        ${mean.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="5" class="client-chart-point"><title>${escapeHTML(p.fecha)} · Media: ${escapeHTML(String(p.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></circle>`).join("")}
-        ${mean.map((p,i)=> days.length>5 && i!==0 && i!==days.length-1 ? "" : `<text x="${p.x}" y="${height-6}" text-anchor="middle" class="client-chart-date">${escapeHTML(p.fecha)}</text>`).join("")}
+        <polyline points="${mean.map(p=>`${p.x},${p.y}`).join(" ")}" class="client-chart-line valuation-chart-line valuation-mean-line" fill="none"/>
+        ${mean.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="6.5" class="client-chart-point"><title>${escapeHTML(p.fecha)} · Media: ${escapeHTML(String(p.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></circle>`).join("")}
+        ${mean.map((p,i)=> days.length>8 && i!==0 && i!==days.length-1 ? "" : `<text x="${p.x}" y="${height-10}" text-anchor="middle" class="client-chart-date valuation-chart-date">${escapeHTML(p.fecha)}</text>`).join("")}
       </svg>
+      <div class="valuation-chart-summary client-valuation-summary">
+        <div><span>Inicial</span><strong>${escapeHTML(String(first.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(first.fecha)}</small></div>
+        <div><span>Actual</span><strong>${escapeHTML(String(last.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(last.fecha)}</small></div>
+        <div><span>Mejora</span><strong>${escapeHTML(trendLabel)}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(trendPctLabel)}</small></div>
+        <div><span>Tendencia</span><strong>${escapeHTML(directionLabel)}</strong><small>${escapeHTML(directionText)}</small></div>
+      </div>
+      <p class="valuation-chart-note">Las gráficas usan el mismo motor de valoraciones que el panel admin para evitar diferencias de sincronización.</p>
     </article>`;
 }
 
@@ -1001,9 +1067,7 @@ function renderClientSection(key) {
   if (!section || !clientSectionTitle || !clientContentArea) return;
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-  if (key === "historial" && typeof clientValuationChartsHTML === "function") {
-    clientContentArea.insertAdjacentHTML("beforeend", clientValuationChartsHTML());
-  }
+  if (sectionKey === "historial") { pmClientCleanFakeValuations(true); }
 
   document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.clientSection === sectionKey || (sectionKey === "dashboard" && tab.dataset.clientSection === "inicio"));
@@ -1022,6 +1086,16 @@ clientNavItems.forEach(item => {
 const logoutBtn = document.getElementById("clientLogoutBtn");
 if (logoutBtn) {
   logoutBtn.addEventListener("click", () => {
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
+  });
+}
+
+const clientHeaderLogoutBtn = document.getElementById("clientHeaderLogoutBtn");
+if (clientHeaderLogoutBtn) {
+  clientHeaderLogoutBtn.addEventListener("click", () => {
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
     localStorage.removeItem("currentUser");
     window.location.href = "index.html";
   });
@@ -1135,6 +1209,7 @@ window.completeClientSession = completeClientSession;
 
 // PM FIX: cerrar sesión cliente cabecera
 function pmClientLogout() {
+  if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 }
@@ -1161,9 +1236,9 @@ function pmEnsureClientMobileNav() {
     nav.innerHTML = `
       <button type="button" data-client-section="dashboard"><span>🏠</span><small>Inicio</small></button>
       <button type="button" data-client-section="proxima"><span>📅</span><small>Sesión</small></button>
-      <button type="button" data-client-section="dashboard"><span>📊</span><small>Dashboard</small></button>
+      <button type="button" data-client-section="historial"><span>📊</span><small>Valoraciones</small></button>
       <button type="button" data-client-section="archivos"><span>📁</span><small>Archivos</small></button>
-      <button type="button" data-client-section="historial"><span>👤</span><small>Perfil</small></button>
+      <button type="button" data-client-section="perfil"><span>👤</span><small>Perfil</small></button>
     `;
     document.body.appendChild(nav);
   }
@@ -1184,11 +1259,106 @@ function pmEnsureClientMobileNav() {
   nav.querySelectorAll("button").forEach(btn => btn.classList.toggle("active", btn.dataset.clientSection === activeSection));
 }
 
+async function pmClientRefreshCloudData() {
+  try {
+    if (window.PPF_SUPABASE?.pull) await window.PPF_SUPABASE.pull();
+    pmClientCleanFakeValuations(true);
+    const active = document.querySelector(".client-nav-item.active")?.dataset.clientSection || document.querySelector("#pmClientBottomNav button.active")?.dataset.clientSection || "dashboard";
+    if (typeof renderClientSection === "function") renderClientSection(active);
+  } catch (error) {
+    console.warn("No se pudo refrescar datos cliente:", error);
+  }
+}
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pmClientRefreshCloudData(); });
+window.addEventListener("storage", event => { if (["valoraciones","patients","histories"].includes(event.key)) pmClientRefreshCloudData(); });
+setTimeout(pmClientRefreshCloudData, 900);
+
 document.addEventListener("DOMContentLoaded", pmEnsureClientMobileNav);
 setTimeout(pmEnsureClientMobileNav, 0);
 setTimeout(pmEnsureClientMobileNav, 700);
 
+
+
+/* PM FINAL FIX · Cliente móvil completo + cierre de sesión + refresco de datos */
+(function pmFinalClientMobileFix(){
+  function logoutClient(){
+    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
+    try { localStorage.removeItem("currentUser"); } catch (_) {}
+    window.location.href = "index.html";
+  }
+
+  function activateClientSection(section){
+    const key = section || "dashboard";
+    if (typeof renderClientSection === "function") renderClientSection(key);
+    document.querySelectorAll(".client-nav-item").forEach(item => {
+      item.classList.toggle("active", item.dataset.clientSection === key || (key === "dashboard" && item.dataset.clientSection === "inicio"));
+    });
+    document.querySelectorAll(".client-mobile-tab, #pmClientBottomNav button").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.clientSection === key || (key === "dashboard" && btn.dataset.clientSection === "inicio"));
+    });
+  }
+
+  document.addEventListener("click", function(event){
+    const logout = event.target.closest("#clientLogoutBtn, #clientHeaderLogoutBtn, [data-client-logout]");
+    if (logout) {
+      event.preventDefault();
+      logoutClient();
+      return;
+    }
+    const tab = event.target.closest(".client-mobile-tab, #pmClientBottomNav button");
+    if (tab) {
+      event.preventDefault();
+      activateClientSection(tab.dataset.clientSection || "dashboard");
+      try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+    }
+  }, true);
+
+  function ensureVisibleClientContent(){
+    const area = document.getElementById("clientContentArea");
+    if (area && !String(area.innerHTML || "").trim()) activateClientSection("dashboard");
+    const main = document.querySelector(".client-main");
+    if (main) main.style.display = "block";
+  }
+
+  window.PM_FINAL_CLIENT_SECTION = activateClientSection;
+  setTimeout(ensureVisibleClientContent, 50);
+  setTimeout(ensureVisibleClientContent, 600);
+  setTimeout(function(){ if (typeof pmClientRefreshCloudData === "function") pmClientRefreshCloudData(); }, 1200);
 })();
+})();
+
+
+
+/* PM SYNC PRO · refrescar cliente cuando Supabase actualiza localStorage */
+function pmClientReloadRuntimeFromStorage() {
+  try { patients = JSON.parse(localStorage.getItem("patients") || "[]"); } catch (_) { patients = []; }
+  try { sessions = JSON.parse(localStorage.getItem("sessions") || "[]"); } catch (_) { sessions = []; }
+  try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
+  try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
+  try { completedSessions = JSON.parse(localStorage.getItem("completedSessions") || "[]"); } catch (_) { completedSessions = []; }
+  currentPatient = patients.find(patient => patient.nickname === currentUser.nickname) || currentPatient;
+  currentClient = currentPatient;
+  if (currentPatient) {
+    const name = document.getElementById("clientHeaderName");
+    const avatar = document.getElementById("clientAvatar");
+    if (name) name.textContent = currentPatient.nombre || currentUser.nickname;
+    if (avatar) avatar.textContent = String(currentPatient.nombre || currentUser.nickname || "?").charAt(0).toUpperCase();
+  }
+}
+
+function pmClientRefreshVisibleSectionAfterSync() {
+  pmClientReloadRuntimeFromStorage();
+  if (typeof pmClientCleanFakeValuations === "function") pmClientCleanFakeValuations(false);
+  const active = document.querySelector(".client-nav-item.active")?.dataset.clientSection || document.querySelector("#pmClientBottomNav button.active")?.dataset.clientSection || "dashboard";
+  if (typeof renderClientSection === "function") renderClientSection(active);
+}
+
+window.addEventListener("PPF_APP_DATA_REFRESH", pmClientRefreshVisibleSectionAfterSync);
+window.addEventListener("PPF_SUPABASE_SYNCED", function(event){
+  if (event.detail && event.detail.direction === "pull") pmClientRefreshVisibleSectionAfterSync();
+});
+setTimeout(function(){ if (window.PPF_SYNC_ON_OPEN) window.PPF_SYNC_ON_OPEN("client-start"); }, 500);
 
 })();
 
