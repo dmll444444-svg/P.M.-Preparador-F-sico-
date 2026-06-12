@@ -1,10 +1,11 @@
 /*
-  Programa Preparador Físico · Supabase Sync v1
+  Programa Preparador Físico · Supabase Sync SAFE
 
-  Estrategia:
-  - La app sigue funcionando con localStorage.
-  - Al abrir la app, descarga el estado cloud desde Supabase y lo mete en localStorage.
-  - Cada vez que la app guarda pacientes/sesiones/etc., se sube automáticamente a Supabase.
+  Correcciones:
+  - Evita que ppfLocalSnapshots llene localStorage y bloquee el guardado.
+  - Si localStorage está lleno, no rompe la app: guarda el valor en memoria y lo sube a Supabase.
+  - Incluye valoraciones en la sincronización.
+  - Evita sobrescribir Supabase con arrays vacíos cuando ya hay datos en nube.
 */
 
 const PPF_SYNC_KEYS = [
@@ -13,8 +14,11 @@ const PPF_SYNC_KEYS = [
   "histories",
   "patientFiles",
   "exerciseLibrary",
-  "completedSessions"
+  "completedSessions",
+  "valoraciones"
 ];
+
+window.__PPF_VOLATILE_STORAGE__ = window.__PPF_VOLATILE_STORAGE__ || {};
 
 function ppfSupabaseIsConfigured() {
   const cfg = window.PPF_SUPABASE_CONFIG || {};
@@ -28,39 +32,126 @@ function ppfSupabaseIsConfigured() {
   );
 }
 
-function ppfReadLocalJson(key) {
+function ppfSafeJsonParse(raw, fallback = []) {
   try {
-    return JSON.parse(localStorage.getItem(key)) || [];
+    if (raw === undefined || raw === null || raw === "") return fallback;
+    return JSON.parse(raw);
   } catch {
-    return [];
+    return fallback;
   }
 }
 
+function ppfReadLocalJson(key) {
+  if (Object.prototype.hasOwnProperty.call(window.__PPF_VOLATILE_STORAGE__, key)) {
+    return ppfSafeJsonParse(window.__PPF_VOLATILE_STORAGE__[key], []);
+  }
+  return ppfSafeJsonParse(localStorage.getItem(key), []);
+}
+
+function ppfTryNativeSetItem(key, value) {
+  const nativeSetItem = window.__PPF_NATIVE_SETITEM__ || localStorage.setItem.bind(localStorage);
+  nativeSetItem(key, value);
+}
+
 function ppfWriteLocalJson(key, value) {
-  localStorage.setItem(key, JSON.stringify(value || []));
+  const raw = JSON.stringify(value || []);
+  ppfSafeSetItem(key, raw);
+}
+
+function ppfIsQuotaError(error) {
+  return error && (
+    error.name === "QuotaExceededError" ||
+    error.code === 22 ||
+    String(error.message || "").toLowerCase().includes("quota")
+  );
+}
+
+function ppfClearHeavyLocalKeys() {
+  try { localStorage.removeItem("ppfLocalSnapshots"); } catch {}
+  try { localStorage.removeItem("ppfSnapshotLocalState"); } catch {}
+  try { localStorage.removeItem("ppfSnapshots"); } catch {}
+}
+
+function ppfSafeSetItem(key, value) {
+  // Los snapshots locales estaban guardando fotos base64 y llenaban el navegador.
+  // Los desactivamos: Supabase + el backup SQL/CSV son la copia fiable.
+  if (key === "ppfLocalSnapshots" || key === "ppfSnapshotLocalState" || key === "ppfSnapshots") {
+    ppfClearHeavyLocalKeys();
+    return true;
+  }
+
+  try {
+    ppfTryNativeSetItem(key, value);
+    if (Object.prototype.hasOwnProperty.call(window.__PPF_VOLATILE_STORAGE__, key)) {
+      delete window.__PPF_VOLATILE_STORAGE__[key];
+    }
+    return true;
+  } catch (error) {
+    if (!ppfIsQuotaError(error)) throw error;
+
+    console.warn("localStorage lleno. Limpiando snapshots pesados y reintentando:", key);
+    ppfClearHeavyLocalKeys();
+
+    try {
+      ppfTryNativeSetItem(key, value);
+      if (Object.prototype.hasOwnProperty.call(window.__PPF_VOLATILE_STORAGE__, key)) {
+        delete window.__PPF_VOLATILE_STORAGE__[key];
+      }
+      return true;
+    } catch (secondError) {
+      if (!ppfIsQuotaError(secondError)) throw secondError;
+
+      // Último recurso: no abortar el guardado. Conservamos el valor en memoria
+      // para poder subirlo a Supabase en esta misma sesión.
+      console.warn("localStorage sigue lleno. Se usa almacenamiento temporal en memoria para:", key);
+      window.__PPF_VOLATILE_STORAGE__[key] = value;
+      return false;
+    }
+  }
 }
 
 async function ppfWaitForSupabaseLibrary(timeoutMs = 3500) {
   const start = Date.now();
-
   while (!window.supabase && Date.now() - start < timeoutMs) {
     await new Promise(resolve => setTimeout(resolve, 80));
   }
-
   return Boolean(window.supabase);
 }
 
 function ppfCreateClient() {
   if (!ppfSupabaseIsConfigured()) return null;
-
   if (!window.ppfSupabaseClient) {
     window.ppfSupabaseClient = window.supabase.createClient(
       window.PPF_SUPABASE_CONFIG.url,
       window.PPF_SUPABASE_CONFIG.anonKey
     );
   }
-
   return window.ppfSupabaseClient;
+}
+
+async function ppfGetCloudKey(key) {
+  const client = ppfCreateClient();
+  if (!client || !PPF_SYNC_KEYS.includes(key)) return null;
+  const { data, error } = await client
+    .from("app_state")
+    .select("value,updated_at")
+    .eq("key", key)
+    .maybeSingle();
+  if (error) return null;
+  return data || null;
+}
+
+function ppfShouldBlockDangerousOverwrite(key, localValue, cloudValue) {
+  if (!Array.isArray(localValue) || !Array.isArray(cloudValue)) return false;
+  if (cloudValue.length === 0) return false;
+
+  // Nunca vaciar en nube con un array vacío local.
+  if (localValue.length === 0) return true;
+
+  // Protección especial de pacientes: no subir menos pacientes que nube.
+  if (key === "patients" && localValue.length < cloudValue.length) return true;
+
+  return false;
 }
 
 async function ppfPullCloudToLocal() {
@@ -83,21 +174,30 @@ async function ppfPullCloudToLocal() {
     }
   });
 
-  localStorage.setItem("ppfSupabaseLastPull", new Date().toISOString());
+  ppfSafeSetItem("ppfSupabaseLastPull", new Date().toISOString());
   return true;
 }
 
-async function ppfPushKeyToCloud(key) {
+async function ppfPushValueToCloud(key, value) {
   const client = ppfCreateClient();
   if (!client || !PPF_SYNC_KEYS.includes(key)) return false;
 
-  const value = ppfReadLocalJson(key);
+  const cloud = await ppfGetCloudKey(key);
+  const cloudValue = cloud?.value || [];
+
+  if (ppfShouldBlockDangerousOverwrite(key, value, cloudValue)) {
+    console.warn("Subida bloqueada para evitar sobrescritura peligrosa:", key, {
+      localLength: Array.isArray(value) ? value.length : null,
+      cloudLength: Array.isArray(cloudValue) ? cloudValue.length : null
+    });
+    return false;
+  }
 
   const { error } = await client
     .from("app_state")
     .upsert({
       key,
-      value,
+      value: value || [],
       updated_at: new Date().toISOString()
     }, { onConflict: "key" });
 
@@ -106,18 +206,20 @@ async function ppfPushKeyToCloud(key) {
     return false;
   }
 
-  localStorage.setItem("ppfSupabaseLastPush", new Date().toISOString());
+  ppfSafeSetItem("ppfSupabaseLastPush", new Date().toISOString());
   return true;
+}
+
+async function ppfPushKeyToCloud(key) {
+  return ppfPushValueToCloud(key, ppfReadLocalJson(key));
 }
 
 async function ppfPushAllToCloud() {
   const client = ppfCreateClient();
   if (!client) return false;
-
   for (const key of PPF_SYNC_KEYS) {
     await ppfPushKeyToCloud(key);
   }
-
   return true;
 }
 
@@ -125,21 +227,31 @@ function ppfPatchLocalStorageForSync() {
   if (window.__PPF_LOCALSTORAGE_PATCHED__) return;
   window.__PPF_LOCALSTORAGE_PATCHED__ = true;
 
-  const originalSetItem = localStorage.setItem.bind(localStorage);
+  window.__PPF_NATIVE_SETITEM__ = localStorage.setItem.bind(localStorage);
+  const originalRemoveItem = localStorage.removeItem.bind(localStorage);
 
   localStorage.setItem = function patchedSetItem(key, value) {
-    originalSetItem(key, value);
+    const stored = ppfSafeSetItem(key, value);
 
     if (PPF_SYNC_KEYS.includes(key) && ppfSupabaseIsConfigured()) {
+      const parsedValue = ppfSafeJsonParse(value, []);
       clearTimeout(window.__PPF_SYNC_TIMER__);
       window.__PPF_SYNC_TIMER__ = setTimeout(() => {
-        ppfPushKeyToCloud(key);
-      }, 350);
+        ppfPushValueToCloud(key, parsedValue);
+      }, 250);
     }
+
+    return stored;
+  };
+
+  localStorage.removeItem = function patchedRemoveItem(key) {
+    try { delete window.__PPF_VOLATILE_STORAGE__[key]; } catch {}
+    return originalRemoveItem(key);
   };
 }
 
 async function ppfSupabaseBootstrap() {
+  ppfClearHeavyLocalKeys();
   ppfPatchLocalStorageForSync();
 
   await ppfWaitForSupabaseLibrary();
@@ -161,6 +273,7 @@ window.PPF_SUPABASE = {
   pull: ppfPullCloudToLocal,
   push: ppfPushAllToCloud,
   pushKey: ppfPushKeyToCloud,
+  pushValue: ppfPushValueToCloud,
   status: () => window.PPF_SUPABASE_STATUS || "disabled",
   keys: PPF_SYNC_KEYS
 };

@@ -912,7 +912,9 @@ function bindPatientForm() {
       notas: document.getElementById("notas")?.value.trim() || ""
     };
 
-    if (editingPatientNickname) {
+    const wasEditingPatient = Boolean(editingPatientNickname);
+
+    if (wasEditingPatient) {
       const previousNickname = editingPatientNickname;
       const index = patients.findIndex(patient => patient.nickname === previousNickname);
 
@@ -928,21 +930,35 @@ function bindPatientForm() {
         sessions = sessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item);
 
         const completedSessions = JSON.parse(localStorage.getItem("completedSessions")) || [];
-        localStorage.setItem("completedSessions", JSON.stringify(
-          completedSessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item)
-        ));
+        const updatedCompletedSessions = completedSessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item);
+        localStorage.setItem("completedSessions", JSON.stringify(updatedCompletedSessions));
+        if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("completedSessions", updatedCompletedSessions);
       }
-
-      alert("Paciente actualizado correctamente.");
     } else {
       patients.push(newPatient);
-      alert("Paciente guardado correctamente.");
     }
 
-    localStorage.setItem("patients", JSON.stringify(patients));
-    localStorage.setItem("histories", JSON.stringify(histories));
-    localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
-    localStorage.setItem("sessions", JSON.stringify(sessions));
+    try {
+      localStorage.setItem("patients", JSON.stringify(patients));
+      localStorage.setItem("histories", JSON.stringify(histories));
+      localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
+      localStorage.setItem("sessions", JSON.stringify(sessions));
+
+      if (window.PPF_SUPABASE?.pushValue) {
+        const pushed = await window.PPF_SUPABASE.pushValue("patients", patients);
+        if (!pushed) {
+          alert("El paciente se ha guardado en la app, pero Supabase no confirmó la sincronización. Revisa la consola antes de cerrar.");
+        } else {
+          alert(wasEditingPatient ? "Paciente actualizado y sincronizado correctamente." : "Paciente guardado y sincronizado correctamente.");
+        }
+      } else {
+        alert(wasEditingPatient ? "Paciente actualizado correctamente." : "Paciente guardado correctamente.");
+      }
+    } catch (error) {
+      console.error("Error guardando paciente:", error);
+      alert("No se pudo guardar el paciente. Revisa la consola para ver el error.");
+      return;
+    }
 
     currentPhoto = "";
     resetPatientFormState();
@@ -3723,26 +3739,21 @@ function refreshValuationNumbers() {
 }
 
 
+
+
 function parseValuationNumber(value = "") {
   const raw = String(value || "").trim().replace(",", ".");
   if (!raw) return null;
-
   const match = raw.match(/-?\d+(\.\d+)?/);
   if (!match) return null;
-
   const number = Number(match[0]);
   return Number.isFinite(number) ? number : null;
 }
 
-function getValuationNumericValue(test = {}) {
-  const values = [test.intento1, test.intento2, test.intento3]
+function getValuationAttempts(test = {}) {
+  return [test.intento1, test.intento2, test.intento3]
     .map(parseValuationNumber)
     .filter(value => value !== null);
-
-  if (!values.length) return null;
-
-  const sum = values.reduce((acc, value) => acc + value, 0);
-  return Number((sum / values.length).toFixed(2));
 }
 
 function getValuationChartGroups(filterNickname = "") {
@@ -3757,97 +3768,167 @@ function getValuationChartGroups(filterNickname = "") {
       const patientName = patient ? patient.nombre : item.patientNickname;
 
       (item.tests || []).forEach(test => {
-        const value = getValuationNumericValue(test);
         const testName = String(test.nombre || "").trim();
-
-        if (!testName || value === null) return;
-
         const unit = String(test.unidad || "").trim();
-        const key = `${item.patientNickname}__${testName.toLowerCase()}__${unit}`;
+        const attempts = getValuationAttempts(test);
+        if (!testName || !attempts.length) return;
 
+        const key = `${item.patientNickname}__${testName.toLowerCase()}__${unit}`;
         if (!groups[key]) {
           groups[key] = {
             patientNickname: item.patientNickname,
             patientName,
             testName,
             unit,
-            points: []
+            days: {}
           };
         }
 
-        groups[key].points.push({
-          fecha: item.fecha || "-",
-          value
-        });
+        const fecha = item.fecha || "-";
+        if (!groups[key].days[fecha]) groups[key].days[fecha] = { fecha, attempts: [] };
+        groups[key].days[fecha].attempts.push(...attempts);
       });
     });
 
   return Object.values(groups)
-    .filter(group => group.points.length > 0)
+    .map(group => ({
+      ...group,
+      days: Object.values(group.days)
+        .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))
+        .map(day => {
+          const mean = day.attempts.reduce((acc, value) => acc + value, 0) / day.attempts.length;
+          return { ...day, mean: Number(mean.toFixed(2)) };
+        })
+    }))
+    .filter(group => group.days.length)
     .sort((a, b) => a.patientName.localeCompare(b.patientName, "es") || a.testName.localeCompare(b.testName, "es"));
 }
 
 function renderValuationMiniChart(group) {
-  const points = group.points;
-  const values = points.map(point => point.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const days = group.days;
+  const allValues = days.flatMap(day => [...day.attempts, day.mean]);
+  const minRaw = Math.min(...allValues);
+  const maxRaw = Math.max(...allValues);
+  const rangeRaw = maxRaw - minRaw || 1;
+  const min = minRaw - rangeRaw * 0.10;
+  const max = maxRaw + rangeRaw * 0.16;
   const range = max - min || 1;
-  const width = 520;
-  const height = 220;
-  const padX = 34;
-  const padY = 26;
 
-  const coords = points.map((point, index) => {
-    const x = points.length === 1
-      ? width / 2
-      : padX + (index * ((width - padX * 2) / (points.length - 1)));
-    const y = height - padY - (((point.value - min) / range) * (height - padY * 2));
-    return { ...point, x, y };
-  });
+  const width = 760;
+  const height = 360;
+  const padX = 58;
+  const padY = 46;
+  const chartW = width - padX * 2;
+  const chartH = height - padY * 2;
 
-  const polyline = coords.map(point => `${point.x},${point.y}`).join(" ");
-  const last = coords[coords.length - 1];
-  const first = coords[0];
-  const trend = last.value - first.value;
-  const trendLabel = trend > 0 ? `+${Number(trend.toFixed(2))}` : Number(trend.toFixed(2));
+  const xForDay = index => days.length === 1 ? width / 2 : padX + (index * (chartW / (days.length - 1)));
+  const yForValue = value => height - padY - (((value - min) / range) * chartH);
+
+  const maxAttempts = Math.max(...days.map(day => day.attempts.length), 1);
+  const daySlot = days.length === 1 ? chartW * 0.44 : Math.min(84, chartW / Math.max(days.length, 1));
+  const barGap = 6;
+  const barWidth = Math.max(9, Math.min(18, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
+
+  const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
+  const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
+
+  const first = meanPoints[0];
+  const last = meanPoints[meanPoints.length - 1];
+  const trend = Number((last.mean - first.mean).toFixed(2));
+  const trendLabel = trend > 0 ? `+${trend}` : String(trend);
+  const trendPct = first.mean ? Number(((trend / first.mean) * 100).toFixed(2)) : 0;
+  const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
+
+  const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
 
   return `
-    <article class="valuation-chart-card">
-      <div class="valuation-chart-head">
+    <article class="valuation-chart-card valuation-chart-pro-card">
+      <div class="valuation-chart-head pro-chart-head">
         <div>
           <span>${escapeValuationHtml(group.patientName)}</span>
-          <h4>${escapeValuationHtml(group.testName)}</h4>
-          <p>${points.length} registro${points.length === 1 ? "" : "s"}${group.unit ? ` · ${escapeValuationHtml(group.unit)}` : ""}</p>
+          <h4>${escapeValuationHtml(group.testName)}${group.unit ? ` (${escapeValuationHtml(group.unit)})` : ""}</h4>
+          <p>Barras verdes = datos individuales · Línea azul = media diaria</p>
         </div>
-        <strong>${escapeValuationHtml(String(last.value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
+        <strong>${escapeValuationHtml(String(last.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
       </div>
 
-      <svg class="valuation-line-chart" viewBox="0 0 ${width} ${height}" role="img">
+      <svg class="valuation-line-chart valuation-pro-chart" viewBox="0 0 ${width} ${height}" role="img">
+        <defs>
+          <linearGradient id="barGradient-${escapeValuationHtml(group.patientNickname)}-${escapeValuationHtml(group.testName).replace(/\s+/g, "-")}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#86efac"></stop>
+            <stop offset="100%" stop-color="#16a34a"></stop>
+          </linearGradient>
+        </defs>
+
+        ${yTicks.map(tick => {
+          const y = yForValue(tick);
+          return `
+            <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="valuation-grid-line" />
+            <text x="${padX - 12}" y="${y + 4}" text-anchor="end" class="valuation-chart-scale">${escapeValuationHtml(String(tick))}</text>
+          `;
+        }).join("")}
+
         <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="valuation-chart-axis" />
-        <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" class="valuation-chart-axis" />
 
-        <polyline points="${polyline}" class="valuation-chart-line" fill="none" />
+        ${days.map((day, dayIndex) => {
+          const centerX = xForDay(dayIndex);
+          const totalBarsW = day.attempts.length * barWidth + (day.attempts.length - 1) * barGap;
+          const startX = centerX - totalBarsW / 2;
 
-        ${coords.map(point => `
-          <g class="valuation-chart-point">
-            <title>${escapeValuationHtml(point.fecha)} · ${escapeValuationHtml(String(point.value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
-            <circle cx="${point.x}" cy="${point.y}" r="6"></circle>
-            <text x="${point.x}" y="${point.y - 12}" text-anchor="middle">${escapeValuationHtml(String(point.value))}</text>
+          return day.attempts.map((value, attemptIndex) => {
+            const x = startX + attemptIndex * (barWidth + barGap);
+            const y = yForValue(value);
+            const h = Math.max(2, height - padY - y);
+            return `
+              <g class="valuation-bar-group valuation-tooltip-source"
+                 data-date="${escapeValuationHtml(day.fecha)}"
+                 data-label="Intento ${attemptIndex + 1}"
+                 data-value="${escapeValuationHtml(String(value))}"
+                 data-unit="${escapeValuationHtml(group.unit || "")}">
+                <rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="6"></rect>
+              </g>
+            `;
+          }).join("");
+        }).join("")}
+
+        <polyline points="${meanPolyline}" class="valuation-chart-line valuation-mean-line" fill="none" />
+
+        ${meanPoints.map(point => `
+          <g class="valuation-chart-point valuation-mean-point valuation-tooltip-source"
+             data-date="${escapeValuationHtml(point.fecha)}"
+             data-label="Media diaria"
+             data-value="${escapeValuationHtml(String(point.mean))}"
+             data-unit="${escapeValuationHtml(group.unit || "")}"
+             data-attempts="${escapeValuationHtml(point.attempts.join(" · "))}">
+            <circle cx="${point.x}" cy="${point.y}" r="6.5"></circle>
           </g>
         `).join("")}
 
-        ${coords.map((point, index) => {
-          if (points.length > 6 && index !== 0 && index !== points.length - 1) return "";
-          return `<text x="${point.x}" y="${height - 6}" text-anchor="middle" class="valuation-chart-date">${escapeValuationHtml(point.fecha)}</text>`;
+        ${meanPoints.map((point, index) => {
+          if (days.length > 8 && index !== 0 && index !== days.length - 1) return "";
+          return `<text x="${point.x}" y="${height - 10}" text-anchor="middle" class="valuation-chart-date">${escapeValuationHtml(point.fecha)}</text>`;
         }).join("")}
       </svg>
 
-      <div class="valuation-chart-footer">
-        <span>Inicial: <b>${escapeValuationHtml(String(first.value))}</b></span>
-        <span>Actual: <b>${escapeValuationHtml(String(last.value))}</b></span>
-        <span>Tendencia: <b>${escapeValuationHtml(String(trendLabel))}</b></span>
+      <div class="valuation-chart-summary">
+        <div>
+          <span>Inicial</span>
+          <strong>${escapeValuationHtml(String(first.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
+          <small>${escapeValuationHtml(first.fecha)}</small>
+        </div>
+        <div>
+          <span>Actual</span>
+          <strong>${escapeValuationHtml(String(last.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
+          <small>${escapeValuationHtml(last.fecha)}</small>
+        </div>
+        <div>
+          <span>Tendencia</span>
+          <strong>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
+          <small>${escapeValuationHtml(trendPctLabel)}</small>
+        </div>
       </div>
+
+      <p class="valuation-chart-note">Las barras verdes representan los intentos individuales de cada día. La línea azul representa la media diaria.</p>
     </article>
   `;
 }
@@ -3863,11 +3944,58 @@ function renderValuationCharts(filterNickname = "") {
     return;
   }
 
-  area.innerHTML = `
-    <div class="valuation-charts-grid">
-      ${groups.map(renderValuationMiniChart).join("")}
-    </div>
+  area.innerHTML = `<div class="valuation-charts-grid valuation-charts-grid-pro">${groups.map(renderValuationMiniChart).join("")}</div>`;
+}
+
+function ensureValuationChartTooltip() {
+  if (document.getElementById("valuationChartTooltip")) return;
+
+  const tooltip = document.createElement("div");
+  tooltip.id = "valuationChartTooltip";
+  tooltip.className = "valuation-chart-tooltip";
+  tooltip.innerHTML = `
+    <strong></strong>
+    <div class="tooltip-line tooltip-main"></div>
+    <div class="tooltip-line tooltip-extra"></div>
   `;
+  document.body.appendChild(tooltip);
+
+  document.addEventListener("pointermove", event => {
+    const target = event.target.closest(".valuation-tooltip-source");
+    if (!target) return;
+
+    const date = target.dataset.date || "";
+    const label = target.dataset.label || "";
+    const value = target.dataset.value || "";
+    const unit = target.dataset.unit || "";
+    const attempts = target.dataset.attempts || "";
+
+    tooltip.querySelector("strong").textContent = date;
+    tooltip.querySelector(".tooltip-main").textContent = `${label}: ${value}${unit ? ` ${unit}` : ""}`;
+    tooltip.querySelector(".tooltip-extra").textContent = attempts ? `Intentos: ${attempts}${unit ? ` ${unit}` : ""}` : "";
+
+    tooltip.classList.add("show");
+
+    const offset = 18;
+    let left = event.pageX + offset;
+    let top = event.pageY + offset;
+
+    const rect = tooltip.getBoundingClientRect();
+    if (left + rect.width > window.scrollX + window.innerWidth - 12) {
+      left = event.pageX - rect.width - offset;
+    }
+    if (top + rect.height > window.scrollY + window.innerHeight - 12) {
+      top = event.pageY - rect.height - offset;
+    }
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  });
+
+  document.addEventListener("pointerout", event => {
+    if (!event.target.closest(".valuation-tooltip-source")) return;
+    tooltip.classList.remove("show");
+  });
 }
 
 
@@ -3913,6 +4041,23 @@ function renderValuationsList(filterNickname = "") {
   }).join("");
 }
 
+
+
+async function pmRefreshValoracionesFromSupabase() {
+  try {
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
+      await window.PPF_SUPABASE.pull();
+      try { valoraciones = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) {}
+      const filter = document.getElementById("valuationsFilter")?.value || "";
+      if (typeof renderValuationsList === "function") renderValuationsList(filter);
+      if (typeof renderValuationCharts === "function") renderValuationCharts(filter);
+      if (typeof ensureValuationChartTooltip === "function") ensureValuationChartTooltip();
+    }
+  } catch (error) {
+    console.warn("No se pudo actualizar valoraciones desde Supabase:", error);
+  }
+}
+
 function bindValoracionesForm() {
   const form = document.getElementById("valuationsForm");
   const testsArea = document.getElementById("valuationTestsArea");
@@ -3922,8 +4067,17 @@ function bindValoracionesForm() {
   if (!form || !testsArea) return;
 
   setTodayIfEmpty("valuationDate");
+  if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
+    window.PPF_SUPABASE.pull().then(() => {
+      try { valoraciones = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) {}
+      renderValuationsList(filter?.value || "");
+      renderValuationCharts(filter?.value || "");
+    }).catch(error => console.warn("No se pudo sincronizar valoraciones:", error));
+  }
   renderValuationsList();
   renderValuationCharts();
+  ensureValuationChartTooltip();
+  pmRefreshValoracionesFromSupabase();
 
   addBtn?.addEventListener("click", () => {
     testsArea.insertAdjacentHTML("beforeend", valuationTestRow(testsArea.querySelectorAll("[data-valuation-row]").length + 1));
@@ -4063,6 +4217,113 @@ function valuationHasRegisteredData(test = {}) {
   );
 }
 
+
+
+function getValuationPdfChartGroupsForPatient(patientNickname) {
+  return getValuationChartGroups(patientNickname)
+    .map(group => ({
+      ...group,
+      days: [...(group.days || [])].sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")))
+    }))
+    .filter(group => group.days.length);
+}
+
+function renderValuationPdfChart(group) {
+  const days = group.days || [];
+  if (!days.length) return "";
+
+  const allValues = days.flatMap(day => [...day.attempts, day.mean]);
+  const minRaw = Math.min(...allValues);
+  const maxRaw = Math.max(...allValues);
+  const rangeRaw = maxRaw - minRaw || 1;
+  const min = minRaw - rangeRaw * 0.10;
+  const max = maxRaw + rangeRaw * 0.16;
+  const range = max - min || 1;
+
+  const width = 720;
+  const height = 300;
+  const padX = 55;
+  const padY = 38;
+  const chartW = width - padX * 2;
+  const chartH = height - padY * 2;
+
+  const xForDay = index => days.length === 1 ? width / 2 : padX + (index * (chartW / (days.length - 1)));
+  const yForValue = value => height - padY - (((value - min) / range) * chartH);
+
+  const maxAttempts = Math.max(...days.map(day => day.attempts.length), 1);
+  const daySlot = days.length === 1 ? chartW * 0.42 : Math.min(82, chartW / Math.max(days.length, 1));
+  const barGap = 5;
+  const barWidth = Math.max(8, Math.min(17, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
+
+  const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
+  const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
+  const newest = meanPoints[0];
+  const oldest = meanPoints[meanPoints.length - 1];
+  const trend = Number((newest.mean - oldest.mean).toFixed(2));
+  const trendLabel = trend > 0 ? `+${trend}` : String(trend);
+  const trendPct = oldest.mean ? Number(((trend / oldest.mean) * 100).toFixed(2)) : 0;
+  const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
+  const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+
+  return `
+    <section class="pdf-chart-card">
+      <div class="pdf-chart-title">
+        <div>
+          <h2>${escapeValuationHtml(group.testName)}${group.unit ? ` (${escapeValuationHtml(group.unit)})` : ""}</h2>
+          <p>Fechas ordenadas de más nueva a más antigua · barras: intentos individuales · línea: media diaria</p>
+        </div>
+        <strong>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
+      </div>
+
+      <svg class="pdf-chart" viewBox="0 0 ${width} ${height}">
+        ${yTicks.map(tick => {
+          const y = yForValue(tick);
+          return `
+            <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="pdf-grid" />
+            <text x="${padX - 10}" y="${y + 4}" text-anchor="end" class="pdf-scale">${escapeValuationHtml(String(tick))}</text>
+          `;
+        }).join("")}
+
+        <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="pdf-axis" />
+
+        ${days.map((day, dayIndex) => {
+          const centerX = xForDay(dayIndex);
+          const totalBarsW = day.attempts.length * barWidth + (day.attempts.length - 1) * barGap;
+          const startX = centerX - totalBarsW / 2;
+
+          return day.attempts.map((value, attemptIndex) => {
+            const x = startX + attemptIndex * (barWidth + barGap);
+            const y = yForValue(value);
+            const h = Math.max(2, height - padY - y);
+            return `
+              <rect class="pdf-bar" x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4">
+                <title>${escapeValuationHtml(day.fecha)} · Intento ${attemptIndex + 1}: ${escapeValuationHtml(String(value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
+              </rect>
+            `;
+          }).join("");
+        }).join("")}
+
+        <polyline points="${meanPolyline}" class="pdf-mean-line" fill="none" />
+
+        ${meanPoints.map(point => `
+          <circle class="pdf-mean-point" cx="${point.x}" cy="${point.y}" r="5.5"></circle>
+        `).join("")}
+
+        ${meanPoints.map((point, index) => {
+          if (days.length > 8 && index !== 0 && index !== days.length - 1) return "";
+          return `<text x="${point.x}" y="${height - 8}" text-anchor="middle" class="pdf-date">${escapeValuationHtml(point.fecha)}</text>`;
+        }).join("")}
+      </svg>
+
+      <div class="pdf-chart-summary">
+        <div><span>Más antigua</span><b>${escapeValuationHtml(String(oldest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(oldest.fecha)}</small></div>
+        <div><span>Más reciente</span><b>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(newest.fecha)}</small></div>
+        <div><span>Tendencia</span><b>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(trendPctLabel)}</small></div>
+      </div>
+    </section>
+  `;
+}
+
 function generateValuationPDF(id) {
   const item = valoraciones.find(value => value.id === id);
   if (!item) return;
@@ -4077,48 +4338,89 @@ function generateValuationPDF(id) {
   const patient = patients.find(p => p.nickname === item.patientNickname);
   const patientName = patient ? patient.nombre : item.patientNickname;
 
-  const rows = tests.map((test, index) => `
-    <tr>
-      <td>${index + 1}</td>
-      <td>${escapeValuationHtml(test.nombre || "-")}</td>
-      <td>${escapeValuationHtml(test.intento1 || "-")}</td>
-      <td>${escapeValuationHtml(test.intento2 || "-")}</td>
-      <td>${escapeValuationHtml(test.intento3 || "-")}</td>
-      <td>${escapeValuationHtml(test.unidad || "")}</td>
-      <td>${escapeValuationHtml(test.observaciones || "-")}</td>
-    </tr>
-  `).join("");
+  const patientValuations = valoraciones
+    .filter(value => value.patientNickname === item.patientNickname)
+    .slice()
+    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+  const rows = patientValuations.flatMap(valuation =>
+    (valuation.tests || [])
+      .filter(valuationHasRegisteredData)
+      .map((test, index) => `
+        <tr>
+          <td>${escapeValuationHtml(valuation.fecha || "-")}</td>
+          <td>${index + 1}</td>
+          <td>${escapeValuationHtml(test.nombre || "-")}</td>
+          <td>${escapeValuationHtml(test.intento1 || "-")}</td>
+          <td>${escapeValuationHtml(test.intento2 || "-")}</td>
+          <td>${escapeValuationHtml(test.intento3 || "-")}</td>
+          <td>${escapeValuationHtml(test.unidad || "")}</td>
+          <td>${escapeValuationHtml(test.observaciones || "-")}</td>
+        </tr>
+      `)
+  ).join("");
+
+  const chartGroups = getValuationPdfChartGroupsForPatient(item.patientNickname);
+  const chartsHtml = chartGroups.length
+    ? `<div class="pdf-section-break"></div><h1 class="pdf-section-title">Gráficas de evolución por test</h1>${chartGroups.map(renderValuationPdfChart).join("")}`
+    : "";
 
   const html = `
     <!DOCTYPE html>
     <html lang="es">
     <head>
       <meta charset="UTF-8" />
-      <title>Valoración ${escapeValuationHtml(patientName)}</title>
+      <title>Valoraciones ${escapeValuationHtml(patientName)}</title>
       <style>
-        body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; }
+        body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; background:#ffffff; }
         .header { border-bottom: 3px solid #22c55e; padding-bottom: 14px; margin-bottom: 22px; }
         .brand { color: #16a34a; font-weight: 800; font-size: 14px; text-transform: uppercase; }
         h1 { margin: 8px 0 4px; font-size: 26px; }
         .meta { color: #475569; font-size: 14px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
-        th { background: #0f172a; color: #fff; text-align: left; padding: 10px; }
-        td { border: 1px solid #cbd5e1; padding: 9px; vertical-align: top; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
+        th { background: #0f172a; color: #fff; text-align: left; padding: 9px; }
+        td { border: 1px solid #cbd5e1; padding: 8px; vertical-align: top; }
         tr:nth-child(even) td { background: #f8fafc; }
         .footer { margin-top: 24px; color: #64748b; font-size: 12px; }
-        @media print { body { padding: 18px; } }
+
+        .pdf-section-break { page-break-before: always; }
+        .pdf-section-title { margin-top: 0; color:#0f172a; }
+        .pdf-chart-card { page-break-inside: avoid; margin: 22px 0; padding: 18px; border: 1px solid #dbeafe; border-radius: 18px; background: #f8fafc; }
+        .pdf-chart-title { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom: 12px; }
+        .pdf-chart-title h2 { margin:0 0 4px; color:#0f172a; font-size:20px; }
+        .pdf-chart-title p { margin:0; color:#64748b; font-size:12px; font-weight:700; }
+        .pdf-chart-title strong { color:#15803d; font-size:18px; white-space:nowrap; }
+        .pdf-chart { width:100%; height:auto; display:block; background:#fff; border-radius:14px; border:1px solid #e2e8f0; }
+        .pdf-grid { stroke:#cbd5e1; stroke-width:1; stroke-dasharray:4 5; }
+        .pdf-axis { stroke:#94a3b8; stroke-width:1; }
+        .pdf-scale { fill:#64748b; font-size:11px; font-weight:700; }
+        .pdf-date { fill:#475569; font-size:11px; font-weight:700; }
+        .pdf-bar { fill:#22c55e; stroke:#16a34a; stroke-width:1; }
+        .pdf-mean-line { stroke:#2563eb; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
+        .pdf-mean-point { fill:#3b82f6; stroke:#eff6ff; stroke-width:2; }
+        .pdf-chart-summary { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:12px; }
+        .pdf-chart-summary div { padding:10px; border:1px solid #e2e8f0; border-radius:12px; background:#fff; }
+        .pdf-chart-summary span { display:block; color:#64748b; font-size:10px; font-weight:800; text-transform:uppercase; margin-bottom:5px; }
+        .pdf-chart-summary b { display:block; color:#0f172a; font-size:15px; }
+        .pdf-chart-summary small { color:#64748b; font-weight:700; }
+
+        @media print {
+          body { padding: 18px; }
+          .pdf-chart-card { break-inside: avoid; }
+        }
       </style>
     </head>
     <body>
       <div class="header">
         <div class="brand">P.M Preparador Físico Online</div>
-        <h1>Informe de valoración</h1>
-        <div class="meta"><strong>Paciente:</strong> ${escapeValuationHtml(patientName)} · <strong>Fecha:</strong> ${escapeValuationHtml(item.fecha || "-")}</div>
+        <h1>Informe completo de valoraciones</h1>
+        <div class="meta"><strong>Paciente:</strong> ${escapeValuationHtml(patientName)} · <strong>Generado desde valoración:</strong> ${escapeValuationHtml(item.fecha || "-")}</div>
       </div>
 
       <table>
         <thead>
           <tr>
+            <th>Fecha</th>
             <th>#</th>
             <th>Test</th>
             <th>Intento 1</th>
@@ -4128,10 +4430,12 @@ function generateValuationPDF(id) {
             <th>Observaciones cualitativas</th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>${rows || `<tr><td colspan="8">No hay datos registrados.</td></tr>`}</tbody>
       </table>
 
-      <div class="footer">Documento generado automáticamente. Solo se incluyen los test con datos registrados.</div>
+      ${chartsHtml}
+
+      <div class="footer">Documento generado automáticamente. Incluye todos los datos registrados del paciente y las gráficas numéricas agrupadas por test.</div>
     </body>
     </html>
   `;
@@ -4149,7 +4453,7 @@ function generateValuationPDF(id) {
 
   setTimeout(() => {
     win.print();
-  }, 450);
+  }, 650);
 }
 
 
@@ -4562,6 +4866,7 @@ window.deleteValuation = deleteValuation;
 window.editValuation = editValuation;
 window.generateValuationPDF = generateValuationPDF;
 window.renderValuationCharts = renderValuationCharts;
+window.pmRefreshValoracionesFromSupabase = pmRefreshValoracionesFromSupabase;
 
 
 
