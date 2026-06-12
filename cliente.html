@@ -34,8 +34,11 @@
           <p class="eyebrow">Programa Preparador Físico</p>
           <h1 id="clientSectionTitle">Dashboard Cliente PRO</h1>
         </div>
-        <div class="admin-user">
-          <span id="clientHeaderName">Cliente</span>
+        <div class="admin-user client-header-user">
+          <div class="client-user-stack">
+            <span id="clientHeaderName">Cliente</span>
+            <button id="clientHeaderLogoutBtn" class="client-header-logout-btn" type="button">Cerrar sesión</button>
+          </div>
           <div class="avatar" id="clientAvatar">C</div>
         </div>
       </header>
@@ -43,6 +46,24 @@
       <section class="content-card" id="clientContentArea"></section>
     </main>
   </div>
+
+  <nav class="client-mobile-bottom-nav" aria-label="Navegación inferior cliente">
+    <button class="client-mobile-tab active" type="button" data-client-section="dashboard">
+      <span>🏠</span><small>Inicio</small>
+    </button>
+    <button class="client-mobile-tab" type="button" data-client-section="proxima">
+      <span>🎯</span><small>Sesión</small>
+    </button>
+    <button class="client-mobile-tab" type="button" data-client-section="sesiones">
+      <span>🏋️</span><small>Sesiones</small>
+    </button>
+    <button class="client-mobile-tab" type="button" data-client-section="historial">
+      <span>📁</span><small>Historial</small>
+    </button>
+    <button class="client-mobile-tab" type="button" data-client-section="archivos">
+      <span>🗂️</span><small>Archivos</small>
+    </button>
+  </nav>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
