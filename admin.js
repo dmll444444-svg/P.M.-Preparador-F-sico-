@@ -327,10 +327,130 @@ function persistAppData() {
   localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
 }
 
+function pmEscapeAgendaHTML(value = "") {
+  return String(value ?? "").replace(/[&<>'"]/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;"
+  }[c]));
+}
+
+function pmGetCompletedSessionsSafe() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("completedSessions") || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function pmSessionNumberValue(session = {}) {
+  return Number(session.numero || session.numeroSesion || session.sessionNumber || 0);
+}
+
+function pmSessionDateValue(session = {}) {
+  return String(session.fecha || session.date || session.createdAt || "");
+}
+
+function pmSortSessionsNewest(list = []) {
+  return [...list].sort((a, b) => {
+    const dateCompare = pmSessionDateValue(b).localeCompare(pmSessionDateValue(a));
+    if (dateCompare) return dateCompare;
+
+    const numberCompare = pmSessionNumberValue(b) - pmSessionNumberValue(a);
+    if (numberCompare) return numberCompare;
+
+    return String(b.id || "").localeCompare(String(a.id || ""));
+  });
+}
+
+function pmIsAgendaSessionCompleted(session = {}) {
+  const completedSessions = pmGetCompletedSessionsSafe();
+  const sessionId = String(session.id || "");
+  const nickname = String(session.patientNickname || "");
+  const number = pmSessionNumberValue(session);
+
+  return completedSessions.some(item => {
+    const completedId = String(item.sessionId || item.id || "");
+    const completedNick = String(item.patientNickname || "");
+    const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
+
+    if (sessionId && completedId && sessionId === completedId) return true;
+    return nickname && completedNick === nickname && number && completedNumber && number === completedNumber;
+  });
+}
+
+function pmAgendaMicroLabel(session = {}) {
+  const nickname = session.patientNickname || "";
+  const date = pmSessionDateValue(session);
+  let micro = session.microciclo || session.micro || session.microcycle || "";
+
+  if ((!micro || micro === "-") && typeof getComputedMicrocycleNumber === "function") {
+    micro = getComputedMicrocycleNumber(nickname, date);
+  }
+
+  return `Micro ${micro || "-"} · ${date || "-"}`;
+}
+
+function pmGetLatestSessionForPatient(patient = {}) {
+  const nickname = patient.nickname || patient.username || patient.id || "";
+  if (!nickname) return null;
+
+  const patientSessions = sessions.filter(session => String(session.patientNickname || "") === String(nickname));
+  return pmSortSessionsNewest(patientSessions)[0] || null;
+}
+
+function pmBuildAgendaItems(type = "pending") {
+  return patients
+    .map(patient => {
+      const latest = pmGetLatestSessionForPatient(patient);
+      if (!latest) return null;
+
+      const completed = pmIsAgendaSessionCompleted(latest);
+      if (type === "pending" && completed) return null;
+      if (type === "completed" && !completed) return null;
+
+      return {
+        patient,
+        session: latest,
+        label: pmAgendaMicroLabel(latest)
+      };
+    })
+    .filter(Boolean);
+}
+
+function pmRenderAgendaKpi(type = "pending") {
+  const items = pmBuildAgendaItems(type);
+  const empty = type === "pending" ? "Sin sesiones pendientes" : "Sin sesiones terminadas";
+
+  if (!items.length) {
+    return `<span class="agenda-kpi-empty">${empty}</span>`;
+  }
+
+  return `
+    <div class="agenda-kpi-list">
+      ${items.map(item => `
+        <div class="agenda-kpi-row">
+          <span>${pmEscapeAgendaHTML(item.patient.nombre || item.patient.nickname || "Cliente")}</span>
+          <em>${pmEscapeAgendaHTML(item.label)}</em>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 function updateCounters() {
   patientCounter.textContent = patients.length;
-  historyCounter.textContent = histories.length;
-  fileCounter.textContent = patientFiles.length;
+
+  if (historyCounter) {
+    historyCounter.innerHTML = pmRenderAgendaKpi("pending");
+  }
+
+  if (fileCounter) {
+    fileCounter.innerHTML = pmRenderAgendaKpi("completed");
+  }
 }
 
 
