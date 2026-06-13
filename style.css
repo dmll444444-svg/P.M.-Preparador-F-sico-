@@ -4068,3 +4068,81 @@ aside.client-sidebar {
   font-size: 10px;
   font-weight: 850;
 }
+
+/* =========================================================
+   PM HOTFIX · Valoraciones formulario interactivo estable
+   ========================================================= */
+.pm-valuation-stable,
+.pm-valuation-stable *,
+.pm-valuation-filter,
+.pm-valuation-filter *,
+#valuationChartsArea,
+#valuationsList {
+  pointer-events: auto !important;
+}
+
+.pm-valuation-stable {
+  position: relative !important;
+  z-index: 10 !important;
+  isolation: isolate !important;
+}
+
+.pm-valuation-stable input,
+.pm-valuation-stable select,
+.pm-valuation-stable textarea,
+.pm-valuation-stable button,
+.pm-valuation-filter select {
+  position: relative !important;
+  z-index: 20 !important;
+  pointer-events: auto !important;
+  user-select: text !important;
+}
+
+.pm-valuation-row {
+  position: relative !important;
+  z-index: 12 !important;
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr .75fr 1.4fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.valuation-attempt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.valuation-table-head {
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr .75fr 1.4fr auto;
+  gap: 12px;
+  margin-top: 18px;
+  color: #e2e8f0;
+  font-weight: 900;
+}
+
+.valuation-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.valuation-remove-btn {
+  width: 44px;
+  min-height: 44px;
+  border-radius: 16px;
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+  font-weight: 950;
+}
+
+@media (max-width: 900px) {
+  .pm-valuation-row,
+  .valuation-table-head,
+  .valuation-actions {
+    grid-template-columns: 1fr;
+  }
+}

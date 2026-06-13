@@ -178,9 +178,35 @@ async function ppfPullCloudToLocal() {
   return true;
 }
 
+
+function ppfSanitizePatientsForCloud(value) {
+  if (!Array.isArray(value)) return value || [];
+  const heavyPhotoKeys = [
+    "foto", "photo", "imagen", "image", "avatar",
+    "profileImage", "profilePhoto", "fotoBase64", "photoBase64", "imageBase64"
+  ];
+  return value.map(patient => {
+    if (!patient || typeof patient !== "object") return patient;
+    const clean = { ...patient };
+    heavyPhotoKeys.forEach(key => {
+      if (typeof clean[key] === "string" && clean[key].startsWith("data:image/")) {
+        clean[key] = "";
+      }
+    });
+    return clean;
+  });
+}
+
+function ppfSanitizeValueForCloud(key, value) {
+  if (key === "patients") return ppfSanitizePatientsForCloud(value);
+  return value || [];
+}
+
 async function ppfPushValueToCloud(key, value) {
   const client = ppfCreateClient();
   if (!client || !PPF_SYNC_KEYS.includes(key)) return false;
+
+  value = ppfSanitizeValueForCloud(key, value);
 
   const cloud = await ppfGetCloudKey(key);
   const cloudValue = cloud?.value || [];
