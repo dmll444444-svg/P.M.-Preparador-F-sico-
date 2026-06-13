@@ -25,12 +25,12 @@
         <p>Acceso privado para clientes y administrador</p>
       </div>
 
-      <form id="loginForm">
+      <form id="loginForm" autocomplete="off">
         <label>Usuario o nickname</label>
-        <input type="text" id="username" placeholder="Ej: admin o cliente1" required />
+        <input type="text" id="username" name="ppf_login_user_new" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')" placeholder="Ej: admin o cliente1" required />
 
         <label>Contraseña</label>
-        <input type="password" id="password" placeholder="Introduce tu contraseña" required />
+        <input type="password" id="password" name="ppf_login_pass_new" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')" placeholder="Introduce tu contraseña" required />
 
         <button type="submit">Entrar</button>
         <p id="message"></p>
