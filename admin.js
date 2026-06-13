@@ -808,11 +808,48 @@ function getPatientPhotoSafe(patient) {
   return patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || "";
 }
 
+
+function disablePatientBrowserAutocomplete() {
+  const form = document.getElementById("patientForm");
+  if (form) {
+    form.setAttribute("autocomplete", "off");
+    form.setAttribute("data-form-type", "other");
+  }
+
+  const fields = ["nombre", "nickname", "accessPassword", "email", "telefono", "fechaNacimiento", "fechaAlta", "edad", "peso", "altura", "grasa", "pliegues", "notas"];
+  fields.forEach((id, index) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    el.setAttribute("autocomplete", id === "accessPassword" ? "new-password" : "new-password");
+    el.setAttribute("data-lpignore", "true");
+    el.setAttribute("data-form-type", "other");
+    el.setAttribute("aria-autocomplete", "none");
+    el.setAttribute("autocapitalize", "off");
+    el.setAttribute("spellcheck", "false");
+
+    // Nombre aleatorio en cada carga para que Chrome no relacione el campo con historiales guardados.
+    el.setAttribute("name", `ppf_${id}_${Date.now()}_${index}`);
+
+    // Evita sugerencias de direcciones guardadas en el email sin romper el teclado de email.
+    if (id === "email") {
+      el.setAttribute("type", "text");
+      el.setAttribute("inputmode", "email");
+    }
+    if (id === "telefono") {
+      el.setAttribute("type", "text");
+      el.setAttribute("inputmode", "tel");
+    }
+  });
+}
+
 function bindPatientForm() {
   const form = document.getElementById("patientForm");
   const photoInput = document.getElementById("foto");
 
   if (!form) return;
+
+  disablePatientBrowserAutocomplete();
 
   const submitBtn = document.getElementById("patientSubmitBtn");
   const cancelBtn = document.getElementById("cancelEditBtn");
@@ -1246,55 +1283,23 @@ const patientHTML = `
   <h2>Ficha del paciente</h2>
   <p>Datos personales, antropométricos, foto, contenido de trabajo e historial inicial.</p>
 
-  <form
-  class="patient-form"
-  id="patientForm"
-  autocomplete="off"
->
+  <form class="patient-form" id="patientForm" autocomplete="off" data-form-type="other">
     <div class="patient-top">
       <div class="patient-data-area">
         <div class="form-grid-3 access-row">
           <div>
-  <label for="nombre">Nombre</label>
-  <input
-    id="nombre"
-    name="ppf_patient_name_new"
-    type="text"
-    placeholder="Nombre completo"
-    autocomplete="new-password"
-    data-lpignore="true"
-    data-form-type="other"
-    spellcheck="false"
-    required
-  />
-</div>
+            <label for="nombre">Nombre</label>
+            <input id="nombre" name="ppf_nombre_inicial" type="text" placeholder="Nombre completo" autocomplete="new-password" data-lpignore="true" data-form-type="other" spellcheck="false" required />
+          </div>
 
-<div>
-  <label for="nickname">Nickname / Usuario cliente</label>
-  <input
-    id="nickname"
-    name="ppf_patient_nickname_new"
-    type="text"
-    placeholder="Ej: juan23"
-    autocomplete="new-password"
-    data-lpignore="true"
-    data-form-type="other"
-    required
-  />
-</div>
+          <div>
+            <label for="nickname">Nickname / Usuario cliente</label>
+            <input id="nickname" name="ppf_nickname_inicial" type="text" placeholder="Ej: juan23" autocomplete="new-password" data-lpignore="true" data-form-type="other" spellcheck="false" required />
+          </div>
 
-<div>
-  <label for="accessPassword">Contraseña cliente</label>
-  <input
-    id="accessPassword"
-    name="ppf_patient_access_new"
-    type="password"
-    placeholder="Contraseña de acceso"
-    autocomplete="new-password"
-    data-lpignore="true"
-    required
-  />
-</div>
+          <div>
+            <label for="accessPassword">Contraseña cliente</label>
+            <input id="accessPassword" name="ppf_access_inicial" type="password" placeholder="Contraseña de acceso" autocomplete="new-password" data-lpignore="true" data-form-type="other" required />
           </div>
         </div>
 
@@ -1309,12 +1314,12 @@ const patientHTML = `
         <div class="form-grid-2">
           <div>
             <label for="email">Email</label>
-            <input id="email" type="email" placeholder="correo@email.com" />
+            <input id="email" name="ppf_email_inicial" type="text" inputmode="email" placeholder="correo@email.com" autocomplete="new-password" data-lpignore="true" data-form-type="other" spellcheck="false" />
           </div>
 
           <div>
             <label for="telefono">Teléfono</label>
-            <input id="telefono" type="tel" placeholder="+34 600 000 000" />
+            <input id="telefono" name="ppf_telefono_inicial" type="text" inputmode="tel" placeholder="+34 600 000 000" autocomplete="new-password" data-lpignore="true" data-form-type="other" spellcheck="false" />
           </div>
 
           <div>
@@ -1329,22 +1334,22 @@ const patientHTML = `
 
           <div>
             <label for="edad">Edad</label>
-            <input id="edad" type="number" placeholder="Ej: 32" required />
+            <input id="edad" name="ppf_edad_inicial" type="number" placeholder="Ej: 32" autocomplete="off" data-lpignore="true" required />
           </div>
 
           <div>
             <label for="peso">Peso</label>
-            <input id="peso" type="number" step="0.1" placeholder="Ej: 78.5 kg" required />
+            <input id="peso" name="ppf_peso_inicial" type="number" step="0.1" placeholder="Ej: 78.5 kg" autocomplete="off" data-lpignore="true" required />
           </div>
 
           <div>
             <label for="altura">Altura</label>
-            <input id="altura" type="number" placeholder="Ej: 178 cm" required />
+            <input id="altura" name="ppf_altura_inicial" type="number" placeholder="Ej: 178 cm" autocomplete="off" data-lpignore="true" required />
           </div>
 
           <div>
             <label for="grasa">% graso</label>
-            <input id="grasa" type="number" step="0.1" placeholder="Ej: 14.5" />
+            <input id="grasa" name="ppf_grasa_inicial" type="number" step="0.1" placeholder="Ej: 14.5" autocomplete="off" data-lpignore="true" />
           </div>
         </div>
       </div>
@@ -3690,7 +3695,6 @@ function bindSystemPanel() {
 
   document.getElementById("backupBtn")?.addEventListener("click", () => {
     downloadJsonFile(`ppf-backup-${new Date().toISOString().slice(0,10)}.json`, getLocalBackupData());
-    alert("Backup local descargado correctamente.");
   });
 
   document.getElementById("restoreInput")?.addEventListener("change", async event => {
@@ -5096,257 +5100,5 @@ setTimeout(pmRefreshPatientsKpiAndPage, 2500);
 if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
   window.PPF_SUPABASE_READY.then(pmRefreshPatientsKpiAndPage).catch(() => {});
 }
-
-
-/* =========================================================
-   PM HOTFIX · Valoraciones estable + fotos ligeras Supabase
-   ========================================================= */
-function pmEscapeAttr(value = "") {
-  return String(value).replace(/[&<>"']/g, char => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[char]));
-}
-
-function pmLoadRuntimeArrays() {
-  try { patients = JSON.parse(localStorage.getItem("patients") || "[]"); } catch (_) { patients = []; }
-  try { valoraciones = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) { valoraciones = []; }
-}
-
-function pmPatientOptionsSafe(includeAll = false) {
-  pmLoadRuntimeArrays();
-  const base = includeAll ? '<option value="">Todos los pacientes</option>' : '<option value="">Selecciona paciente</option>';
-  return base + patients
-    .filter(p => p && p.nickname && !p.deleted)
-    .map(p => `<option value="${pmEscapeAttr(p.nickname)}">${pmEscapeAttr(p.nombre || p.nickname)}</option>`)
-    .join("");
-}
-
-function pmValuationRowSafe(number = 1) {
-  return `
-    <div class="valuation-test-row pm-valuation-row" data-valuation-row>
-      <div>
-        <label>TEST ${number}</label>
-        <input class="valuation-test-name" type="text" placeholder="Ej: CMJ, Sprint 10 m, IMTP..." />
-      </div>
-      <div>
-        <label>Datos registrados</label>
-        <div class="valuation-attempt-grid">
-          <input class="valuation-attempt-1" type="text" placeholder="Intento 1" />
-          <input class="valuation-attempt-2" type="text" placeholder="Intento 2" />
-          <input class="valuation-attempt-3" type="text" placeholder="Intento 3" />
-        </div>
-      </div>
-      <div>
-        <label>Registro</label>
-        <select class="valuation-unit">${valuationUnitOptions()}</select>
-      </div>
-      <div>
-        <label>Observaciones cualitativas</label>
-        <textarea class="valuation-observations" placeholder="Observaciones técnicas, calidad de movimiento, compensaciones..."></textarea>
-      </div>
-      <button class="valuation-remove-btn" type="button" title="Eliminar test">✕</button>
-    </div>
-  `;
-}
-
-function pmRenderValuationsListSafe(filterNickname = "") {
-  const list = document.getElementById("valuationsList");
-  if (!list) return;
-  pmLoadRuntimeArrays();
-  const visible = valoraciones
-    .filter(v => !filterNickname || v.patientNickname === filterNickname)
-    .slice()
-    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
-
-  if (!visible.length) {
-    list.innerHTML = '<p>No hay valoraciones guardadas todavía.</p>';
-    return;
-  }
-
-  list.innerHTML = visible.map(item => {
-    const patient = patients.find(p => p.nickname === item.patientNickname);
-    return `
-      <article class="valuation-card">
-        <div class="history-card-header">
-          <span class="history-type">Valoración</span>
-          <span class="history-date">${pmEscapeAttr(item.fecha || "-")}</span>
-        </div>
-        <h3>${pmEscapeAttr(patient ? patient.nombre : item.patientNickname)}</h3>
-        <div class="valuation-card-tests">
-          ${(item.tests || []).map((test, index) => `
-            <div class="valuation-card-test">
-              <strong>TEST ${index + 1}: ${pmEscapeAttr(test.nombre || "-")}</strong>
-              <p><b>Datos:</b> ${pmEscapeAttr(test.intento1 || "-")} · ${pmEscapeAttr(test.intento2 || "-")} · ${pmEscapeAttr(test.intento3 || "-")} ${pmEscapeAttr(test.unidad || "")}</p>
-              <p><b>Observaciones:</b> ${pmEscapeAttr(test.observaciones || "-")}</p>
-            </div>
-          `).join("")}
-        </div>
-        <div class="file-actions">
-          <button class="secondary-btn" type="button" onclick="editValuation('${pmEscapeAttr(item.id)}')">Editar</button>
-          <button class="secondary-btn" type="button" onclick="generateValuationPDF('${pmEscapeAttr(item.id)}')">Generar PDF</button>
-          <button class="danger-btn" type="button" onclick="deleteValuation('${pmEscapeAttr(item.id)}')">Eliminar</button>
-        </div>
-      </article>
-    `;
-  }).join("");
-}
-
-function pmBindValoracionesStable() {
-  pmLoadRuntimeArrays();
-  const form = document.getElementById("valuationsForm");
-  const testsArea = document.getElementById("valuationTestsArea");
-  const addBtn = document.getElementById("addValuationTestBtn");
-  const filter = document.getElementById("valuationsFilter");
-  const patientSelect = document.getElementById("valuationPatient");
-  const pdfPatient = document.getElementById("valuationPdfPatient");
-
-  if (!form || !testsArea || !patientSelect) return;
-
-  patientSelect.innerHTML = pmPatientOptionsSafe(false);
-  if (filter) filter.innerHTML = pmPatientOptionsSafe(true);
-  if (pdfPatient) pdfPatient.innerHTML = pmPatientOptionsSafe(false);
-
-  form.querySelectorAll("input, select, textarea, button").forEach(el => {
-    el.disabled = false;
-    el.style.pointerEvents = "auto";
-    el.style.position = el.style.position || "relative";
-    el.style.zIndex = "5";
-  });
-
-  setTodayIfEmpty("valuationDate");
-
-  addBtn?.addEventListener("click", () => {
-    testsArea.insertAdjacentHTML("beforeend", pmValuationRowSafe(testsArea.querySelectorAll("[data-valuation-row]").length + 1));
-    refreshValuationNumbers();
-  });
-
-  testsArea.addEventListener("click", event => {
-    const btn = event.target.closest(".valuation-remove-btn");
-    if (!btn) return;
-    const rows = testsArea.querySelectorAll("[data-valuation-row]");
-    if (rows.length <= 1) {
-      alert("Debe quedar al menos un test.");
-      return;
-    }
-    btn.closest("[data-valuation-row]")?.remove();
-    refreshValuationNumbers();
-  });
-
-  filter?.addEventListener("change", () => {
-    pmRenderValuationsListSafe(filter.value);
-    try { renderValuationCharts(filter.value); } catch (_) {}
-  });
-
-  form.addEventListener("submit", event => {
-    event.preventDefault();
-    const patientNickname = patientSelect.value || "";
-    const fecha = document.getElementById("valuationDate")?.value || "";
-
-    if (!patientNickname || !fecha) {
-      alert("Selecciona paciente y fecha.");
-      return;
-    }
-
-    const tests = [...testsArea.querySelectorAll("[data-valuation-row]")].map(row => ({
-      nombre: row.querySelector(".valuation-test-name")?.value.trim() || "",
-      intento1: row.querySelector(".valuation-attempt-1")?.value.trim() || "",
-      intento2: row.querySelector(".valuation-attempt-2")?.value.trim() || "",
-      intento3: row.querySelector(".valuation-attempt-3")?.value.trim() || "",
-      unidad: row.querySelector(".valuation-unit")?.value || "",
-      observaciones: row.querySelector(".valuation-observations")?.value.trim() || ""
-    })).filter(test => test.nombre || test.intento1 || test.intento2 || test.intento3 || test.observaciones);
-
-    if (!tests.length) {
-      alert("Rellena al menos un test.");
-      return;
-    }
-
-    const existing = editingValuationId ? valoraciones.find(item => item.id === editingValuationId) : null;
-    const payload = {
-      id: editingValuationId || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
-      patientNickname,
-      fecha,
-      tests,
-      createdAt: existing?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    if (editingValuationId) valoraciones = valoraciones.map(item => item.id === editingValuationId ? payload : item);
-    else valoraciones.push(payload);
-
-    localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
-    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-      window.PPF_SUPABASE.pushKey("valoraciones").catch(error => console.warn("No se pudo sincronizar valoraciones:", error));
-    }
-
-    editingValuationId = null;
-    form.reset();
-    testsArea.innerHTML = pmValuationRowSafe(1);
-    patientSelect.innerHTML = pmPatientOptionsSafe(false);
-    setTodayIfEmpty("valuationDate");
-    pmRenderValuationsListSafe(filter?.value || "");
-    try { renderValuationCharts(filter?.value || ""); } catch (_) {}
-    alert("Valoración guardada correctamente.");
-  });
-
-  pmRenderValuationsListSafe();
-  try { renderValuationCharts(); ensureValuationChartTooltip(); } catch (_) {}
-}
-
-function pmRenderValoracionesStable() {
-  sectionTitle.textContent = "Valoraciones";
-  contentArea.innerHTML = `
-    <h2>Valoraciones</h2>
-    <p>Registra pruebas físicas con intentos, unidad de registro y observaciones cualitativas por test.</p>
-
-    <form class="patient-form valuation-form pm-valuation-stable" id="valuationsForm">
-      <div class="form-grid-2">
-        <div>
-          <label for="valuationPatient">Selecciona paciente</label>
-          <select id="valuationPatient" required></select>
-        </div>
-        <div>
-          <label for="valuationDate">Fecha</label>
-          <input id="valuationDate" type="date" required />
-        </div>
-      </div>
-      <div class="valuation-table-head">
-        <span>TEST</span><span>Datos registrados</span><span>Registro</span><span>Observaciones cualitativas</span>
-      </div>
-      <div class="valuation-tests-area" id="valuationTestsArea">${pmValuationRowSafe(1)}</div>
-      <div class="form-actions valuation-actions">
-        <button class="secondary-btn" id="addValuationTestBtn" type="button">+ Añadir test</button>
-        <button class="primary-btn" type="submit">Guardar valoración</button>
-      </div>
-    </form>
-
-    <div class="patient-form pm-valuation-filter" style="margin-top:26px;">
-      <label for="valuationsFilter">Filtrar valoraciones por paciente</label>
-      <select id="valuationsFilter"></select>
-    </div>
-
-    <section class="valuation-charts-panel">
-      <div class="module-panel-header"><div><p class="eyebrow">Evolución de tests</p><h3>Gráficas automáticas por test numérico</h3></div></div>
-      <div id="valuationChartsArea"></div>
-    </section>
-    <div class="history-list" id="valuationsList"></div>
-  `;
-  pmBindValoracionesStable();
-}
-
-const pmOriginalRenderSection = renderSection;
-renderSection = function pmRenderSectionPatched(key) {
-  if (key === "valoraciones") {
-    pmRenderValoracionesStable();
-    return;
-  }
-  return pmOriginalRenderSection(key);
-};
-window.renderSection = renderSection;
-window.pmRenderValoracionesStable = pmRenderValoracionesStable;
 
 })();
