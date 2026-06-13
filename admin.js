@@ -327,130 +327,14 @@ function persistAppData() {
   localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
 }
 
-function pmEscapeAgendaHTML(value = "") {
-  return String(value ?? "").replace(/[&<>'"]/g, c => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "'": "&#39;",
-    '"': "&quot;"
-  }[c]));
-}
-
-function pmGetCompletedSessionsSafe() {
-  try {
-    const saved = JSON.parse(localStorage.getItem("completedSessions") || "[]");
-    return Array.isArray(saved) ? saved : [];
-  } catch (_) {
-    return [];
-  }
-}
-
-function pmSessionNumberValue(session = {}) {
-  return Number(session.numero || session.numeroSesion || session.sessionNumber || 0);
-}
-
-function pmSessionDateValue(session = {}) {
-  return String(session.fecha || session.date || session.createdAt || "");
-}
-
-function pmSortSessionsNewest(list = []) {
-  return [...list].sort((a, b) => {
-    const dateCompare = pmSessionDateValue(b).localeCompare(pmSessionDateValue(a));
-    if (dateCompare) return dateCompare;
-
-    const numberCompare = pmSessionNumberValue(b) - pmSessionNumberValue(a);
-    if (numberCompare) return numberCompare;
-
-    return String(b.id || "").localeCompare(String(a.id || ""));
-  });
-}
-
-function pmIsAgendaSessionCompleted(session = {}) {
-  const completedSessions = pmGetCompletedSessionsSafe();
-  const sessionId = String(session.id || "");
-  const nickname = String(session.patientNickname || "");
-  const number = pmSessionNumberValue(session);
-
-  return completedSessions.some(item => {
-    const completedId = String(item.sessionId || item.id || "");
-    const completedNick = String(item.patientNickname || "");
-    const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
-
-    if (sessionId && completedId && sessionId === completedId) return true;
-    return nickname && completedNick === nickname && number && completedNumber && number === completedNumber;
-  });
-}
-
-function pmAgendaMicroLabel(session = {}) {
-  const nickname = session.patientNickname || "";
-  const date = pmSessionDateValue(session);
-  let micro = session.microciclo || session.micro || session.microcycle || "";
-
-  if ((!micro || micro === "-") && typeof getComputedMicrocycleNumber === "function") {
-    micro = getComputedMicrocycleNumber(nickname, date);
-  }
-
-  return `Micro ${micro || "-"} · ${date || "-"}`;
-}
-
-function pmGetLatestSessionForPatient(patient = {}) {
-  const nickname = patient.nickname || patient.username || patient.id || "";
-  if (!nickname) return null;
-
-  const patientSessions = sessions.filter(session => String(session.patientNickname || "") === String(nickname));
-  return pmSortSessionsNewest(patientSessions)[0] || null;
-}
-
-function pmBuildAgendaItems(type = "pending") {
-  return patients
-    .map(patient => {
-      const latest = pmGetLatestSessionForPatient(patient);
-      if (!latest) return null;
-
-      const completed = pmIsAgendaSessionCompleted(latest);
-      if (type === "pending" && completed) return null;
-      if (type === "completed" && !completed) return null;
-
-      return {
-        patient,
-        session: latest,
-        label: pmAgendaMicroLabel(latest)
-      };
-    })
-    .filter(Boolean);
-}
-
-function pmRenderAgendaKpi(type = "pending") {
-  const items = pmBuildAgendaItems(type);
-  const empty = type === "pending" ? "Sin sesiones pendientes" : "Sin sesiones terminadas";
-
-  if (!items.length) {
-    return `<span class="agenda-kpi-empty">${empty}</span>`;
-  }
-
-  return `
-    <div class="agenda-kpi-list">
-      ${items.map(item => `
-        <div class="agenda-kpi-row">
-          <span>${pmEscapeAgendaHTML(item.patient.nombre || item.patient.nickname || "Cliente")}</span>
-          <em>${pmEscapeAgendaHTML(item.label)}</em>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
 function updateCounters() {
+  if (typeof pmRenderSessionAgendaKpis === "function") {
+    pmRenderSessionAgendaKpis();
+    return;
+  }
   patientCounter.textContent = patients.length;
-
-  if (historyCounter) {
-    historyCounter.innerHTML = pmRenderAgendaKpi("pending");
-  }
-
-  if (fileCounter) {
-    fileCounter.innerHTML = pmRenderAgendaKpi("completed");
-  }
+  historyCounter.textContent = histories.length;
+  fileCounter.textContent = patientFiles.length;
 }
 
 
@@ -5163,9 +5047,13 @@ function pmRefreshAdminRuntimeData() {
   const h = document.getElementById("historyCounter");
   const f = document.getElementById("fileCounter");
 
-  if (p) p.textContent = patients.length;
-  if (h) h.textContent = histories.length;
-  if (f) f.textContent = patientFiles.length;
+  if (typeof pmRenderSessionAgendaKpis === "function") {
+    pmRenderSessionAgendaKpis();
+  } else {
+    if (p) p.textContent = patients.length;
+    if (h) h.textContent = histories.length;
+    if (f) f.textContent = patientFiles.length;
+  }
 }
 
 function pmBindAdminHeaderLogout() {
@@ -5199,6 +5087,158 @@ if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "func
 
 
 
+// PM AGENDA KPIs: sesiones pendientes y terminadas por cliente
+function pmAgendaSafeJSON(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+    return Array.isArray(fallback) && !Array.isArray(value) ? fallback : value;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function pmAgendaNormalize(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function pmAgendaPatientKey(patient = {}) {
+  return pmAgendaNormalize(patient.nickname || patient.id || patient.nombre || patient.name || "");
+}
+
+function pmAgendaSessionPatientKey(session = {}) {
+  return pmAgendaNormalize(
+    session.patientNickname ||
+    session.nickname ||
+    session.patient ||
+    session.patientId ||
+    session.cliente ||
+    session.clientNickname ||
+    session.userNickname ||
+    ""
+  );
+}
+
+function pmAgendaSessionNumber(session = {}) {
+  return Number(session.numero || session.numeroSesion || session.sessionNumber || session.number || 0) || 0;
+}
+
+function pmAgendaSessionDateValue(session = {}) {
+  const raw = session.fecha || session.date || session.createdAt || session.updatedAt || "";
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function pmAgendaMicroLabel(session = {}) {
+  const micro = session.microciclo || session.micro || session.microcycle || session.microcicloNumber || "-";
+  return `Micro ${micro}`;
+}
+
+function pmAgendaSessionLabel(session = {}) {
+  return `${pmAgendaMicroLabel(session)} · ${session.fecha || session.date || "Sin fecha"}`;
+}
+
+function pmAgendaIsCompleted(session, completedSessions = []) {
+  const sid = String(session?.id || session?.sessionId || "");
+  const sPatient = pmAgendaSessionPatientKey(session);
+  const sNumber = pmAgendaSessionNumber(session);
+
+  return completedSessions.some(item => {
+    const itemSid = String(item?.sessionId || item?.id || "");
+    if (sid && itemSid && sid === itemSid) return true;
+
+    const itemPatient = pmAgendaNormalize(item?.patientNickname || item?.nickname || item?.patient || item?.patientId || item?.cliente || "");
+    const itemNumber = Number(item?.numero || item?.numeroSesion || item?.sessionNumber || item?.number || 0) || 0;
+    return Boolean(sPatient && itemPatient && sPatient === itemPatient && sNumber && itemNumber && sNumber === itemNumber);
+  });
+}
+
+function pmAgendaLatestByPatient(list = []) {
+  const map = new Map();
+  list.forEach(session => {
+    const key = pmAgendaSessionPatientKey(session);
+    if (!key) return;
+    const previous = map.get(key);
+    const currentScore = pmAgendaSessionDateValue(session) * 10000 + pmAgendaSessionNumber(session);
+    const previousScore = previous ? pmAgendaSessionDateValue(previous) * 10000 + pmAgendaSessionNumber(previous) : -1;
+    if (!previous || currentScore >= previousScore) map.set(key, session);
+  });
+  return map;
+}
+
+function pmAgendaBuildRows(type = "pending") {
+  const patientsList = pmAgendaSafeJSON("patients", []);
+  const sessionsList = pmAgendaSafeJSON("sessions", []);
+  const completedList = pmAgendaSafeJSON("completedSessions", []);
+  const completed = [];
+  const pending = [];
+
+  sessionsList.forEach(session => {
+    if (!session || session.deleted) return;
+    if (pmAgendaIsCompleted(session, completedList)) completed.push(session);
+    else pending.push(session);
+  });
+
+  const latestMap = pmAgendaLatestByPatient(type === "completed" ? completed : pending);
+
+  return patientsList
+    .map(patient => {
+      const pKey = pmAgendaPatientKey(patient);
+      const session = latestMap.get(pKey);
+      if (!session) return null;
+      return {
+        name: patient.nombre || patient.name || patient.nickname || "Paciente",
+        label: pmAgendaSessionLabel(session),
+        sort: pmAgendaSessionDateValue(session) * 10000 + pmAgendaSessionNumber(session)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.sort - a.sort);
+}
+
+function pmAgendaKpiHTML(rows = []) {
+  if (!rows.length) return `<span class="agenda-kpi-number">0</span>`;
+  return `
+    <span class="agenda-kpi-number">${rows.length}</span>
+    <span class="agenda-kpi-list">
+      ${rows.slice(0, 4).map(row => `
+        <span class="agenda-kpi-row">
+          <em>${row.name}</em>
+          <b>${row.label}</b>
+        </span>
+      `).join("")}
+    </span>
+  `;
+}
+
+function pmRenderSessionAgendaKpis() {
+  const p = document.getElementById("patientCounter");
+  const h = document.getElementById("historyCounter");
+  const f = document.getElementById("fileCounter");
+
+  const patientsList = pmAgendaSafeJSON("patients", []);
+  const pendingRows = pmAgendaBuildRows("pending");
+  const completedRows = pmAgendaBuildRows("completed");
+
+  if (p) p.textContent = patientsList.length;
+  if (h) {
+    const card = h.closest(".stat-card");
+    if (card) card.classList.add("agenda-stat-card");
+    const label = card ? card.querySelector("span") : null;
+    if (label) label.textContent = "Sesiones pendientes";
+    h.innerHTML = pmAgendaKpiHTML(pendingRows);
+  }
+  if (f) {
+    const card = f.closest(".stat-card");
+    if (card) card.classList.add("agenda-stat-card");
+    const label = card ? card.querySelector("span") : null;
+    if (label) label.textContent = "Sesiones terminadas";
+    f.innerHTML = pmAgendaKpiHTML(completedRows);
+  }
+}
+
+window.pmRenderSessionAgendaKpis = pmRenderSessionAgendaKpis;
+
+
 // PM FIX: KPI pacientes y arranque directo en pestaña Paciente
 async function pmRefreshPatientsKpiAndPage() {
   try {
@@ -5213,9 +5253,13 @@ async function pmRefreshPatientsKpiAndPage() {
   try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
   try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
 
-  if (patientCounter) patientCounter.textContent = patients.length;
-  if (historyCounter) historyCounter.textContent = histories.length;
-  if (fileCounter) fileCounter.textContent = patientFiles.length;
+  if (typeof pmRenderSessionAgendaKpis === "function") {
+    pmRenderSessionAgendaKpis();
+  } else {
+    if (patientCounter) patientCounter.textContent = patients.length;
+    if (historyCounter) historyCounter.textContent = histories.length;
+    if (fileCounter) fileCounter.textContent = patientFiles.length;
+  }
 
   if (document.querySelector('.nav-item.active')?.dataset.section === "paciente") {
     if (typeof renderPatientList === "function") renderPatientList();
@@ -5231,6 +5275,8 @@ document.addEventListener("DOMContentLoaded", () => {
 setTimeout(pmRefreshPatientsKpiAndPage, 250);
 setTimeout(pmRefreshPatientsKpiAndPage, 1000);
 setTimeout(pmRefreshPatientsKpiAndPage, 2500);
+setTimeout(() => { if (typeof pmRenderSessionAgendaKpis === "function") pmRenderSessionAgendaKpis(); }, 3200);
+setInterval(() => { if (typeof pmRenderSessionAgendaKpis === "function") pmRenderSessionAgendaKpis(); }, 2000); // PM AGENDA AUTO REFRESH FINAL
 
 if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
   window.PPF_SUPABASE_READY.then(pmRefreshPatientsKpiAndPage).catch(() => {});

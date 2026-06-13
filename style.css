@@ -4148,56 +4148,45 @@ aside.client-sidebar {
 }
 
 
-/* PM Agenda de sesiones en KPIs superiores */
-.agenda-stat-card {
-  min-height: 120px;
-}
-
-.agenda-stat-card > strong {
+/* PM Agenda KPIs: sesiones pendientes / terminadas */
+.agenda-stat-card strong {
   display: block;
   font-size: 14px;
   line-height: 1.25;
 }
 
+.agenda-kpi-number {
+  display: block;
+  font-size: 34px;
+  line-height: 1;
+  color: #ffffff;
+  margin-bottom: 10px;
+}
+
 .agenda-kpi-list {
   display: grid;
-  gap: 8px;
-  max-height: 92px;
-  overflow: auto;
-  padding-right: 4px;
+  gap: 6px;
 }
 
 .agenda-kpi-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 9px;
-  border-radius: 12px;
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 10px;
   background: rgba(34, 197, 94, 0.08);
-  border: 1px solid rgba(34, 197, 94, 0.14);
-}
-
-.agenda-kpi-row span {
-  margin: 0;
-  color: #e5e7eb;
-  font-size: 12px;
-  font-weight: 800;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border: 1px solid rgba(34, 197, 94, 0.18);
 }
 
 .agenda-kpi-row em {
-  color: #9fb2d8;
-  font-size: 12px;
   font-style: normal;
-  font-weight: 800;
+  font-size: 12px;
+  color: #e5eefc;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.agenda-kpi-empty {
-  color: #9fb2d8;
-  font-size: 16px;
-  font-weight: 900;
+.agenda-kpi-row b {
+  font-size: 12px;
+  color: #86efac;
 }
