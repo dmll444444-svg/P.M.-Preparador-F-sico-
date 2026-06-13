@@ -1246,23 +1246,55 @@ const patientHTML = `
   <h2>Ficha del paciente</h2>
   <p>Datos personales, antropométricos, foto, contenido de trabajo e historial inicial.</p>
 
-  <form class="patient-form" id="patientForm">
+  <form
+  class="patient-form"
+  id="patientForm"
+  autocomplete="off"
+>
     <div class="patient-top">
       <div class="patient-data-area">
         <div class="form-grid-3 access-row">
           <div>
-            <label for="nombre">Nombre</label>
-            <input id="nombre" type="text" placeholder="Nombre completo" autoconplete="off" required />
-          </div>
+  <label for="nombre">Nombre</label>
+  <input
+    id="nombre"
+    name="ppf_patient_name_new"
+    type="text"
+    placeholder="Nombre completo"
+    autocomplete="new-password"
+    data-lpignore="true"
+    data-form-type="other"
+    spellcheck="false"
+    required
+  />
+</div>
 
-          <div>
-            <label for="nickname">Nickname / Usuario cliente</label>
-            <input id="nickname" type="text" placeholder="Ej: juan23" required />
-          </div>
+<div>
+  <label for="nickname">Nickname / Usuario cliente</label>
+  <input
+    id="nickname"
+    name="ppf_patient_nickname_new"
+    type="text"
+    placeholder="Ej: juan23"
+    autocomplete="new-password"
+    data-lpignore="true"
+    data-form-type="other"
+    required
+  />
+</div>
 
-          <div>
-            <label for="accessPassword">Contraseña cliente</label>
-            <input id="accessPassword" type="text" placeholder="Contraseña de acceso" required />
+<div>
+  <label for="accessPassword">Contraseña cliente</label>
+  <input
+    id="accessPassword"
+    name="ppf_patient_access_new"
+    type="password"
+    placeholder="Contraseña de acceso"
+    autocomplete="new-password"
+    data-lpignore="true"
+    required
+  />
+</div>
           </div>
         </div>
 
