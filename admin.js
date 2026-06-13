@@ -1252,7 +1252,7 @@ const patientHTML = `
         <div class="form-grid-3 access-row">
           <div>
             <label for="nombre">Nombre</label>
-            <input id="nombre" type="text" placeholder="Nombre completo" required />
+            <input id="nombre" type="text" placeholder="Nombre completo" autoconplete="off" required />
           </div>
 
           <div>
