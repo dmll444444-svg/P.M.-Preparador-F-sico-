@@ -98,6 +98,15 @@ if (form) {
     }
 
     localStorage.setItem("currentUser", JSON.stringify(user));
+    try {
+      const stats = JSON.parse(localStorage.getItem("userStats") || "{}");
+      const key = user.nickname || user.username;
+      stats[key] = stats[key] || {count:0,online:false,lastLogin:null};
+      stats[key].count += 1;
+      stats[key].online = true;
+      stats[key].lastLogin = new Date().toISOString();
+      localStorage.setItem("userStats", JSON.stringify(stats));
+    } catch(e){}
 
     if (message) {
       message.textContent = `Acceso correcto. Bienvenido, ${user.nickname}`;
@@ -113,6 +122,3 @@ if (form) {
     }, 350);
   });
 }
-
-
-window.addEventListener("pageshow", () => { if (window.PPF_SYNC_ON_OPEN) window.PPF_SYNC_ON_OPEN("login-open"); });

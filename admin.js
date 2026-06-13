@@ -808,48 +808,11 @@ function getPatientPhotoSafe(patient) {
   return patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || "";
 }
 
-
-function disablePatientBrowserAutocomplete() {
-  const form = document.getElementById("patientForm");
-  if (form) {
-    form.setAttribute("autocomplete", "off");
-    form.setAttribute("data-form-type", "other");
-  }
-
-  const fields = ["nombre", "nickname", "accessPassword", "email", "telefono", "fechaNacimiento", "fechaAlta", "edad", "peso", "altura", "grasa", "pliegues", "notas"];
-  fields.forEach((id, index) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-
-    el.setAttribute("autocomplete", id === "accessPassword" ? "new-password" : "new-password");
-    el.setAttribute("data-lpignore", "true");
-    el.setAttribute("data-form-type", "other");
-    el.setAttribute("aria-autocomplete", "none");
-    el.setAttribute("autocapitalize", "off");
-    el.setAttribute("spellcheck", "false");
-
-    // Nombre aleatorio en cada carga para que Chrome no relacione el campo con historiales guardados.
-    el.setAttribute("name", `ppf_${id}_${Date.now()}_${index}`);
-
-    // Evita sugerencias de direcciones guardadas en el email sin romper el teclado de email.
-    if (id === "email") {
-      el.setAttribute("type", "text");
-      el.setAttribute("inputmode", "email");
-    }
-    if (id === "telefono") {
-      el.setAttribute("type", "text");
-      el.setAttribute("inputmode", "tel");
-    }
-  });
-}
-
 function bindPatientForm() {
   const form = document.getElementById("patientForm");
   const photoInput = document.getElementById("foto");
 
   if (!form) return;
-
-  disablePatientBrowserAutocomplete();
 
   const submitBtn = document.getElementById("patientSubmitBtn");
   const cancelBtn = document.getElementById("cancelEditBtn");
@@ -949,9 +912,7 @@ function bindPatientForm() {
       notas: document.getElementById("notas")?.value.trim() || ""
     };
 
-    const wasEditingPatient = Boolean(editingPatientNickname);
-
-    if (wasEditingPatient) {
+    if (editingPatientNickname) {
       const previousNickname = editingPatientNickname;
       const index = patients.findIndex(patient => patient.nickname === previousNickname);
 
@@ -967,35 +928,21 @@ function bindPatientForm() {
         sessions = sessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item);
 
         const completedSessions = JSON.parse(localStorage.getItem("completedSessions")) || [];
-        const updatedCompletedSessions = completedSessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item);
-        localStorage.setItem("completedSessions", JSON.stringify(updatedCompletedSessions));
-        if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("completedSessions", updatedCompletedSessions);
+        localStorage.setItem("completedSessions", JSON.stringify(
+          completedSessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item)
+        ));
       }
+
+      alert("Paciente actualizado correctamente.");
     } else {
       patients.push(newPatient);
+      alert("Paciente guardado correctamente.");
     }
 
-    try {
-      localStorage.setItem("patients", JSON.stringify(patients));
-      localStorage.setItem("histories", JSON.stringify(histories));
-      localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
-      localStorage.setItem("sessions", JSON.stringify(sessions));
-
-      if (window.PPF_SUPABASE?.pushValue) {
-        const pushed = await window.PPF_SUPABASE.pushValue("patients", patients);
-        if (!pushed) {
-          alert("El paciente se ha guardado en la app, pero Supabase no confirmó la sincronización. Revisa la consola antes de cerrar.");
-        } else {
-          alert(wasEditingPatient ? "Paciente actualizado y sincronizado correctamente." : "Paciente guardado y sincronizado correctamente.");
-        }
-      } else {
-        alert(wasEditingPatient ? "Paciente actualizado correctamente." : "Paciente guardado correctamente.");
-      }
-    } catch (error) {
-      console.error("Error guardando paciente:", error);
-      alert("No se pudo guardar el paciente. Revisa la consola para ver el error.");
-      return;
-    }
+    localStorage.setItem("patients", JSON.stringify(patients));
+    localStorage.setItem("histories", JSON.stringify(histories));
+    localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
+    localStorage.setItem("sessions", JSON.stringify(sessions));
 
     currentPhoto = "";
     resetPatientFormState();
@@ -1283,23 +1230,23 @@ const patientHTML = `
   <h2>Ficha del paciente</h2>
   <p>Datos personales, antropométricos, foto, contenido de trabajo e historial inicial.</p>
 
-  <form class="patient-form" id="patientForm" autocomplete="off" data-form-type="other">
+  <form class="patient-form" id="patientForm">
     <div class="patient-top">
       <div class="patient-data-area">
         <div class="form-grid-3 access-row">
           <div>
             <label for="nombre">Nombre</label>
-            <input id="nombre" name="ppf_nombre_inicial" type="text" placeholder="Nombre completo" autocomplete="new-password" data-lpignore="true" data-form-type="other" spellcheck="false" required />
+            <input id="nombre" type="text" placeholder="Nombre completo" required />
           </div>
 
           <div>
             <label for="nickname">Nickname / Usuario cliente</label>
-            <input id="nickname" name="ppf_nickname_inicial" type="text" placeholder="Ej: juan23" autocomplete="new-password" data-lpignore="true" data-form-type="other" spellcheck="false" required />
+            <input id="nickname" type="text" placeholder="Ej: juan23" required />
           </div>
 
           <div>
             <label for="accessPassword">Contraseña cliente</label>
-            <input id="accessPassword" name="ppf_access_inicial" type="password" placeholder="Contraseña de acceso" autocomplete="new-password" data-lpignore="true" data-form-type="other" required />
+            <input id="accessPassword" type="text" placeholder="Contraseña de acceso" required />
           </div>
         </div>
 
@@ -1314,12 +1261,12 @@ const patientHTML = `
         <div class="form-grid-2">
           <div>
             <label for="email">Email</label>
-            <input id="email" name="ppf_email_inicial" type="text" inputmode="email" placeholder="correo@email.com" autocomplete="new-password" data-lpignore="true" data-form-type="other" spellcheck="false" />
+            <input id="email" type="email" placeholder="correo@email.com" />
           </div>
 
           <div>
             <label for="telefono">Teléfono</label>
-            <input id="telefono" name="ppf_telefono_inicial" type="text" inputmode="tel" placeholder="+34 600 000 000" autocomplete="new-password" data-lpignore="true" data-form-type="other" spellcheck="false" />
+            <input id="telefono" type="tel" placeholder="+34 600 000 000" />
           </div>
 
           <div>
@@ -1334,22 +1281,22 @@ const patientHTML = `
 
           <div>
             <label for="edad">Edad</label>
-            <input id="edad" name="ppf_edad_inicial" type="number" placeholder="Ej: 32" autocomplete="off" data-lpignore="true" required />
+            <input id="edad" type="number" placeholder="Ej: 32" required />
           </div>
 
           <div>
             <label for="peso">Peso</label>
-            <input id="peso" name="ppf_peso_inicial" type="number" step="0.1" placeholder="Ej: 78.5 kg" autocomplete="off" data-lpignore="true" required />
+            <input id="peso" type="number" step="0.1" placeholder="Ej: 78.5 kg" required />
           </div>
 
           <div>
             <label for="altura">Altura</label>
-            <input id="altura" name="ppf_altura_inicial" type="number" placeholder="Ej: 178 cm" autocomplete="off" data-lpignore="true" required />
+            <input id="altura" type="number" placeholder="Ej: 178 cm" required />
           </div>
 
           <div>
             <label for="grasa">% graso</label>
-            <input id="grasa" name="ppf_grasa_inicial" type="number" step="0.1" placeholder="Ej: 14.5" autocomplete="off" data-lpignore="true" />
+            <input id="grasa" type="number" step="0.1" placeholder="Ej: 14.5" />
           </div>
         </div>
       </div>
@@ -2181,7 +2128,7 @@ function renderUsersPage() {
           }
           <div>
             <strong>${patient.nombre}</strong>
-            <p>En pruebas</p>
+            <p>${(() => { const st=(JSON.parse(localStorage.getItem('userStats')||'{}')[patient.nickname||'']||{}); return `Accesos: ${st.count||0} · ${st.online?'🟢 En línea':'⚪ Desconectado'}`; })()}</p>
           </div>
         </div>
       `).join("")}
