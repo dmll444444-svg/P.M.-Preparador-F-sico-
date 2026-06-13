@@ -9,6 +9,51 @@
 
 const currentUser = JSON.parse(localStorage.getItem("currentUser"));
 
+function pmClientUpdateOnlineState(online, options = {}) {
+  const pushCloud = options.pushCloud !== false;
+  try {
+    const user = JSON.parse(localStorage.getItem("currentUser") || "null") || currentUser;
+    if (!user) return;
+
+    const stats = JSON.parse(localStorage.getItem("userStats") || "{}");
+    const key = user.nickname || user.username;
+    if (!key) return;
+
+    stats[key] = stats[key] || { count: 0, online: false, lastLogin: null };
+    stats[key].online = Boolean(online);
+    stats[key].lastSeen = new Date().toISOString();
+    if (!online) stats[key].lastLogout = new Date().toISOString();
+
+    localStorage.setItem("userStats", JSON.stringify(stats));
+
+    if (pushCloud && window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+      window.PPF_SUPABASE.pushKey("userStats").catch(() => {});
+    }
+  } catch (error) {
+    console.warn("No se pudo actualizar estado online:", error);
+  }
+}
+
+window.PPF_LOGOUT_AND_SYNC = async function PPF_LOGOUT_AND_SYNC() {
+  pmClientUpdateOnlineState(false, { pushCloud: false });
+  try {
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+      await window.PPF_SUPABASE.pushKey("userStats");
+    }
+  } catch (_) {}
+
+  localStorage.removeItem("currentUser");
+  window.location.href = "index.html";
+};
+
+if (currentUser && currentUser.role === "client") {
+  pmClientUpdateOnlineState(true);
+  setInterval(() => pmClientUpdateOnlineState(true), 60000);
+  window.addEventListener("pagehide", () => {
+    pmClientUpdateOnlineState(false);
+  });
+}
+
 if (!currentUser || currentUser.role !== "client") {
   window.location.href = "index.html";
 }

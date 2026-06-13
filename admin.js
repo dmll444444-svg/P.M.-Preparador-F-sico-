@@ -2115,6 +2115,34 @@ function bindSessionsForm() {
 }
 
 
+function pmFormatUserDate(value) {
+  if (!value) return "Nunca";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Nunca";
+  return date.toLocaleString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function pmGetUserStatsForPatient(patient = {}) {
+  let stats = {};
+  try { stats = JSON.parse(localStorage.getItem("userStats") || "{}"); } catch (_) { stats = {}; }
+  const key = patient.nickname || patient.username || patient.id || "";
+  return stats[key] || {};
+}
+
+function pmIsPatientOnline(stat = {}) {
+  if (!stat.online) return false;
+  if (!stat.lastSeen) return true;
+  const lastSeen = new Date(stat.lastSeen).getTime();
+  if (!Number.isFinite(lastSeen)) return Boolean(stat.online);
+  return (Date.now() - lastSeen) < (3 * 60 * 1000);
+}
+
 function renderUsersPage() {
   if (patients.length === 0) {
     return `<p>No hay pacientes creados todavía.</p>`;
@@ -2122,16 +2150,24 @@ function renderUsersPage() {
 
   return `
     <div class="users-test-list">
-      ${patients.map(patient => `
-        <div class="user-test-card">
+      ${patients.map(patient => {
+        const stat = pmGetUserStatsForPatient(patient);
+        const online = pmIsPatientOnline(stat);
+        const lastLoginText = pmFormatUserDate(stat.lastLogin);
+        return `
+        <div class="user-test-card" style="display:flex;align-items:center;gap:14px;">
           ${(getPatientPhotoSafe(patient) ? `<img class="patient-thumb" src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="patient-thumb">${patient.nombre.charAt(0).toUpperCase()}</div>`)
           }
           <div>
             <strong>${patient.nombre}</strong>
-            <p>${(() => { const st=(JSON.parse(localStorage.getItem('userStats')||'{}')[patient.nickname||'']||{}); return `Accesos: ${st.count||0} · ${st.online?'🟢 En línea':'⚪ Desconectado'}`; })()}</p>
+            <p>Accesos: ${stat.count || 0} · ${online ? "🟢 En línea" : "⚪ Desconectado"}</p>
           </div>
-        </div>
-      `).join("")}
+          <div class="user-last-login" style="margin-left:auto;text-align:right;color:#9fb2d8;font-size:.9rem;line-height:1.35;">
+            <span style="display:block;color:#22c55e;font-weight:800;">Última conexión</span>
+            <strong>${lastLoginText}</strong>
+          </div>
+        </div>`;
+      }).join("")}
     </div>
   `;
 }
@@ -4464,9 +4500,9 @@ const sections = {
   },
   usuarios: {
     title: "Usuarios",
-    html: `
+    html: () => `
       <h2>Usuarios</h2>
-      <p>Página en pruebas con los pacientes creados.</p>
+      <p>Control de accesos y estado de conexión de clientes.</p>
       ${renderUsersPage()}
     `
   },
@@ -4811,9 +4847,22 @@ const sections = {
 function renderSection(key) {
   const section = sections[key];
   sectionTitle.textContent = section.title;
-  contentArea.innerHTML = section.html;
+  contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
   if (section.afterRender) section.afterRender();
 }
+
+
+async function pmRefreshUsersOnlinePanel() {
+  const activeNav = document.querySelector(".nav-item.active");
+  if (!activeNav || activeNav.dataset.section !== "usuarios") return;
+  try {
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
+      await window.PPF_SUPABASE.pull();
+    }
+  } catch (_) {}
+  renderSection("usuarios");
+}
+setInterval(pmRefreshUsersOnlinePanel, 30000);
 
 navItems.forEach(item => {
   item.addEventListener("click", () => {

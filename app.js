@@ -105,7 +105,11 @@ if (form) {
       stats[key].count += 1;
       stats[key].online = true;
       stats[key].lastLogin = new Date().toISOString();
+      stats[key].lastSeen = new Date().toISOString();
       localStorage.setItem("userStats", JSON.stringify(stats));
+      if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+        window.PPF_SUPABASE.pushKey("userStats").catch(() => {});
+      }
     } catch(e){}
 
     if (message) {

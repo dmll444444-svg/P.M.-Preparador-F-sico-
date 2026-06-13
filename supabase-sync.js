@@ -15,7 +15,8 @@ const PPF_SYNC_KEYS = [
   "patientFiles",
   "exerciseLibrary",
   "completedSessions",
-  "valoraciones"
+  "valoraciones",
+  "userStats"
 ];
 
 window.__PPF_VOLATILE_STORAGE__ = window.__PPF_VOLATILE_STORAGE__ || {};
@@ -199,6 +200,7 @@ function ppfSanitizePatientsForCloud(value) {
 
 function ppfSanitizeValueForCloud(key, value) {
   if (key === "patients") return ppfSanitizePatientsForCloud(value);
+  if (key === "userStats") return value || {};
   return value || [];
 }
 
