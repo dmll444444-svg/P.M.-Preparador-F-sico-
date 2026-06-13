@@ -2136,11 +2136,19 @@ function pmGetUserStatsForPatient(patient = {}) {
 }
 
 function pmIsPatientOnline(stat = {}) {
-  if (!stat.online) return false;
-  if (!stat.lastSeen) return true;
-  const lastSeen = new Date(stat.lastSeen).getTime();
-  if (!Number.isFinite(lastSeen)) return Boolean(stat.online);
-  return (Date.now() - lastSeen) < (3 * 60 * 1000);
+  if (!stat || !stat.online) return false;
+
+  const lastSeen = new Date(stat.lastSeen || stat.lastLogin || 0).getTime();
+  const lastLogout = new Date(stat.lastLogout || 0).getTime();
+
+  // Si el cierre de sesión es igual o posterior al último latido/login, siempre desconectado.
+  if (Number.isFinite(lastLogout) && Number.isFinite(lastSeen) && lastLogout >= lastSeen) return false;
+
+  // Si no hay latido válido, no lo damos por conectado para evitar falsos positivos.
+  if (!Number.isFinite(lastSeen)) return false;
+
+  // Presencia real: si no llega latido reciente, lo marcamos desconectado.
+  return (Date.now() - lastSeen) < (90 * 1000);
 }
 
 function renderUsersPage() {
@@ -4503,8 +4511,9 @@ const sections = {
     html: () => `
       <h2>Usuarios</h2>
       <p>Control de accesos y estado de conexión de clientes.</p>
-      ${renderUsersPage()}
-    `
+      <div id="usersListArea">${renderUsersPage()}</div>
+    `,
+    afterRender: pmPullUsersStatsAndPaint
   },
   historial: { title: "Historial", html: historialHTML, afterRender: bindHistoryForm },
   archivos: { title: "Archivos", html: archivosHTML, afterRender: bindFilesForm },
@@ -4852,17 +4861,27 @@ function renderSection(key) {
 }
 
 
-async function pmRefreshUsersOnlinePanel() {
-  const activeNav = document.querySelector(".nav-item.active");
-  if (!activeNav || activeNav.dataset.section !== "usuarios") return;
+async function pmPullUsersStatsAndPaint() {
   try {
     if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
       await window.PPF_SUPABASE.pull();
     }
   } catch (_) {}
-  renderSection("usuarios");
+
+  const area = document.getElementById("usersListArea");
+  if (area) area.innerHTML = renderUsersPage();
 }
-setInterval(pmRefreshUsersOnlinePanel, 30000);
+
+async function pmRefreshUsersOnlinePanel() {
+  const activeNav = document.querySelector(".nav-item.active");
+  if (!activeNav || activeNav.dataset.section !== "usuarios") return;
+  await pmPullUsersStatsAndPaint();
+}
+setInterval(pmRefreshUsersOnlinePanel, 10000);
+window.addEventListener("focus", pmRefreshUsersOnlinePanel);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) pmRefreshUsersOnlinePanel();
+});
 
 navItems.forEach(item => {
   item.addEventListener("click", () => {

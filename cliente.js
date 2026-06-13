@@ -20,9 +20,16 @@ function pmClientUpdateOnlineState(online, options = {}) {
     if (!key) return;
 
     stats[key] = stats[key] || { count: 0, online: false, lastLogin: null };
+    const now = new Date().toISOString();
     stats[key].online = Boolean(online);
-    stats[key].lastSeen = new Date().toISOString();
-    if (!online) stats[key].lastLogout = new Date().toISOString();
+    if (online) {
+      stats[key].lastSeen = now;
+      delete stats[key].lastLogout;
+    } else {
+      stats[key].lastLogout = now;
+      // Hacemos que el último logout domine sobre lastSeen para que admin lo pinte offline al instante.
+      stats[key].lastSeen = now;
+    }
 
     localStorage.setItem("userStats", JSON.stringify(stats));
 
@@ -42,6 +49,8 @@ window.PPF_LOGOUT_AND_SYNC = async function PPF_LOGOUT_AND_SYNC() {
     }
   } catch (_) {}
 
+  // Pequeño margen para que el navegador termine la subida antes de cambiar de página.
+  await new Promise(resolve => setTimeout(resolve, 120));
   localStorage.removeItem("currentUser");
   window.location.href = "index.html";
 };
