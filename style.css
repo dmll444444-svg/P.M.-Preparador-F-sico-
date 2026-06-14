@@ -4074,3 +4074,55 @@ aside.client-sidebar {
 .kpi-mini-list div{background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.28);border-radius:8px;padding:7px 9px;color:#bbf7d0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .users-access-list{display:grid;gap:14px}.user-access-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px}.user-access-main p{color:#86efac;font-weight:800}.status-dot{display:inline-block;width:12px;height:12px;border-radius:999px;background:#e5e7eb;vertical-align:-1px}.status-dot.online{background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.14)}.status-dot.offline{background:#e5e7eb}.user-last-login{text-align:right;color:#bfdbfe}.user-last-login span{display:block;color:#22c55e;font-weight:800;font-size:.78rem}.user-last-login strong{font-size:1rem}.photo-box-url{cursor:default}.photo-url-preview{cursor:default}.photo-url-field{display:flex;align-items:center;gap:0;margin-top:10px;border:1px solid rgba(148,163,184,.20);background:#020617;border-radius:14px;overflow:hidden}.photo-url-field span{padding:0 12px;color:#86efac;font-weight:900;background:rgba(34,197,94,.10);height:44px;display:grid;place-items:center;border-right:1px solid rgba(34,197,94,.22)}.photo-url-field input{border:0!important;border-radius:0!important;background:transparent!important;flex:1;min-width:0;height:44px;padding:0 12px!important}.patient-thumb{object-fit:cover}
 @media(max-width:760px){.user-access-card{grid-template-columns:auto 1fr}.user-last-login{grid-column:1/-1;text-align:left}}
+
+
+/* PM FIX definitivo: KPIs agenda compactos */
+.stat-card .kpi-mini-list{
+  margin-top:10px!important;
+  display:grid!important;
+  gap:7px!important;
+  max-height:110px!important;
+  overflow:auto!important;
+}
+.stat-card .kpi-mini-list div{
+  font-size:12px!important;
+  line-height:1.2!important;
+  font-style:normal!important;
+  letter-spacing:0!important;
+  background:rgba(34,197,94,.10)!important;
+  border:1px solid rgba(34,197,94,.28)!important;
+  border-radius:8px!important;
+  padding:7px 9px!important;
+  color:#bbf7d0!important;
+  font-weight:800!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+
+/* PM FIX definitivo: campo foto por ruta */
+.photo-url-field{
+  display:flex;
+  align-items:center;
+  gap:0;
+  margin-top:10px;
+  background:#070b1a;
+  border:1px solid rgba(148,163,184,.22);
+  border-radius:14px;
+  overflow:hidden;
+}
+.photo-url-field span{
+  padding:13px 0 13px 14px;
+  color:#22c55e;
+  font-weight:900;
+  white-space:nowrap;
+}
+.photo-url-field input{
+  border:0!important;
+  background:transparent!important;
+  padding-left:2px!important;
+  width:100%;
+}
+.photo-url-help{display:none!important;}
+.photo-box-url .photo-label{cursor:default;}
+.photo-preview{object-fit:cover;}

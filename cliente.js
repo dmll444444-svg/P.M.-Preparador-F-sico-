@@ -425,8 +425,8 @@ function renderClientDashboard() {
 
   return `
     <div class="client-profile-card client-pro-hero">
-      ${currentPatient.foto 
-        ? `<img class="client-profile-photo" src="${currentPatient.foto}" alt="${currentPatient.nombre}">`
+      ${getClientPatientPhoto(currentPatient)
+        ? `<img class="client-profile-photo" src="${getClientPatientPhoto(currentPatient)}" alt="${currentPatient.nombre}">`
         : `<div class="client-profile-photo fallback">${currentPatient.nombre.charAt(0).toUpperCase()}</div>`
       }
 

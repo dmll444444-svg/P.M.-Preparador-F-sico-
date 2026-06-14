@@ -327,6 +327,16 @@ function persistAppData() {
   localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
 }
 
+function pmPushPatientsToCloud() {
+  try {
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+      window.PPF_SUPABASE.pushKey("patients").catch(error => console.warn("No se pudo sincronizar patients:", error));
+    }
+  } catch (error) {
+    console.warn("No se pudo sincronizar patients:", error);
+  }
+}
+
 function updateCounters() {
   const active = document.querySelector('.nav-item.active')?.dataset.section || "paciente";
   if (typeof pmSetDashboardKpis === "function") {
@@ -340,8 +350,7 @@ function updateCounters() {
 
 
 function getPatientPhoto(patient) {
-  if (!patient) return "";
-  return patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || patient.fotoPaciente || "";
+  return getPatientPhotoSafe(patient);
 }
 
 function normalizePatientPhotoPath(value = "") {
@@ -740,6 +749,7 @@ async function updateOnlyPatientPhoto() {
   };
 
   localStorage.setItem("patients", JSON.stringify(patients));
+  pmPushPatientsToCloud();
   setPatientPhotoVisual(photo);
   renderPatientList();
 
@@ -850,7 +860,7 @@ function bindPatientForm() {
       ? (patients.find(patient => patient.nickname === editingPatientNickname) || {})
       : {};
 
-    const finalPhoto = photoToSave || "";
+    const finalPhoto = photoToSave || getPatientPhotoSafe(previousPatient) || "";
 
     const newPatient = {
       ...previousPatient,
@@ -906,6 +916,7 @@ function bindPatientForm() {
     }
 
     localStorage.setItem("patients", JSON.stringify(patients));
+    pmPushPatientsToCloud();
     localStorage.setItem("histories", JSON.stringify(histories));
     localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
     localStorage.setItem("sessions", JSON.stringify(sessions));
@@ -1282,8 +1293,7 @@ const patientHTML = `
         <div class="photo-url-field">
           <span>fotos/</span>
           <input id="foto" type="text" placeholder="troya13.jpg" autocomplete="off" />
-        </div>
-<div class="imc-panel">
+        </div><div class="imc-panel">
           <span>IMC automático</span>
           <strong id="imcValue">-</strong>
         </div>
@@ -1896,7 +1906,7 @@ function bindSessionsForm() {
     }
 
     card.innerHTML = `
-      ${patient.foto ? `<img src="${patient.foto}" alt="${patient.nombre}">` : `<div class="session-selected-avatar">${patient.nombre.charAt(0).toUpperCase()}</div>`}
+      ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="session-selected-avatar">${patient.nombre.charAt(0).toUpperCase()}</div>`}
       <div>
         <strong>${patient.nombre}</strong>
         <span>@${patient.nickname}</span>
@@ -2158,19 +2168,18 @@ function pmSetDashboardKpis(mode = "paciente") {
   const cards = document.querySelectorAll(".dashboard-grid .stat-card");
   if (cards.length < 3) return;
   const setCard = (index, label, main, items = []) => {
-    const span = cards[index].querySelector("span");
-    const strong = cards[index].querySelector("strong");
+    const card = cards[index];
+    const span = card.querySelector("span");
+    const strong = card.querySelector("strong");
+    const oldList = card.querySelector(".kpi-mini-list");
+    if (oldList) oldList.remove();
     if (span) span.textContent = label;
-    if (strong) {
-      strong.textContent = main;
-      const old = cards[index].querySelector(".kpi-mini-list");
-      if (old) old.remove();
-      if (items.length) {
-        const list = document.createElement("div");
-        list.className = "kpi-mini-list";
-        list.innerHTML = items.slice(0, 4).map(item => `<div>${item}</div>`).join("");
-        strong.insertAdjacentElement("afterend", list);
-      }
+    if (strong) strong.textContent = main;
+    if (items.length) {
+      const list = document.createElement("div");
+      list.className = "kpi-mini-list";
+      list.innerHTML = items.slice(0, 4).map(item => `<div>${item}</div>`).join("");
+      card.appendChild(list);
     }
   };
 
@@ -3327,7 +3336,7 @@ function renderGraphProDashboard(patientNickname = "") {
         <h2>${patient ? patient.nombre : "Todos los pacientes"}</h2>
         <p>Vista global de distribución, volumen, ejercicios y carga externa.</p>
       </div>
-      ${patient?.foto ? `<img src="${patient.foto}" alt="${patient.nombre}">` : `<div class="graph-pro-avatar">${patient ? patient.nombre.charAt(0).toUpperCase() : "PRO"}</div>`}
+      ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="graph-pro-avatar">${patient ? patient.nombre.charAt(0).toUpperCase() : "PRO"}</div>`}
     </section>
 
     <section class="periodicity-kpi-grid graph-pro-kpis">
