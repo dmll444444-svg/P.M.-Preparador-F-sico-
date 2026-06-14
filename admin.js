@@ -309,8 +309,6 @@ seedExerciseLibrary(false);
 let currentPhoto = "";
 let editingPatientNickname = null;
 let currentUploadFile = null;
-let currentPatientPhotoFile = null;
-let currentPatientPhotoObjectUrl = "";
 
 
 function setTodayIfEmpty(id) {
@@ -329,87 +327,9 @@ function persistAppData() {
   localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
 }
 
-async function pmPushPatientsToCloud() {
-  try {
-    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-      const ok = await window.PPF_SUPABASE.pushKey("patients");
-      if (!ok) console.warn("No se pudo confirmar la sincronización de patients.");
-      return Boolean(ok);
-    }
-  } catch (error) {
-    console.warn("No se pudo sincronizar patients:", error);
-  }
-  return false;
-}
-
-async function pmPushRelatedPatientKeysToCloud() {
-  try {
-    if (!window.PPF_SUPABASE || typeof window.PPF_SUPABASE.pushKey !== "function") return false;
-    await window.PPF_SUPABASE.pushKey("histories");
-    await window.PPF_SUPABASE.pushKey("patientFiles");
-    await window.PPF_SUPABASE.pushKey("sessions");
-    await window.PPF_SUPABASE.pushKey("completedSessions");
-    return true;
-  } catch (error) {
-    console.warn("No se pudieron sincronizar datos relacionados del paciente:", error);
-    return false;
-  }
-}
-
-function pmSafePhotoFileName(value = "") {
-  return String(value || "")
-    .trim()
-    .replace(/^.*[\\/]/, "")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "") || `foto-${Date.now()}.jpg`;
-}
-
-async function pmUploadPatientPhotoToStorage(patientNickname = "") {
-  if (!currentPatientPhotoFile) return normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || "");
-
-  if (!window.PPF_SUPABASE || typeof window.PPF_SUPABASE.uploadPatientPhoto !== "function") {
-    alert("Supabase Storage no está disponible. Revisa bucket patient-photos.");
-    return "";
-  }
-
-  const uploadBtn = document.getElementById("uploadPatientPhotoBtn");
-  if (uploadBtn) {
-    uploadBtn.disabled = true;
-    uploadBtn.textContent = "Subiendo...";
-  }
-
-  try {
-    const safeNick = pmSafePhotoFileName(patientNickname || document.getElementById("nickname")?.value || "paciente").replace(/\.[a-z0-9]+$/i, "");
-    const safeFile = pmSafePhotoFileName(currentPatientPhotoFile.name);
-    const ext = safeFile.includes(".") ? safeFile.split(".").pop() : "jpg";
-    const path = `${safeNick}/${Date.now()}-${safeFile.replace(/\.[^.]+$/, "")}.${ext}`;
-    const publicUrl = await window.PPF_SUPABASE.uploadPatientPhoto(currentPatientPhotoFile, path);
-    if (!publicUrl) throw new Error("No se recibió URL pública de la foto.");
-
-    currentPhoto = publicUrl;
-    currentPatientPhotoFile = null;
-    const input = document.getElementById("foto");
-    if (input) input.value = publicUrl;
-    paintPatientPhotoPreview(publicUrl);
-    return publicUrl;
-  } catch (error) {
-    console.error(error);
-    alert("No se pudo subir la foto a Supabase Storage.");
-    return "";
-  } finally {
-    if (uploadBtn) {
-      uploadBtn.disabled = false;
-      uploadBtn.textContent = "⬆ Subir foto";
-    }
-  }
-}
-
 function updateCounters() {
-  const active = document.querySelector('.nav-item.active')?.dataset.section || "paciente";
-  if (typeof pmSetDashboardKpis === "function") {
-    pmSetDashboardKpis(active === "usuarios" ? "usuarios" : "paciente");
+  if (typeof pmRenderSessionAgendaKpis === "function") {
+    pmRenderSessionAgendaKpis();
     return;
   }
   patientCounter.textContent = patients.length;
@@ -419,27 +339,8 @@ function updateCounters() {
 
 
 function getPatientPhoto(patient) {
-  return getPatientPhotoSafe(patient);
-}
-
-function normalizePatientPhotoPath(value = "") {
-  let raw = String(value || "").trim().replace(/^\/+/, "");
-  if (!raw) return "";
-  if (raw.startsWith("data:image") || raw.startsWith("blob:") || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
-  raw = raw.replace(/^fotos[\\/]/i, "");
-  return `fotos/${raw}`;
-}
-
-function patientPhotoFileName(value = "") {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (raw.startsWith("data:image") || raw.startsWith("blob:") || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
-  return raw.replace(/^fotos[\\/]/i, "");
-}
-
-function getPatientPhotoSafe(patient) {
   if (!patient) return "";
-  return normalizePatientPhotoPath(patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || "");
+  return patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || patient.fotoPaciente || "";
 }
 
 function patientOptions() {
@@ -626,12 +527,7 @@ function editPatient(nickname) {
   const contentInput = document.querySelector(`input[name='contenido'][value="${patient.contenido}"]`);
   if (contentInput) contentInput.checked = true;
 
-  currentPatientPhotoFile = null;
-  if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
-  currentPatientPhotoObjectUrl = "";
   currentPhoto = getPatientPhotoSafe(patient);
-  const fotoInputEdit = document.getElementById("foto");
-  if (fotoInputEdit) fotoInputEdit.value = patientPhotoFileName(currentPhoto);
   paintPatientPhotoPreview(currentPhoto);
   setPatientPreviewPhoto(currentPhoto);
 
@@ -669,7 +565,20 @@ function deletePatient(nickname) {
 
 
 function getCurrentPatientPhotoForSave() {
-  return normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || "");
+  const preview = document.getElementById("photoPreview");
+  const placeholder = document.getElementById("photoPlaceholder");
+
+  // Si se ha pulsado la X, currentPhoto queda vacío y el preview oculto: se guarda sin foto.
+  if (!currentPhoto && (!preview || preview.style.display === "none")) {
+    return "";
+  }
+
+  // Si hay una imagen nueva en preview, se guarda esa.
+  if (preview && preview.src && preview.style.display !== "none") {
+    return preview.src;
+  }
+
+  return currentPhoto || "";
 }
 
 function updateRemovePhotoButton() {
@@ -691,9 +600,6 @@ function resetPatientFormState() {
   form.reset();
   editingPatientNickname = null;
   currentPhoto = "";
-  currentPatientPhotoFile = null;
-  if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
-  currentPatientPhotoObjectUrl = "";
 
   const photoInput = document.getElementById("foto");
   if (photoInput) photoInput.value = "";
@@ -752,14 +658,31 @@ function resolvePatientPhotoFromPreview() {
 
 
 function readPatientPhotoBeforeSave() {
-  return Promise.resolve(normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || ""));
+  const input = document.getElementById("foto");
+  const preview = document.getElementById("photoPreview");
+
+  const file = input?.files?.[0];
+
+  if (file) {
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result || "");
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (preview && preview.style.display !== "none" && preview.src && preview.src.startsWith("data:image")) {
+    return Promise.resolve(preview.src);
+  }
+
+  return Promise.resolve(currentPhoto || "");
 }
 
 function setPatientPreviewPhoto(photo = "") {
   const preview = document.getElementById("photoPreview");
   const placeholder = document.getElementById("photoPlaceholder");
 
-  currentPhoto = normalizePatientPhotoPath(photo || "");
+  currentPhoto = photo || "";
 
   if (!preview || !placeholder) return;
 
@@ -778,14 +701,25 @@ function setPatientPreviewPhoto(photo = "") {
 
 
 function readPatientPhotoFileForButton() {
-  return Promise.resolve(normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || ""));
+  const input = document.getElementById("foto");
+  const file = input?.files?.[0];
+
+  if (file) {
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result || "");
+      reader.readAsDataURL(file);
+    });
+  }
+
+  return Promise.resolve(currentPhoto || "");
 }
 
 function setPatientPhotoVisual(photo = "") {
   const preview = document.getElementById("photoPreview");
   const placeholder = document.getElementById("photoPlaceholder");
 
-  currentPhoto = normalizePatientPhotoPath(photo || "");
+  currentPhoto = photo || "";
 
   if (!preview || !placeholder) return;
 
@@ -824,7 +758,6 @@ async function updateOnlyPatientPhoto() {
   };
 
   localStorage.setItem("patients", JSON.stringify(patients));
-  pmPushPatientsToCloud();
   setPatientPhotoVisual(photo);
   renderPatientList();
 
@@ -832,19 +765,123 @@ async function updateOnlyPatientPhoto() {
 }
 
 
-async function readPatientPhotoForSubmit() {
-  if (currentPatientPhotoFile) {
-    const nick = document.getElementById("nickname")?.value || editingPatientNickname || "paciente";
-    return await pmUploadPatientPhotoToStorage(nick);
+
+function ppfGetSupabaseClientForStorage() {
+  try {
+    if (window.ppfSupabaseClient) return window.ppfSupabaseClient;
+    const cfg = window.PPF_SUPABASE_CONFIG || {};
+    if (!window.supabase || !cfg.url || !cfg.anonKey) return null;
+    window.ppfSupabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey);
+    return window.ppfSupabaseClient;
+  } catch (error) {
+    console.warn("No se pudo crear cliente Supabase Storage:", error);
+    return null;
   }
-  return normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || "");
+}
+
+function ppfSlugFileName(value = "paciente") {
+  return String(value || "paciente")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "paciente";
+}
+
+function ppfIsDataImage(value = "") {
+  return typeof value === "string" && value.startsWith("data:image");
+}
+
+function ppfLooksLikeImageUrl(value = "") {
+  return typeof value === "string" && value && !ppfIsDataImage(value);
+}
+
+async function uploadPatientPhotoToStorage(file, nickname = "") {
+  if (!file) return "";
+
+  const status = document.getElementById("photoUploadStatus");
+  if (status) status.textContent = "Subiendo foto...";
+
+  const client = ppfGetSupabaseClientForStorage();
+  if (!client) {
+    if (status) status.textContent = "Supabase Storage no está disponible.";
+    throw new Error("Supabase Storage no está disponible.");
+  }
+
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const safeNick = ppfSlugFileName(nickname || document.getElementById("nickname")?.value || "paciente");
+  const path = `${safeNick}/${safeNick}-${Date.now()}.${ext}`;
+
+  const { error } = await client
+    .storage
+    .from("patient-photos")
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.type || "image/jpeg"
+    });
+
+  if (error) {
+    if (status) status.textContent = "Error subiendo foto.";
+    throw error;
+  }
+
+  const { data } = client.storage.from("patient-photos").getPublicUrl(path);
+  const publicUrl = data?.publicUrl || "";
+
+  if (status) status.textContent = publicUrl ? "Foto subida correctamente." : "Foto subida.";
+  return publicUrl;
+}
+
+async function uploadSelectedPatientPhotoOnly() {
+  const input = document.getElementById("foto");
+  const file = input?.files?.[0];
+  const nickname = document.getElementById("nickname")?.value.trim() || editingPatientNickname || "";
+
+  if (!file) {
+    alert("Primero selecciona una foto.");
+    return "";
+  }
+
+  if (!nickname) {
+    alert("Escribe el nickname antes de subir la foto.");
+    return "";
+  }
+
+  try {
+    const publicUrl = await uploadPatientPhotoToStorage(file, nickname);
+    currentPhoto = publicUrl;
+    paintPatientPhotoPreview(publicUrl);
+    if (input) input.value = "";
+    return publicUrl;
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo subir la foto a Supabase Storage.");
+    return "";
+  }
+}
+
+async function readPatientPhotoForSubmit(nickname = "") {
+  const input = document.getElementById("foto");
+  const file = input?.files?.[0];
+
+  if (file) {
+    return await uploadPatientPhotoToStorage(file, nickname || document.getElementById("nickname")?.value || editingPatientNickname || "paciente");
+  }
+
+  const preview = document.getElementById("photoPreview");
+  const previewSrc = preview?.getAttribute("src") || "";
+
+  if (ppfLooksLikeImageUrl(previewSrc)) return previewSrc;
+  if (ppfLooksLikeImageUrl(currentPhoto)) return currentPhoto;
+
+  return "";
 }
 
 function paintPatientPhotoPreview(photo = "") {
   const preview = document.getElementById("photoPreview");
   const placeholder = document.getElementById("photoPlaceholder");
 
-  currentPhoto = normalizePatientPhotoPath(photo || "");
+  currentPhoto = photo || "";
 
   if (!preview || !placeholder) return;
 
@@ -861,6 +898,11 @@ function paintPatientPhotoPreview(photo = "") {
   if (typeof updateRemovePhotoButton === "function") updateRemovePhotoButton();
 }
 
+function getPatientPhotoSafe(patient) {
+  if (!patient) return "";
+  return patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || "";
+}
+
 function bindPatientForm() {
   const form = document.getElementById("patientForm");
   const photoInput = document.getElementById("foto");
@@ -870,9 +912,7 @@ function bindPatientForm() {
   const submitBtn = document.getElementById("patientSubmitBtn");
   const cancelBtn = document.getElementById("cancelEditBtn");
   const removePhotoBtn = document.getElementById("removePatientPhotoBtn");
-  const photoFileInput = document.getElementById("patientPhotoFileInput");
   const uploadPhotoBtn = document.getElementById("uploadPatientPhotoBtn");
-  const photoUploadStatus = document.getElementById("patientPhotoUploadStatus");
 
   setTodayIfEmpty("fechaAlta");
   renderPatientList();
@@ -881,13 +921,23 @@ function bindPatientForm() {
   if (cancelBtn) cancelBtn.addEventListener("click", resetPatientFormState);
 
   if (photoInput) {
-    const updatePhotoPreviewFromText = () => {
-      if (currentPatientPhotoFile) return;
-      const photo = normalizePatientPhotoPath(photoInput.value || currentPhoto || "");
-      paintPatientPhotoPreview(photo);
-    };
-    photoInput.addEventListener("input", updatePhotoPreviewFromText);
-    photoInput.addEventListener("change", updatePhotoPreviewFromText);
+    photoInput.addEventListener("change", async () => {
+      const file = photoInput.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => paintPatientPhotoPreview(reader.result || "");
+      reader.readAsDataURL(file);
+      const status = document.getElementById("photoUploadStatus");
+      if (status) status.textContent = "Foto seleccionada. Se subirá al guardar paciente.";
+    });
+  }
+
+  if (uploadPhotoBtn) {
+    uploadPhotoBtn.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      await uploadSelectedPatientPhotoOnly();
+    });
   }
 
   if (removePhotoBtn) {
@@ -895,40 +945,10 @@ function bindPatientForm() {
       event.preventDefault();
       event.stopPropagation();
       currentPhoto = "";
-      currentPatientPhotoFile = null;
-      if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
-      currentPatientPhotoObjectUrl = "";
       if (photoInput) photoInput.value = "";
-      if (photoUploadStatus) photoUploadStatus.textContent = "";
+      const status = document.getElementById("photoUploadStatus");
+      if (status) status.textContent = "";
       paintPatientPhotoPreview("");
-    });
-  }
-
-  if (photoFileInput) {
-    photoFileInput.addEventListener("change", () => {
-      const file = photoFileInput.files && photoFileInput.files[0];
-      if (!file) return;
-      currentPatientPhotoFile = file;
-      if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
-      currentPatientPhotoObjectUrl = URL.createObjectURL(file);
-      currentPhoto = currentPatientPhotoObjectUrl;
-      const safeName = pmSafePhotoFileName(file.name);
-      if (photoInput) photoInput.value = safeName;
-      if (photoUploadStatus) photoUploadStatus.textContent = `Foto seleccionada: ${safeName}. Pulsa Subir foto o Guarda paciente.`;
-      paintPatientPhotoPreview(currentPatientPhotoObjectUrl);
-    });
-  }
-
-  if (uploadPhotoBtn) {
-    uploadPhotoBtn.addEventListener("click", async event => {
-      event.preventDefault();
-      if (!currentPatientPhotoFile) {
-        alert("Selecciona una foto primero.");
-        return;
-      }
-      const nick = document.getElementById("nickname")?.value || editingPatientNickname || "paciente";
-      const url = await pmUploadPatientPhotoToStorage(nick);
-      if (url && photoUploadStatus) photoUploadStatus.textContent = "Foto subida correctamente.";
     });
   }
 
@@ -945,13 +965,6 @@ function bindPatientForm() {
 
   const savePatient = async event => {
     if (event) event.preventDefault();
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = currentPatientPhotoFile ? "Subiendo y guardando..." : "Guardando...";
-    }
-
-    try {
-      const photoToSave = await readPatientPhotoForSubmit();
 
     const peso = Number(document.getElementById("peso")?.value || 0);
     const alturaCm = Number(document.getElementById("altura")?.value || 0);
@@ -961,6 +974,14 @@ function bindPatientForm() {
     const nombre = document.getElementById("nombre")?.value.trim() || "";
     const nickname = document.getElementById("nickname")?.value.trim() || "";
     const passwordValue = document.getElementById("accessPassword")?.value.trim() || "";
+    let photoToSave = "";
+    try {
+      photoToSave = await readPatientPhotoForSubmit(nickname);
+    } catch (error) {
+      console.error(error);
+      alert("No se pudo subir la foto. El paciente no se ha guardado para evitar perder datos.");
+      return;
+    }
 
     if (!nombre || !nickname) {
       alert("Nombre y nickname son obligatorios.");
@@ -1008,7 +1029,6 @@ function bindPatientForm() {
       notas: document.getElementById("notas")?.value.trim() || ""
     };
 
-    const wasEditing = Boolean(editingPatientNickname);
     if (editingPatientNickname) {
       const previousNickname = editingPatientNickname;
       const index = patients.findIndex(patient => patient.nickname === previousNickname);
@@ -1029,8 +1049,11 @@ function bindPatientForm() {
           completedSessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item)
         ));
       }
+
+      // Confirmación al final, después de sincronizar con Supabase.
     } else {
       patients.push(newPatient);
+      // Confirmación al final, después de sincronizar con Supabase.
     }
 
     localStorage.setItem("patients", JSON.stringify(patients));
@@ -1038,26 +1061,23 @@ function bindPatientForm() {
     localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
     localStorage.setItem("sessions", JSON.stringify(sessions));
 
-    const synced = await pmPushPatientsToCloud();
-    await pmPushRelatedPatientKeysToCloud();
+    if (window.PPF_SUPABASE_READY) {
+      try { await window.PPF_SUPABASE_READY; } catch (_) {}
+    }
+
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+      const ok = await window.PPF_SUPABASE.pushKey("patients");
+      if (!ok) {
+        alert("Paciente guardado localmente, pero no se pudo confirmar la sincronización con Supabase. Revisa conexión antes de refrescar.");
+        return;
+      }
+    }
 
     currentPhoto = "";
-    currentPatientPhotoFile = null;
-    if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
-    currentPatientPhotoObjectUrl = "";
     resetPatientFormState();
     updateCounters();
     renderPatientList();
-    alert(synced ? (wasEditing ? "Paciente actualizado y sincronizado correctamente." : "Paciente guardado y sincronizado correctamente.") : "Paciente guardado localmente. Revisa la sincronización Supabase.");
-    } catch (error) {
-      console.error(error);
-      alert("No se pudo guardar el paciente. Revisa la consola.");
-    } finally {
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = editingPatientNickname ? "Actualizar paciente" : "Guardar paciente";
-      }
-    }
+    alert(editingPatientNickname ? "Paciente actualizado y sincronizado correctamente." : "Paciente guardado y sincronizado correctamente.");
   };
 
   form.onsubmit = savePatient;
@@ -1413,27 +1433,20 @@ const patientHTML = `
 
       <div>
         <label>Foto del paciente</label>
-        <div class="photo-box photo-box-url">
+        <div class="photo-box">
           <button class="photo-remove-btn" type="button" id="removePatientPhotoBtn" title="Eliminar foto">✕</button>
-          <div class="photo-label photo-url-preview">
+          <label class="photo-label">
+            <input id="foto" type="file" accept="image/*" />
             <div class="photo-placeholder" id="photoPlaceholder">
-              <strong>Ruta foto</strong>
-              <span>Ej: troya13.jpg</span>
+              <strong>Seleccionar foto</strong>
+              <span>Imagen del paciente</span>
             </div>
             <img id="photoPreview" class="photo-preview" alt="Vista previa" />
-          </div>
+          </label>
         </div>
-        <div class="photo-url-field">
-          <span>fotos/</span>
-          <input id="foto" type="text" placeholder="troya13.jpg o URL subida" autocomplete="off" />
-        </div>
-        <div class="photo-upload-actions">
-          <label class="secondary-btn photo-select-btn" for="patientPhotoFileInput">Elegir foto</label>
-          <input id="patientPhotoFileInput" type="file" accept="image/*" hidden />
-          <button class="primary-btn photo-upload-btn" id="uploadPatientPhotoBtn" type="button">⬆ Subir foto</button>
-        </div>
-        <div class="photo-upload-status" id="patientPhotoUploadStatus"></div>
-        <div class="imc-panel">
+        <button class="photo-upload-btn" type="button" id="uploadPatientPhotoBtn">⬆ Subir foto</button>
+        <small class="photo-upload-status" id="photoUploadStatus"></small>
+<div class="imc-panel">
           <span>IMC automático</span>
           <strong id="imcValue">-</strong>
         </div>
@@ -2046,7 +2059,7 @@ function bindSessionsForm() {
     }
 
     card.innerHTML = `
-      ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="session-selected-avatar">${patient.nombre.charAt(0).toUpperCase()}</div>`}
+      ${patient.foto ? `<img src="${patient.foto}" alt="${patient.nombre}">` : `<div class="session-selected-avatar">${patient.nombre.charAt(0).toUpperCase()}</div>`}
       <div>
         <strong>${patient.nombre}</strong>
         <span>@${patient.nickname}</span>
@@ -2234,105 +2247,40 @@ function bindSessionsForm() {
 }
 
 
-
-function pmReadJson(key, fallback) {
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || "null");
-    return value ?? fallback;
-  } catch (_) {
-    return fallback;
-  }
-}
-
-function pmSessionPatientKey(session = {}) {
-  return String(session.patientNickname || session.nickname || session.patient || session.patientId || session.cliente || session.clientNickname || "").trim();
-}
-
-function pmSessionNumber(session = {}) {
-  return Number(session.numero || session.numeroSesion || session.sessionNumber || 0);
-}
-
-function pmIsSessionCompleted(session = {}, completed = []) {
-  const sid = String(session.id || session.sessionId || "");
-  const snum = pmSessionNumber(session);
-  const spatient = pmSessionPatientKey(session).toLowerCase();
-  return completed.some(item => {
-    const cid = String(item.sessionId || item.id || "");
-    const cpatient = String(item.patientNickname || item.nickname || item.patient || "").trim().toLowerCase();
-    const cnum = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
-    return (sid && cid && sid === cid) || (spatient && cpatient && spatient === cpatient && snum && cnum && snum === cnum);
-  });
-}
-
-function pmSortSessionsLatest(list = []) {
-  return list.slice().sort((a, b) => {
-    const fa = String(a.fecha || "");
-    const fb = String(b.fecha || "");
-    if (fa !== fb) return fb.localeCompare(fa);
-    return pmSessionNumber(b) - pmSessionNumber(a);
-  });
-}
-
-function pmSessionMicroLabel(session = {}) {
-  const micro = session.microciclo || session.micro || session.microcycle || pmSessionNumber(session) || "-";
-  return `Micro ${micro} · ${session.fecha || "-"}`;
-}
-
-function pmSessionAgenda() {
-  const allSessions = pmReadJson("sessions", []);
-  const completed = pmReadJson("completedSessions", []);
-  const pending = [];
-  const done = [];
-
-  patients.forEach(patient => {
-    const nick = String(patient.nickname || "").trim().toLowerCase();
-    const patientSessions = allSessions.filter(s => pmSessionPatientKey(s).toLowerCase() === nick);
-    const patientPending = pmSortSessionsLatest(patientSessions.filter(s => !pmIsSessionCompleted(s, completed)))[0];
-    if (patientPending) pending.push({ patient, session: patientPending });
-
-    const patientDone = pmSortSessionsLatest(patientSessions.filter(s => pmIsSessionCompleted(s, completed)))[0];
-    if (patientDone) done.push({ patient, session: patientDone });
-  });
-
-  return { pending, done };
-}
-
-function pmFormatLastLogin(value) {
+function pmFormatUserDate(value) {
   if (!value) return "Nunca";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Nunca";
-  return date.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+  return date.toLocaleString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
-function pmSetDashboardKpis(mode = "paciente") {
-  const cards = document.querySelectorAll(".dashboard-grid .stat-card");
-  if (cards.length < 3) return;
-  const setCard = (index, label, main, items = []) => {
-    const card = cards[index];
-    const span = card.querySelector("span");
-    const strong = card.querySelector("strong");
-    const oldList = card.querySelector(".kpi-mini-list");
-    if (oldList) oldList.remove();
-    if (span) span.textContent = label;
-    if (strong) strong.textContent = main;
-    if (items.length) {
-      const list = document.createElement("div");
-      list.className = "kpi-mini-list";
-      list.innerHTML = items.slice(0, 4).map(item => `<div>${item}</div>`).join("");
-      card.appendChild(list);
-    }
-  };
+function pmGetUserStatsForPatient(patient = {}) {
+  let stats = {};
+  try { stats = JSON.parse(localStorage.getItem("userStats") || "{}"); } catch (_) { stats = {}; }
+  const key = patient.nickname || patient.username || patient.id || "";
+  return stats[key] || {};
+}
 
-  if (mode === "usuarios") {
-    const agenda = pmSessionAgenda();
-    setCard(0, "Pacientes activos", patients.length);
-    setCard(1, "Sesiones pendientes", agenda.pending.length, agenda.pending.map(item => `${item.patient.nombre} ${pmSessionMicroLabel(item.session)}`));
-    setCard(2, "Sesiones terminadas", agenda.done.length, agenda.done.map(item => `${item.patient.nombre} ${pmSessionMicroLabel(item.session)}`));
-  } else {
-    setCard(0, "Pacientes activos", patients.length);
-    setCard(1, "Registros historial", histories.length);
-    setCard(2, "Archivos guardados", patientFiles.length);
-  }
+function pmIsPatientOnline(stat = {}) {
+  if (!stat || !stat.online) return false;
+
+  const lastSeen = new Date(stat.lastSeen || stat.lastLogin || 0).getTime();
+  const lastLogout = new Date(stat.lastLogout || 0).getTime();
+
+  // Si el cierre de sesión es igual o posterior al último latido/login, siempre desconectado.
+  if (Number.isFinite(lastLogout) && Number.isFinite(lastSeen) && lastLogout >= lastSeen) return false;
+
+  // Si no hay latido válido, no lo damos por conectado para evitar falsos positivos.
+  if (!Number.isFinite(lastSeen)) return false;
+
+  // Presencia real: si no llega latido reciente, lo marcamos desconectado.
+  return (Date.now() - lastSeen) < (90 * 1000);
 }
 
 function renderUsersPage() {
@@ -2340,28 +2288,25 @@ function renderUsersPage() {
     return `<p>No hay pacientes creados todavía.</p>`;
   }
 
-  const stats = pmReadJson("userStats", {});
-
   return `
-    <div class="users-test-list users-access-list">
+    <div class="users-test-list">
       ${patients.map(patient => {
-        const key = patient.nickname || "";
-        const st = stats[key] || {};
-        const online = Boolean(st.online);
-        const lastLogin = pmFormatLastLogin(st.lastLogin);
+        const stat = pmGetUserStatsForPatient(patient);
+        const online = pmIsPatientOnline(stat);
+        const lastLoginText = pmFormatUserDate(stat.lastLogin);
         return `
-          <div class="user-test-card user-access-card">
-            ${(getPatientPhotoSafe(patient) ? `<img class="patient-thumb" src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="patient-thumb">${patient.nombre.charAt(0).toUpperCase()}</div>`)}
-            <div class="user-access-main">
-              <strong>${patient.nombre}</strong>
-              <p>Accesos: ${st.count || 0} · <span class="status-dot ${online ? "online" : "offline"}"></span> ${online ? "En línea" : "Desconectado"}</p>
-            </div>
-            <div class="user-last-login">
-              <span>Última conexión</span>
-              <strong>${lastLogin}</strong>
-            </div>
+        <div class="user-test-card" style="display:flex;align-items:center;gap:14px;">
+          ${(getPatientPhotoSafe(patient) ? `<img class="patient-thumb" src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="patient-thumb">${patient.nombre.charAt(0).toUpperCase()}</div>`)
+          }
+          <div>
+            <strong>${patient.nombre}</strong>
+            <p>Accesos: ${stat.count || 0} · ${online ? "🟢 En línea" : "⚪ Desconectado"}</p>
           </div>
-        `;
+          <div class="user-last-login" style="margin-left:auto;text-align:right;color:#9fb2d8;font-size:.9rem;line-height:1.35;">
+            <span style="display:block;color:#22c55e;font-weight:800;">Última conexión</span>
+            <strong>${lastLoginText}</strong>
+          </div>
+        </div>`;
       }).join("")}
     </div>
   `;
@@ -3476,7 +3421,7 @@ function renderGraphProDashboard(patientNickname = "") {
         <h2>${patient ? patient.nombre : "Todos los pacientes"}</h2>
         <p>Vista global de distribución, volumen, ejercicios y carga externa.</p>
       </div>
-      ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="graph-pro-avatar">${patient ? patient.nombre.charAt(0).toUpperCase() : "PRO"}</div>`}
+      ${patient?.foto ? `<img src="${patient.foto}" alt="${patient.nombre}">` : `<div class="graph-pro-avatar">${patient ? patient.nombre.charAt(0).toUpperCase() : "PRO"}</div>`}
     </section>
 
     <section class="periodicity-kpi-grid graph-pro-kpis">
@@ -4274,17 +4219,26 @@ async function pmRefreshValoracionesFromSupabase() {
 }
 
 
-function updateValuationPatientPhotoBox() {
-  const box = document.getElementById("valuationPatientPhotoBox");
-  if (!box) return;
-  const nickname = document.getElementById("valuationPatient")?.value || "";
-  const patient = patients.find(p => p.nickname === nickname);
+function updateValuationPatientPhotoCard() {
+  const select = document.getElementById("valuationPatient");
+  const card = document.getElementById("valuationPatientPhotoCard");
+  if (!select || !card) return;
+
+  const patient = patients.find(p => p.nickname === select.value);
+  const photo = getPatientPhotoSafe(patient);
+
   if (!patient) {
-    box.innerHTML = `<div class="valuation-patient-avatar">?</div><div><strong>Selecciona paciente</strong><span>Foto del paciente</span></div>`;
+    card.innerHTML = `
+      <div class="patient-thumb">?</div>
+      <div><strong>Selecciona paciente</strong><span>Foto del paciente</span></div>
+    `;
     return;
   }
-  const photo = getPatientPhotoSafe(patient);
-  box.innerHTML = `${photo ? `<img class="valuation-patient-avatar-img" src="${photo}" alt="${patient.nombre}">` : `<div class="valuation-patient-avatar">${(patient.nombre || "?").charAt(0).toUpperCase()}</div>`}<div><strong>${patient.nombre}</strong><span>@${patient.nickname}</span></div>`;
+
+  card.innerHTML = `
+    ${photo ? `<img class="patient-thumb" src="${photo}" alt="${patient.nombre}">` : `<div class="patient-thumb">${(patient.nombre || "?").charAt(0).toUpperCase()}</div>`}
+    <div><strong>${patient.nombre || patient.nickname}</strong><span>${patient.nickname || ""}</span></div>
+  `;
 }
 
 function bindValoracionesForm() {
@@ -4292,8 +4246,14 @@ function bindValoracionesForm() {
   const testsArea = document.getElementById("valuationTestsArea");
   const addBtn = document.getElementById("addValuationTestBtn");
   const filter = document.getElementById("valuationsFilter");
+  const patientSelect = document.getElementById("valuationPatient");
 
   if (!form || !testsArea) return;
+
+  if (patientSelect) {
+    patientSelect.addEventListener("change", updateValuationPatientPhotoCard);
+    updateValuationPatientPhotoCard();
+  }
 
   setTodayIfEmpty("valuationDate");
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
@@ -4331,9 +4291,6 @@ function bindValoracionesForm() {
     renderValuationsList(filter.value);
     renderValuationCharts(filter.value);
   });
-
-  document.getElementById("valuationPatient")?.addEventListener("change", updateValuationPatientPhotoBox);
-  updateValuationPatientPhotoBox();
 
   form.addEventListener("submit", event => {
     event.preventDefault();
@@ -4712,11 +4669,12 @@ const sections = {
   },
   usuarios: {
     title: "Usuarios",
-    html: `
+    html: () => `
       <h2>Usuarios</h2>
       <p>Control de accesos y estado de conexión de clientes.</p>
-      ${renderUsersPage()}
-    `
+      <div id="usersListArea">${renderUsersPage()}</div>
+    `,
+    afterRender: pmPullUsersStatsAndPaint
   },
   historial: { title: "Historial", html: historialHTML, afterRender: bindHistoryForm },
   archivos: { title: "Archivos", html: archivosHTML, afterRender: bindFilesForm },
@@ -5003,19 +4961,19 @@ const sections = {
       <p>Registra pruebas físicas con intentos, unidad de registro y observaciones cualitativas por test.</p>
 
       <form class="patient-form valuation-form" id="valuationsForm">
-        <div class="valuation-top-row">
+        <div class="valuation-top-grid">
           <div>
             <label for="valuationPatient">Selecciona paciente</label>
             <select id="valuationPatient" required>${patientOptions()}</select>
           </div>
 
-          <div class="valuation-date-short">
+          <div>
             <label for="valuationDate">Fecha</label>
             <input id="valuationDate" type="date" required />
           </div>
 
-          <div class="valuation-patient-photo" id="valuationPatientPhotoBox">
-            <div class="valuation-patient-avatar">?</div>
+          <div class="valuation-patient-photo-card" id="valuationPatientPhotoCard">
+            <div class="patient-thumb">?</div>
             <div>
               <strong>Selecciona paciente</strong>
               <span>Foto del paciente</span>
@@ -5067,11 +5025,33 @@ const sections = {
 function renderSection(key) {
   const section = sections[key];
   sectionTitle.textContent = section.title;
-  contentArea.innerHTML = section.html;
-  pmSetDashboardKpis(key === "usuarios" ? "usuarios" : "paciente");
+  contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
   if (section.afterRender) section.afterRender();
-  pmSetDashboardKpis(key === "usuarios" ? "usuarios" : "paciente");
+  if (typeof updateCounters === "function") updateCounters();
 }
+
+
+async function pmPullUsersStatsAndPaint() {
+  try {
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
+      await window.PPF_SUPABASE.pull();
+    }
+  } catch (_) {}
+
+  const area = document.getElementById("usersListArea");
+  if (area) area.innerHTML = renderUsersPage();
+}
+
+async function pmRefreshUsersOnlinePanel() {
+  const activeNav = document.querySelector(".nav-item.active");
+  if (!activeNav || activeNav.dataset.section !== "usuarios") return;
+  await pmPullUsersStatsAndPaint();
+}
+setInterval(pmRefreshUsersOnlinePanel, 10000);
+window.addEventListener("focus", pmRefreshUsersOnlinePanel);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) pmRefreshUsersOnlinePanel();
+});
 
 navItems.forEach(item => {
   item.addEventListener("click", () => {
@@ -5233,9 +5213,13 @@ function pmRefreshAdminRuntimeData() {
   const h = document.getElementById("historyCounter");
   const f = document.getElementById("fileCounter");
 
-  if (p) p.textContent = patients.length;
-  if (h) h.textContent = histories.length;
-  if (f) f.textContent = patientFiles.length;
+  if (typeof pmRenderSessionAgendaKpis === "function") {
+    pmRenderSessionAgendaKpis();
+  } else {
+    if (p) p.textContent = patients.length;
+    if (h) h.textContent = histories.length;
+    if (f) f.textContent = patientFiles.length;
+  }
 }
 
 function pmBindAdminHeaderLogout() {
@@ -5269,6 +5253,181 @@ if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "func
 
 
 
+// PM AGENDA KPIs: sesiones pendientes y terminadas por cliente
+function pmAgendaSafeJSON(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+    return Array.isArray(fallback) && !Array.isArray(value) ? fallback : value;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function pmAgendaNormalize(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function pmAgendaPatientKey(patient = {}) {
+  return pmAgendaNormalize(patient.nickname || patient.id || patient.nombre || patient.name || "");
+}
+
+function pmAgendaSessionPatientKey(session = {}) {
+  return pmAgendaNormalize(
+    session.patientNickname ||
+    session.nickname ||
+    session.patient ||
+    session.patientId ||
+    session.cliente ||
+    session.clientNickname ||
+    session.userNickname ||
+    ""
+  );
+}
+
+function pmAgendaSessionNumber(session = {}) {
+  return Number(session.numero || session.numeroSesion || session.sessionNumber || session.number || 0) || 0;
+}
+
+function pmAgendaSessionDateValue(session = {}) {
+  const raw = session.fecha || session.date || session.createdAt || session.updatedAt || "";
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function pmAgendaMicroLabel(session = {}) {
+  const micro = session.microciclo || session.micro || session.microcycle || session.microcicloNumber || "-";
+  return `Micro ${micro}`;
+}
+
+function pmAgendaSessionLabel(session = {}) {
+  return `${pmAgendaMicroLabel(session)} · ${session.fecha || session.date || "Sin fecha"}`;
+}
+
+function pmAgendaIsCompleted(session, completedSessions = []) {
+  const sid = String(session?.id || session?.sessionId || "");
+  const sPatient = pmAgendaSessionPatientKey(session);
+  const sNumber = pmAgendaSessionNumber(session);
+
+  return completedSessions.some(item => {
+    const itemSid = String(item?.sessionId || item?.id || "");
+    if (sid && itemSid && sid === itemSid) return true;
+
+    const itemPatient = pmAgendaNormalize(item?.patientNickname || item?.nickname || item?.patient || item?.patientId || item?.cliente || "");
+    const itemNumber = Number(item?.numero || item?.numeroSesion || item?.sessionNumber || item?.number || 0) || 0;
+    return Boolean(sPatient && itemPatient && sPatient === itemPatient && sNumber && itemNumber && sNumber === itemNumber);
+  });
+}
+
+function pmAgendaLatestByPatient(list = []) {
+  const map = new Map();
+  list.forEach(session => {
+    const key = pmAgendaSessionPatientKey(session);
+    if (!key) return;
+    const previous = map.get(key);
+    const currentScore = pmAgendaSessionDateValue(session) * 10000 + pmAgendaSessionNumber(session);
+    const previousScore = previous ? pmAgendaSessionDateValue(previous) * 10000 + pmAgendaSessionNumber(previous) : -1;
+    if (!previous || currentScore >= previousScore) map.set(key, session);
+  });
+  return map;
+}
+
+function pmAgendaBuildRows(type = "pending") {
+  const patientsList = pmAgendaSafeJSON("patients", []);
+  const sessionsList = pmAgendaSafeJSON("sessions", []);
+  const completedList = pmAgendaSafeJSON("completedSessions", []);
+  const completed = [];
+  const pending = [];
+
+  sessionsList.forEach(session => {
+    if (!session || session.deleted) return;
+    if (pmAgendaIsCompleted(session, completedList)) completed.push(session);
+    else pending.push(session);
+  });
+
+  const latestMap = pmAgendaLatestByPatient(type === "completed" ? completed : pending);
+
+  return patientsList
+    .map(patient => {
+      const pKey = pmAgendaPatientKey(patient);
+      const session = latestMap.get(pKey);
+      if (!session) return null;
+      return {
+        name: patient.nombre || patient.name || patient.nickname || "Paciente",
+        label: pmAgendaSessionLabel(session),
+        sort: pmAgendaSessionDateValue(session) * 10000 + pmAgendaSessionNumber(session)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.sort - a.sort);
+}
+
+function pmAgendaKpiHTML(rows = []) {
+  if (!rows.length) return `<span class="agenda-kpi-number">0</span>`;
+  return `
+    <span class="agenda-kpi-number">${rows.length}</span>
+    <span class="agenda-kpi-list">
+      ${rows.slice(0, 4).map(row => `
+        <span class="agenda-kpi-row">
+          <em>${row.name}</em>
+          <b>${row.label}</b>
+        </span>
+      `).join("")}
+    </span>
+  `;
+}
+
+function pmRenderSessionAgendaKpis() {
+  const p = document.getElementById("patientCounter");
+  const h = document.getElementById("historyCounter");
+  const f = document.getElementById("fileCounter");
+
+  const activeSection = document.querySelector(".nav-item.active")?.dataset.section || "paciente";
+  const patientsList = pmAgendaSafeJSON("patients", []);
+
+  if (p) p.textContent = patientsList.length;
+
+  // La agenda solo debe aparecer en la pestaña Usuarios.
+  // En Paciente y resto de pestañas mantenemos KPIs antiguos.
+  if (activeSection !== "usuarios") {
+    if (h) {
+      const card = h.closest(".stat-card");
+      if (card) card.classList.remove("agenda-stat-card");
+      const label = card ? card.querySelector("span") : null;
+      if (label) label.textContent = "Registros historial";
+      h.textContent = pmAgendaSafeJSON("histories", []).length;
+    }
+    if (f) {
+      const card = f.closest(".stat-card");
+      if (card) card.classList.remove("agenda-stat-card");
+      const label = card ? card.querySelector("span") : null;
+      if (label) label.textContent = "Archivos guardados";
+      f.textContent = pmAgendaSafeJSON("patientFiles", []).length;
+    }
+    return;
+  }
+
+  const pendingRows = pmAgendaBuildRows("pending");
+  const completedRows = pmAgendaBuildRows("completed");
+
+  if (h) {
+    const card = h.closest(".stat-card");
+    if (card) card.classList.add("agenda-stat-card");
+    const label = card ? card.querySelector("span") : null;
+    if (label) label.textContent = "Sesiones pendientes";
+    h.innerHTML = pmAgendaKpiHTML(pendingRows);
+  }
+  if (f) {
+    const card = f.closest(".stat-card");
+    if (card) card.classList.add("agenda-stat-card");
+    const label = card ? card.querySelector("span") : null;
+    if (label) label.textContent = "Sesiones terminadas";
+    f.innerHTML = pmAgendaKpiHTML(completedRows);
+  }
+}
+
+window.pmRenderSessionAgendaKpis = pmRenderSessionAgendaKpis;
+
+
 // PM FIX: KPI pacientes y arranque directo en pestaña Paciente
 async function pmRefreshPatientsKpiAndPage() {
   try {
@@ -5283,9 +5442,8 @@ async function pmRefreshPatientsKpiAndPage() {
   try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
   try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
 
-  if (typeof pmSetDashboardKpis === "function") {
-    const active = document.querySelector('.nav-item.active')?.dataset.section || "paciente";
-    pmSetDashboardKpis(active === "usuarios" ? "usuarios" : "paciente");
+  if (typeof pmRenderSessionAgendaKpis === "function") {
+    pmRenderSessionAgendaKpis();
   } else {
     if (patientCounter) patientCounter.textContent = patients.length;
     if (historyCounter) historyCounter.textContent = histories.length;
@@ -5306,22 +5464,11 @@ document.addEventListener("DOMContentLoaded", () => {
 setTimeout(pmRefreshPatientsKpiAndPage, 250);
 setTimeout(pmRefreshPatientsKpiAndPage, 1000);
 setTimeout(pmRefreshPatientsKpiAndPage, 2500);
+setTimeout(() => { if (typeof pmRenderSessionAgendaKpis === "function") pmRenderSessionAgendaKpis(); }, 3200);
+setInterval(() => { if (typeof pmRenderSessionAgendaKpis === "function") pmRenderSessionAgendaKpis(); }, 2000); // PM AGENDA AUTO REFRESH FINAL
 
 if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
   window.PPF_SUPABASE_READY.then(pmRefreshPatientsKpiAndPage).catch(() => {});
 }
 
 })();
-
-
-setInterval(() => {
-  try {
-    if (document.querySelector('.nav-item.active')?.dataset.section === "usuarios") {
-      patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      sessions = JSON.parse(localStorage.getItem("sessions") || "[]");
-      histories = JSON.parse(localStorage.getItem("histories") || "[]");
-      patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]");
-      renderSection("usuarios");
-    }
-  } catch (_) {}
-}, 30000);

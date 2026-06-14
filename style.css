@@ -4069,151 +4069,245 @@ aside.client-sidebar {
   font-weight: 850;
 }
 
-/* PM FIX · KPIs agenda y foto por URL */
-.kpi-mini-list{margin-top:10px;display:grid;gap:7px;font-size:.78rem;line-height:1.15}
-.kpi-mini-list div{background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.28);border-radius:8px;padding:7px 9px;color:#bbf7d0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.users-access-list{display:grid;gap:14px}.user-access-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px}.user-access-main p{color:#86efac;font-weight:800}.status-dot{display:inline-block;width:12px;height:12px;border-radius:999px;background:#e5e7eb;vertical-align:-1px}.status-dot.online{background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.14)}.status-dot.offline{background:#e5e7eb}.user-last-login{text-align:right;color:#bfdbfe}.user-last-login span{display:block;color:#22c55e;font-weight:800;font-size:.78rem}.user-last-login strong{font-size:1rem}.photo-box-url{cursor:default}.photo-url-preview{cursor:default}.photo-url-field{display:flex;align-items:center;gap:0;margin-top:10px;border:1px solid rgba(148,163,184,.20);background:#020617;border-radius:14px;overflow:hidden}.photo-url-field span{padding:0 12px;color:#86efac;font-weight:900;background:rgba(34,197,94,.10);height:44px;display:grid;place-items:center;border-right:1px solid rgba(34,197,94,.22)}.photo-url-field input{border:0!important;border-radius:0!important;background:transparent!important;flex:1;min-width:0;height:44px;padding:0 12px!important}.patient-thumb{object-fit:cover}
-@media(max-width:760px){.user-access-card{grid-template-columns:auto 1fr}.user-last-login{grid-column:1/-1;text-align:left}}
-
-
-/* PM FIX definitivo: KPIs agenda compactos */
-.stat-card .kpi-mini-list{
-  margin-top:10px!important;
-  display:grid!important;
-  gap:7px!important;
-  max-height:110px!important;
-  overflow:auto!important;
-}
-.stat-card .kpi-mini-list div{
-  font-size:12px!important;
-  line-height:1.2!important;
-  font-style:normal!important;
-  letter-spacing:0!important;
-  background:rgba(34,197,94,.10)!important;
-  border:1px solid rgba(34,197,94,.28)!important;
-  border-radius:8px!important;
-  padding:7px 9px!important;
-  color:#bbf7d0!important;
-  font-weight:800!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
+/* =========================================================
+   PM HOTFIX · Valoraciones formulario interactivo estable
+   ========================================================= */
+.pm-valuation-stable,
+.pm-valuation-stable *,
+.pm-valuation-filter,
+.pm-valuation-filter *,
+#valuationChartsArea,
+#valuationsList {
+  pointer-events: auto !important;
 }
 
-/* PM FIX definitivo: campo foto por ruta */
-.photo-url-field{
-  display:flex;
-  align-items:center;
-  gap:0;
-  margin-top:10px;
-  background:#070b1a;
-  border:1px solid rgba(148,163,184,.22);
-  border-radius:14px;
-  overflow:hidden;
+.pm-valuation-stable {
+  position: relative !important;
+  z-index: 10 !important;
+  isolation: isolate !important;
 }
-.photo-url-field span{
-  padding:13px 0 13px 14px;
-  color:#22c55e;
-  font-weight:900;
-  white-space:nowrap;
-}
-.photo-url-field input{
-  border:0!important;
-  background:transparent!important;
-  padding-left:2px!important;
-  width:100%;
-}
-.photo-url-help{display:none!important;}
-.photo-box-url .photo-label{cursor:default;}
-.photo-preview{object-fit:cover;}
 
+.pm-valuation-stable input,
+.pm-valuation-stable select,
+.pm-valuation-stable textarea,
+.pm-valuation-stable button,
+.pm-valuation-filter select {
+  position: relative !important;
+  z-index: 20 !important;
+  pointer-events: auto !important;
+  user-select: text !important;
+}
 
-/* PM FIX FINAL · fotos por Supabase Storage y valoración compacta */
-.photo-upload-actions {
+.pm-valuation-row {
+  position: relative !important;
+  z-index: 12 !important;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.1fr 1.2fr .75fr 1.4fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.valuation-attempt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 8px;
 }
-.photo-upload-actions .secondary-btn,
-.photo-upload-actions .primary-btn {
-  width: 100%;
-  min-height: 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 0 10px;
-}
-.photo-upload-status {
-  min-height: 18px;
-  margin-top: 6px;
-  font-size: 0.78rem;
-  color: var(--muted, #9fb2d5);
-}
-.valuation-top-row {
+
+.valuation-table-head {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(150px, 220px) minmax(250px, 320px);
+  grid-template-columns: 1.1fr 1.2fr .75fr 1.4fr auto;
+  gap: 12px;
+  margin-top: 18px;
+  color: #e2e8f0;
+  font-weight: 900;
+}
+
+.valuation-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.valuation-remove-btn {
+  width: 44px;
+  min-height: 44px;
+  border-radius: 16px;
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+  font-weight: 950;
+}
+
+@media (max-width: 900px) {
+  .pm-valuation-row,
+  .valuation-table-head,
+  .valuation-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* PM Agenda KPIs: sesiones pendientes / terminadas */
+.agenda-stat-card strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.agenda-kpi-number {
+  display: block;
+  font-size: 34px;
+  line-height: 1;
+  color: #ffffff;
+  margin-bottom: 10px;
+}
+
+.agenda-kpi-list {
+  display: grid;
+  gap: 6px;
+}
+
+.agenda-kpi-row {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.18);
+}
+
+.agenda-kpi-row em {
+  font-style: normal;
+  font-size: 12px;
+  color: #e5eefc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agenda-kpi-row b {
+  font-size: 12px;
+  color: #86efac;
+}
+
+
+/* PPF FIX · foto paciente Supabase Storage */
+.photo-upload-btn {
+  width: 100%;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: #00130c;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.photo-upload-status {
+  display: block;
+  min-height: 18px;
+  margin-top: 8px;
+  color: #9fb2d8;
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+.photo-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* PPF FIX · agenda KPI compacta */
+.kpi-card .kpi-agenda-list,
+.summary-card .kpi-agenda-list,
+.dashboard-card .kpi-agenda-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.kpi-agenda-item {
+  display: block;
+  padding: 6px 9px;
+  border: 1px solid rgba(34, 197, 94, .20);
+  border-radius: 8px;
+  background: rgba(34, 197, 94, .08);
+  color: #d8e6ff;
+  font-size: .78rem;
+  line-height: 1.15;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kpi-agenda-item strong {
+  font-size: .78rem;
+  color: #ffffff;
+  font-style: normal;
+}
+
+.kpi-agenda-item span {
+  color: #22c55e;
+  font-size: .76rem;
+  margin-left: 4px;
+}
+
+.kpi-agenda-empty {
+  color: #9fb2d8;
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+
+/* PPF FIX · Valoraciones con fecha corta + foto paciente */
+.valuation-top-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 220px 260px;
   gap: 14px;
   align-items: end;
 }
-.valuation-date-short input {
-  width: 100%;
-}
-.valuation-patient-photo {
-  min-height: 58px;
-  border: 1px solid rgba(34,197,94,.35);
+
+.valuation-patient-photo-card {
+  min-height: 60px;
+  padding: 10px;
+  border: 1px solid rgba(34, 197, 94, .24);
   border-radius: 16px;
-  background: rgba(5, 150, 105, .13);
+  background: rgba(34, 197, 94, .08);
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
 }
-.valuation-patient-avatar,
-.valuation-patient-avatar-img {
-  width: 46px;
-  height: 46px;
+
+.valuation-patient-photo-card .patient-thumb {
+  width: 48px;
+  height: 48px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #22c55e, #14b8a6);
-  color: #03110c;
+  object-fit: cover;
   display: grid;
   place-items: center;
+  flex: 0 0 48px;
+}
+
+.valuation-patient-photo-card strong {
+  display: block;
+  color: #ffffff;
   font-weight: 900;
-  object-fit: cover;
-  flex: 0 0 auto;
+  line-height: 1.1;
 }
-.valuation-patient-photo strong {
+
+.valuation-patient-photo-card span {
   display: block;
-  color: #fff;
+  color: #9fb2d8;
+  font-size: .82rem;
+  margin-top: 3px;
 }
-.valuation-patient-photo span {
-  display: block;
-  color: var(--muted, #9fb2d5);
-  font-size: .88rem;
-}
-.kpi-mini-list {
-  display: grid;
-  gap: 6px;
-  margin-top: 10px;
-  max-height: 82px;
-  overflow: auto;
-}
-.kpi-mini-list div {
-  font-size: .78rem;
-  line-height: 1.15;
-  color: #dbeafe;
-  background: rgba(34,197,94,.10);
-  border: 1px solid rgba(34,197,94,.22);
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-weight: 700;
-}
-@media (max-width: 900px) {
-  .valuation-top-row {
-    grid-template-columns: 1fr;
-  }
-  .photo-upload-actions {
+
+@media (max-width: 980px) {
+  .valuation-top-grid {
     grid-template-columns: 1fr;
   }
 }
