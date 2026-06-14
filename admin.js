@@ -528,6 +528,7 @@ function editPatient(nickname) {
   if (contentInput) contentInput.checked = true;
 
   currentPhoto = getPatientPhotoSafe(patient);
+  setPatientPhotoRouteInput(currentPhoto);
   paintPatientPhotoPreview(currentPhoto);
   setPatientPreviewPhoto(currentPhoto);
 
@@ -564,7 +565,19 @@ function deletePatient(nickname) {
 
 
 
+
+function getPatientPhotoRouteInput() {
+  return (document.getElementById("foto")?.value || "").trim();
+}
+
+function setPatientPhotoRouteInput(value = "") {
+  const input = document.getElementById("foto");
+  if (input) input.value = value || "";
+}
+
 function getCurrentPatientPhotoForSave() {
+  const route = getPatientPhotoRouteInput();
+  if (route) return route;
   const preview = document.getElementById("photoPreview");
   const placeholder = document.getElementById("photoPlaceholder");
 
@@ -658,24 +671,7 @@ function resolvePatientPhotoFromPreview() {
 
 
 function readPatientPhotoBeforeSave() {
-  const input = document.getElementById("foto");
-  const preview = document.getElementById("photoPreview");
-
-  const file = input?.files?.[0];
-
-  if (file) {
-    return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result || "");
-      reader.readAsDataURL(file);
-    });
-  }
-
-  if (preview && preview.style.display !== "none" && preview.src && preview.src.startsWith("data:image")) {
-    return Promise.resolve(preview.src);
-  }
-
-  return Promise.resolve(currentPhoto || "");
+  return Promise.resolve(getPatientPhotoRouteInput() || currentPhoto || "");
 }
 
 function setPatientPreviewPhoto(photo = "") {
@@ -683,6 +679,7 @@ function setPatientPreviewPhoto(photo = "") {
   const placeholder = document.getElementById("photoPlaceholder");
 
   currentPhoto = photo || "";
+  setPatientPhotoRouteInput(currentPhoto);
 
   if (!preview || !placeholder) return;
 
@@ -701,18 +698,7 @@ function setPatientPreviewPhoto(photo = "") {
 
 
 function readPatientPhotoFileForButton() {
-  const input = document.getElementById("foto");
-  const file = input?.files?.[0];
-
-  if (file) {
-    return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result || "");
-      reader.readAsDataURL(file);
-    });
-  }
-
-  return Promise.resolve(currentPhoto || "");
+  return Promise.resolve(getPatientPhotoRouteInput() || currentPhoto || "");
 }
 
 function setPatientPhotoVisual(photo = "") {
@@ -720,6 +706,7 @@ function setPatientPhotoVisual(photo = "") {
   const placeholder = document.getElementById("photoPlaceholder");
 
   currentPhoto = photo || "";
+  setPatientPhotoRouteInput(currentPhoto);
 
   if (!preview || !placeholder) return;
 
@@ -766,24 +753,7 @@ async function updateOnlyPatientPhoto() {
 
 
 function readPatientPhotoForSubmit() {
-  const input = document.getElementById("foto");
-  const file = input?.files?.[0];
-
-  if (file) {
-    return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result || "");
-      reader.onerror = () => resolve(currentPhoto || "");
-      reader.readAsDataURL(file);
-    });
-  }
-
-  const preview = document.getElementById("photoPreview");
-  if (preview?.src && preview.src.startsWith("data:image")) {
-    return Promise.resolve(preview.src);
-  }
-
-  return Promise.resolve(currentPhoto || "");
+  return Promise.resolve(getPatientPhotoRouteInput() || currentPhoto || "");
 }
 
 function paintPatientPhotoPreview(photo = "") {
@@ -791,6 +761,7 @@ function paintPatientPhotoPreview(photo = "") {
   const placeholder = document.getElementById("photoPlaceholder");
 
   currentPhoto = photo || "";
+  setPatientPhotoRouteInput(currentPhoto);
 
   if (!preview || !placeholder) return;
 
@@ -829,9 +800,11 @@ function bindPatientForm() {
   if (cancelBtn) cancelBtn.addEventListener("click", resetPatientFormState);
 
   if (photoInput) {
-    photoInput.addEventListener("change", async () => {
-      const photo = await readPatientPhotoForSubmit();
-      paintPatientPhotoPreview(photo);
+    photoInput.addEventListener("input", () => {
+      paintPatientPhotoPreview(photoInput.value.trim());
+    });
+    photoInput.addEventListener("change", () => {
+      paintPatientPhotoPreview(photoInput.value.trim());
     });
   }
 
@@ -1306,18 +1279,19 @@ const patientHTML = `
       </div>
 
       <div>
-        <label>Foto del paciente</label>
-        <div class="photo-box">
+        <label for="foto">Foto del paciente</label>
+        <div class="photo-box photo-box-url">
           <button class="photo-remove-btn" type="button" id="removePatientPhotoBtn" title="Eliminar foto">✕</button>
-          <label class="photo-label">
-            <input id="foto" type="file" accept="image/*" />
+          <div class="photo-label photo-url-label">
             <div class="photo-placeholder" id="photoPlaceholder">
-              <strong>Subir foto</strong>
-              <span>Haz clic para elegir imagen</span>
+              <strong>Ruta foto</strong>
+              <span>Ej: fotos/troya13.jpg</span>
             </div>
             <img id="photoPreview" class="photo-preview" alt="Vista previa" />
-          </label>
+          </div>
         </div>
+        <input id="foto" class="photo-url-input" type="text" placeholder="fotos/troya13.jpg" autocomplete="off" />
+        <small class="photo-url-help">Guarda solo la ruta/URL. No se sube la imagen a Supabase.</small>
 <div class="imc-panel">
           <span>IMC automático</span>
           <strong id="imcValue">-</strong>
@@ -4862,6 +4836,7 @@ function renderSection(key) {
   sectionTitle.textContent = section.title;
   contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
   if (section.afterRender) section.afterRender();
+  if (typeof pmRenderSessionAgendaKpis === "function") pmRenderSessionAgendaKpis();
 }
 
 
@@ -5210,7 +5185,50 @@ function pmAgendaKpiHTML(rows = []) {
   `;
 }
 
+
+function pmRenderClassicPatientKpis() {
+  try { patients = JSON.parse(localStorage.getItem("patients") || "[]"); } catch (_) { patients = []; }
+  try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
+  try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
+
+  const p = document.getElementById("patientCounter");
+  const h = document.getElementById("historyCounter");
+  const f = document.getElementById("fileCounter");
+
+  if (p) p.textContent = patients.length;
+
+  if (h) {
+    const card = h.closest(".stat-card");
+    if (card) {
+      card.classList.remove("agenda-stat-card");
+      const label = card.querySelector("span");
+      if (label) label.textContent = "Registros historial";
+    }
+    h.textContent = histories.length;
+  }
+
+  if (f) {
+    const card = f.closest(".stat-card");
+    if (card) {
+      card.classList.remove("agenda-stat-card");
+      const label = card.querySelector("span");
+      if (label) label.textContent = "Archivos guardados";
+    }
+    f.textContent = patientFiles.length;
+  }
+}
+
+function pmCurrentAdminSectionKey() {
+  const active = document.querySelector(".nav-item.active");
+  if (active?.dataset?.section) return active.dataset.section;
+  return (sectionTitle?.textContent || "").trim().toLowerCase().includes("usuario") ? "usuarios" : "paciente";
+}
+
 function pmRenderSessionAgendaKpis() {
+  if (pmCurrentAdminSectionKey() !== "usuarios") {
+    pmRenderClassicPatientKpis();
+    return;
+  }
   const p = document.getElementById("patientCounter");
   const h = document.getElementById("historyCounter");
   const f = document.getElementById("fileCounter");
