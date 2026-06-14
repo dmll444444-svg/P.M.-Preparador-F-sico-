@@ -4333,3 +4333,35 @@ aside.client-sidebar {
 @media (max-width: 720px){
   .storage-photo-actions{grid-template-columns:1fr;}
 }
+
+
+/* Creación Sesiones PRO v1 · copiar / pegar sesiones */
+.session-pro-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 18px 0 22px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.session-pro-actions .secondary-btn,
+.copy-session-btn {
+  min-height: 42px;
+  border-radius: 14px;
+  font-weight: 800;
+}
+
+.session-pro-actions small {
+  color: #94a3b8;
+  font-weight: 700;
+  flex: 1;
+  min-width: 240px;
+}
+
+.session-card-actions {
+  flex-wrap: wrap;
+}

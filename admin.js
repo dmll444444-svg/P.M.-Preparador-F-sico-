@@ -1686,6 +1686,7 @@ function renderSessionList(filterNickname = "") {
         <p>@${session.patientNickname}</p>
         <div class="session-card-actions">
           <button class="edit-btn" type="button" onclick="editSession('${session.id}')">✏️ Editar sesión</button>
+          <button class="secondary-btn copy-session-btn" type="button" onclick="copySessionToClipboard('${session.id}')">📋 Copiar sesión</button>
           <button class="delete-btn" type="button" onclick="deleteSession('${session.id}')">🗑️ Eliminar</button>
         </div>
         <div class="session-summary session-summary-3">
@@ -1697,6 +1698,38 @@ function renderSessionList(filterNickname = "") {
     `;
   }).join("");
 }
+
+
+function copySessionToClipboard(sessionId) {
+  const session = sessions.find(item => String(item.id) === String(sessionId));
+  if (!session) {
+    alert("No se ha encontrado la sesión para copiar.");
+    return;
+  }
+
+  const patient = patients.find(item => item.nickname === session.patientNickname);
+  const modules = session.modules || {
+    movilidad: session.movilidad || [],
+    activacion: session.activacion || [],
+    principal: session.principal || { blocks: {} }
+  };
+
+  const clipboardPayload = {
+    sourceId: session.id,
+    sourcePatientNickname: session.patientNickname || "",
+    sourcePatientName: patient ? patient.nombre : (session.patientNickname || ""),
+    sourceNumber: session.numero || "",
+    sourceDate: session.fecha || "",
+    copiedAt: new Date().toISOString(),
+    modules: JSON.parse(JSON.stringify(modules))
+  };
+
+  localStorage.setItem("ppfSessionClipboard", JSON.stringify(clipboardPayload));
+
+  alert(`Sesión copiada: ${patient ? patient.nombre : session.patientNickname} · Sesión nº ${session.numero || "-"}. Ahora puedes seleccionar otro paciente y pulsar "Pegar sesión copiada".`);
+}
+
+window.copySessionToClipboard = copySessionToClipboard;
 
 
 function bindSessionsForm() {
@@ -1724,6 +1757,9 @@ function bindSessionsForm() {
   const principalBlockNotes = document.getElementById("principalBlockNotes");
   const principalBlockNotesLabel = document.getElementById("principalBlockNotesLabel");
   const saveCurrentBlockBtn = document.getElementById("saveCurrentBlockBtn");
+  const pasteCopiedSessionBtn = document.getElementById("pasteCopiedSessionBtn");
+  const loadLastSessionBtn = document.getElementById("loadLastSessionBtn");
+  const sessionClipboardStatus = document.getElementById("sessionClipboardStatus");
 
   if (!form) return;
 
@@ -2066,6 +2102,10 @@ function bindSessionsForm() {
     refreshSessionInfo();
   });
 
+  if (pasteCopiedSessionBtn) pasteCopiedSessionBtn.addEventListener("click", pasteCopiedSessionIntoForm);
+  if (loadLastSessionBtn) loadLastSessionBtn.addEventListener("click", loadLastSessionForSelectedPatient);
+  refreshSessionClipboardStatus();
+
 
   function cloneExerciseForStorage(item, fallbackType = "") {
     return {
@@ -2105,6 +2145,127 @@ function bindSessionsForm() {
       principal
     };
   }
+
+  function normalizeImportedExercise(item = {}, fallbackType = "") {
+    return {
+      nombre: item.nombre || "",
+      series: item.series || "",
+      repeticiones: item.repeticiones || "",
+      carga: item.carga || "",
+      unidad: item.unidad || "Kg",
+      rpe: item.rpe || "",
+      tipo: item.tipo || fallbackType || "",
+      url: item.url || "",
+      deleted: Boolean(item.deleted)
+    };
+  }
+
+  function applySessionModulesToForm(modules = {}, sourceLabel = "sesión copiada") {
+    const movilidad = Array.isArray(modules.movilidad) ? modules.movilidad : [];
+    const activacion = Array.isArray(modules.activacion) ? modules.activacion : [];
+    const principalSource = modules.principal || { blocks: {} };
+
+    moduleData.movilidad = movilidad.map(item => normalizeImportedExercise(item, "Movilidad"));
+    while (moduleData.movilidad.length < 10) moduleData.movilidad.push(defaultExercise("Movilidad"));
+
+    moduleData.activacion = activacion.map(item => normalizeImportedExercise(item, "T. Superior"));
+    while (moduleData.activacion.length < 10) moduleData.activacion.push(defaultExercise("T. Superior"));
+
+    moduleData.principal.blocks = {
+      bloque1: defaultPrincipalBlock(),
+      bloque2: defaultPrincipalBlock(),
+      bloque3: defaultPrincipalBlock(),
+      bloque4: defaultPrincipalBlock()
+    };
+
+    ["bloque1", "bloque2", "bloque3", "bloque4"].forEach(blockKey => {
+      const block = principalSource.blocks?.[blockKey] || defaultPrincipalBlock();
+      moduleData.principal.blocks[blockKey] = {
+        notes: block.notes || "",
+        exercises: (block.exercises || []).map(item => normalizeImportedExercise(item, "F. ppal. TS"))
+      };
+
+      while (moduleData.principal.blocks[blockKey].exercises.length < 4) {
+        moduleData.principal.blocks[blockKey].exercises.push(defaultExercise("F. ppal. TS"));
+      }
+    });
+
+    editingSessionId = null;
+    saveSessionBtn.textContent = "Guardar sesión";
+    delete saveSessionBtn.dataset.editing;
+    activePrincipalBlock = "bloque1";
+    renderModule("movilidad");
+    refreshSessionInfo();
+
+    if (sessionClipboardStatus) {
+      sessionClipboardStatus.textContent = `✅ ${sourceLabel} cargada. Revisa paciente, fecha y pulsa Guardar sesión.`;
+    }
+  }
+
+  function getSessionClipboardPayload() {
+    try {
+      return JSON.parse(localStorage.getItem("ppfSessionClipboard") || "null");
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function refreshSessionClipboardStatus() {
+    if (!sessionClipboardStatus) return;
+    const clip = getSessionClipboardPayload();
+    if (!clip) {
+      sessionClipboardStatus.textContent = "Copia una sesión creada desde el listado inferior y pégala aquí.";
+      return;
+    }
+    sessionClipboardStatus.textContent = `📋 Copiada: ${clip.sourcePatientName || clip.sourcePatientNickname || "paciente"} · Sesión nº ${clip.sourceNumber || "-"} · ${clip.sourceDate || "-"}`;
+  }
+
+  function pasteCopiedSessionIntoForm() {
+    const clip = getSessionClipboardPayload();
+    if (!clip || !clip.modules) {
+      alert("Primero copia una sesión desde el listado inferior.");
+      return;
+    }
+
+    if (!patientHidden.value) {
+      alert("Selecciona primero el paciente al que quieres pegar la sesión.");
+      return;
+    }
+
+    applySessionModulesToForm(clip.modules, `Sesión copiada de ${clip.sourcePatientName || clip.sourcePatientNickname || "otro paciente"}`);
+  }
+
+  function loadLastSessionForSelectedPatient() {
+    const patientNickname = patientHidden.value;
+    if (!patientNickname) {
+      alert("Selecciona primero un paciente.");
+      return;
+    }
+
+    const available = sessions
+      .filter(item => item.patientNickname === patientNickname)
+      .slice()
+      .sort((a, b) => {
+        const dateA = String(a.fecha || "");
+        const dateB = String(b.fecha || "");
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        return (Number(b.numero) || 0) - (Number(a.numero) || 0);
+      });
+
+    const lastSession = available[0];
+
+    if (!lastSession) {
+      alert("Este paciente todavía no tiene sesiones creadas para cargar.");
+      return;
+    }
+
+    applySessionModulesToForm(lastSession.modules || {
+      movilidad: lastSession.movilidad || [],
+      activacion: lastSession.activacion || [],
+      principal: lastSession.principal || { blocks: {} }
+    }, `Última sesión del cliente cargada: sesión nº ${lastSession.numero || "-"}`);
+  }
+
 
   function commitSessionToStorageStable(payload) {
     const index = sessions.findIndex(item => item.id === payload.id);
@@ -4909,6 +5070,12 @@ const sections = {
             <small id="sessionMicrocycleDate">Selecciona fecha</small>
             <input id="sessionMicrocycleNumber" type="hidden" />
           </article>
+        </section>
+
+        <section class="session-pro-actions" aria-label="Herramientas de copia de sesiones">
+          <button class="secondary-btn" type="button" id="pasteCopiedSessionBtn">📥 Pegar sesión copiada</button>
+          <button class="secondary-btn" type="button" id="loadLastSessionBtn">📚 Cargar última sesión del cliente</button>
+          <small id="sessionClipboardStatus">Copia una sesión creada desde el listado inferior y pégala aquí.</small>
         </section>
 
         <section class="session-module-kpis">
