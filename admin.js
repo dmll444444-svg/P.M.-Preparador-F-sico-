@@ -1460,7 +1460,11 @@ function persistSessionsOnly() {
 }
 
 function getSelectedPatientBySearch(value) {
-  return patients.find(patient => patient.nombre.toLowerCase() === value.toLowerCase());
+  const target = String(value || "").toLowerCase();
+  return patients.find(patient =>
+    String(patient.nombre || "").toLowerCase() === target ||
+    String(patient.nickname || "").toLowerCase() === target
+  );
 }
 
 
@@ -1955,8 +1959,8 @@ function bindSessionsForm() {
   date.addEventListener("change", refreshSessionInfo);
   filter.addEventListener("change", () => renderSessionList(filter.value));
 
-  patientSearch.addEventListener("input", () => {
-    const patient = getSelectedPatientBySearch(patientSearch.value.trim());
+  patientSearch.addEventListener("change", () => {
+    const patient = patients.find(item => item.nickname === patientSearch.value) || getSelectedPatientBySearch(patientSearch.value.trim());
     patientHidden.value = patient ? patient.nickname : "";
     refreshSessionInfo();
   });
@@ -2060,7 +2064,7 @@ function bindSessionsForm() {
     const patient = patients.find(item => item.nickname === session.patientNickname);
     editingSessionId = sessionId;
 
-    patientSearch.value = patient ? patient.nombre : session.patientNickname;
+    patientSearch.value = session.patientNickname;
     patientHidden.value = session.patientNickname;
     date.value = session.fecha;
 
@@ -4691,12 +4695,12 @@ const sections = {
       <form class="patient-form" id="sessionsForm">
         <div class="session-search-clean">
           <div>
-            <label for="sessionPatientSearch">Buscador de cliente</label>
-            <input id="sessionPatientSearch" list="patientsDatalist" type="text" placeholder="Escribe el nombre del cliente" required />
+            <label for="sessionPatientSearch">Selecciona cliente</label>
+            <select id="sessionPatientSearch" required>
+              <option value="">Selecciona paciente</option>
+              ${patients.map(patient => `<option value="${patient.nickname}">${patient.nombre}</option>`).join("")}
+            </select>
             <input id="sessionPatient" type="hidden" />
-            <datalist id="patientsDatalist">
-              ${patients.map(patient => `<option value="${patient.nombre}"></option>`).join("")}
-            </datalist>
           </div>
 
           <div>

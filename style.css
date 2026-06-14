@@ -4234,3 +4234,71 @@ aside.client-sidebar {
   .valuation-pdf-actions, .valuation-pdf-filters { flex-direction: column; align-items: stretch; }
   .valuation-pdf-filters select { min-width: 0; }
 }
+
+
+/* =========================================================
+   PM FIX · Sidebar fija y selector limpio en Creación sesiones
+   ========================================================= */
+@media (min-width: 801px) {
+  .admin-layout {
+    display: flex !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .admin-layout > .sidebar,
+  .admin-layout > aside.sidebar,
+  .sidebar {
+    flex: 0 0 250px !important;
+    width: 250px !important;
+    min-width: 250px !important;
+    max-width: 250px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  .admin-main {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    width: calc(100% - 250px) !important;
+    max-width: calc(100% - 250px) !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  #contentArea,
+  .content-card,
+  .dashboard-grid,
+  .patient-form,
+  .sessions-panel,
+  .session-search-clean,
+  .session-kpi-top {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+}
+
+.session-search-clean select#sessionPatientSearch {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 52px !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  background: #020617 !important;
+  color: #ffffff !important;
+  padding: 0 16px !important;
+  font-size: 15px !important;
+  outline: none !important;
+}
+
+.session-search-clean select#sessionPatientSearch:focus {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18) !important;
+}
+
+.session-search-clean select#sessionPatientSearch option {
+  color: #0f172a;
+  background: #ffffff;
+}
