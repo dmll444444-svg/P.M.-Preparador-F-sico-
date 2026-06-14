@@ -14,6 +14,7 @@ const PPF_SYNC_KEYS = [
   "patientFiles",
   "exerciseLibrary",
   "completedSessions",
+  "valoraciones",
   "userStats"
 ];
 
@@ -165,3 +166,26 @@ window.PPF_SUPABASE = {
   status: () => window.PPF_SUPABASE_STATUS || "disabled",
   keys: PPF_SYNC_KEYS
 };
+
+
+async function ppfUploadPatientPhotoToStorage(file, path) {
+  const client = ppfCreateClient();
+  if (!client || !file) return "";
+
+  const bucket = "patient-photos";
+  const cleanPath = String(path || file.name || `foto-${Date.now()}.jpg`).replace(/^\/+/, "");
+
+  const { error } = await client.storage
+    .from(bucket)
+    .upload(cleanPath, file, { cacheControl: "3600", upsert: true, contentType: file.type || "image/jpeg" });
+
+  if (error) {
+    console.warn("Supabase Storage upload error:", error.message);
+    throw error;
+  }
+
+  const { data } = client.storage.from(bucket).getPublicUrl(cleanPath);
+  return data?.publicUrl || "";
+}
+
+window.PPF_SUPABASE.uploadPatientPhoto = ppfUploadPatientPhotoToStorage;

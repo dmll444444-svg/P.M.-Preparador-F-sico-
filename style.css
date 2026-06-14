@@ -4126,3 +4126,94 @@ aside.client-sidebar {
 .photo-url-help{display:none!important;}
 .photo-box-url .photo-label{cursor:default;}
 .photo-preview{object-fit:cover;}
+
+
+/* PM FIX FINAL · fotos por Supabase Storage y valoración compacta */
+.photo-upload-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.photo-upload-actions .secondary-btn,
+.photo-upload-actions .primary-btn {
+  width: 100%;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 10px;
+}
+.photo-upload-status {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--muted, #9fb2d5);
+}
+.valuation-top-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 220px) minmax(250px, 320px);
+  gap: 14px;
+  align-items: end;
+}
+.valuation-date-short input {
+  width: 100%;
+}
+.valuation-patient-photo {
+  min-height: 58px;
+  border: 1px solid rgba(34,197,94,.35);
+  border-radius: 16px;
+  background: rgba(5, 150, 105, .13);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+.valuation-patient-avatar,
+.valuation-patient-avatar-img {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: #03110c;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+.valuation-patient-photo strong {
+  display: block;
+  color: #fff;
+}
+.valuation-patient-photo span {
+  display: block;
+  color: var(--muted, #9fb2d5);
+  font-size: .88rem;
+}
+.kpi-mini-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: 82px;
+  overflow: auto;
+}
+.kpi-mini-list div {
+  font-size: .78rem;
+  line-height: 1.15;
+  color: #dbeafe;
+  background: rgba(34,197,94,.10);
+  border: 1px solid rgba(34,197,94,.22);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-weight: 700;
+}
+@media (max-width: 900px) {
+  .valuation-top-row {
+    grid-template-columns: 1fr;
+  }
+  .photo-upload-actions {
+    grid-template-columns: 1fr;
+  }
+}

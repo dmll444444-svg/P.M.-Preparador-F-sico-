@@ -309,6 +309,8 @@ seedExerciseLibrary(false);
 let currentPhoto = "";
 let editingPatientNickname = null;
 let currentUploadFile = null;
+let currentPatientPhotoFile = null;
+let currentPatientPhotoObjectUrl = "";
 
 
 function setTodayIfEmpty(id) {
@@ -327,13 +329,80 @@ function persistAppData() {
   localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
 }
 
-function pmPushPatientsToCloud() {
+async function pmPushPatientsToCloud() {
   try {
     if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-      window.PPF_SUPABASE.pushKey("patients").catch(error => console.warn("No se pudo sincronizar patients:", error));
+      const ok = await window.PPF_SUPABASE.pushKey("patients");
+      if (!ok) console.warn("No se pudo confirmar la sincronización de patients.");
+      return Boolean(ok);
     }
   } catch (error) {
     console.warn("No se pudo sincronizar patients:", error);
+  }
+  return false;
+}
+
+async function pmPushRelatedPatientKeysToCloud() {
+  try {
+    if (!window.PPF_SUPABASE || typeof window.PPF_SUPABASE.pushKey !== "function") return false;
+    await window.PPF_SUPABASE.pushKey("histories");
+    await window.PPF_SUPABASE.pushKey("patientFiles");
+    await window.PPF_SUPABASE.pushKey("sessions");
+    await window.PPF_SUPABASE.pushKey("completedSessions");
+    return true;
+  } catch (error) {
+    console.warn("No se pudieron sincronizar datos relacionados del paciente:", error);
+    return false;
+  }
+}
+
+function pmSafePhotoFileName(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/^.*[\\/]/, "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || `foto-${Date.now()}.jpg`;
+}
+
+async function pmUploadPatientPhotoToStorage(patientNickname = "") {
+  if (!currentPatientPhotoFile) return normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || "");
+
+  if (!window.PPF_SUPABASE || typeof window.PPF_SUPABASE.uploadPatientPhoto !== "function") {
+    alert("Supabase Storage no está disponible. Revisa bucket patient-photos.");
+    return "";
+  }
+
+  const uploadBtn = document.getElementById("uploadPatientPhotoBtn");
+  if (uploadBtn) {
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = "Subiendo...";
+  }
+
+  try {
+    const safeNick = pmSafePhotoFileName(patientNickname || document.getElementById("nickname")?.value || "paciente").replace(/\.[a-z0-9]+$/i, "");
+    const safeFile = pmSafePhotoFileName(currentPatientPhotoFile.name);
+    const ext = safeFile.includes(".") ? safeFile.split(".").pop() : "jpg";
+    const path = `${safeNick}/${Date.now()}-${safeFile.replace(/\.[^.]+$/, "")}.${ext}`;
+    const publicUrl = await window.PPF_SUPABASE.uploadPatientPhoto(currentPatientPhotoFile, path);
+    if (!publicUrl) throw new Error("No se recibió URL pública de la foto.");
+
+    currentPhoto = publicUrl;
+    currentPatientPhotoFile = null;
+    const input = document.getElementById("foto");
+    if (input) input.value = publicUrl;
+    paintPatientPhotoPreview(publicUrl);
+    return publicUrl;
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo subir la foto a Supabase Storage.");
+    return "";
+  } finally {
+    if (uploadBtn) {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = "⬆ Subir foto";
+    }
   }
 }
 
@@ -356,7 +425,7 @@ function getPatientPhoto(patient) {
 function normalizePatientPhotoPath(value = "") {
   let raw = String(value || "").trim().replace(/^\/+/, "");
   if (!raw) return "";
-  if (raw.startsWith("data:image") || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  if (raw.startsWith("data:image") || raw.startsWith("blob:") || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
   raw = raw.replace(/^fotos[\\/]/i, "");
   return `fotos/${raw}`;
 }
@@ -364,7 +433,7 @@ function normalizePatientPhotoPath(value = "") {
 function patientPhotoFileName(value = "") {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  if (raw.startsWith("data:image") || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  if (raw.startsWith("data:image") || raw.startsWith("blob:") || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
   return raw.replace(/^fotos[\\/]/i, "");
 }
 
@@ -557,6 +626,9 @@ function editPatient(nickname) {
   const contentInput = document.querySelector(`input[name='contenido'][value="${patient.contenido}"]`);
   if (contentInput) contentInput.checked = true;
 
+  currentPatientPhotoFile = null;
+  if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
+  currentPatientPhotoObjectUrl = "";
   currentPhoto = getPatientPhotoSafe(patient);
   const fotoInputEdit = document.getElementById("foto");
   if (fotoInputEdit) fotoInputEdit.value = patientPhotoFileName(currentPhoto);
@@ -619,6 +691,9 @@ function resetPatientFormState() {
   form.reset();
   editingPatientNickname = null;
   currentPhoto = "";
+  currentPatientPhotoFile = null;
+  if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
+  currentPatientPhotoObjectUrl = "";
 
   const photoInput = document.getElementById("foto");
   if (photoInput) photoInput.value = "";
@@ -757,8 +832,12 @@ async function updateOnlyPatientPhoto() {
 }
 
 
-function readPatientPhotoForSubmit() {
-  return Promise.resolve(normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || ""));
+async function readPatientPhotoForSubmit() {
+  if (currentPatientPhotoFile) {
+    const nick = document.getElementById("nickname")?.value || editingPatientNickname || "paciente";
+    return await pmUploadPatientPhotoToStorage(nick);
+  }
+  return normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || "");
 }
 
 function paintPatientPhotoPreview(photo = "") {
@@ -791,6 +870,9 @@ function bindPatientForm() {
   const submitBtn = document.getElementById("patientSubmitBtn");
   const cancelBtn = document.getElementById("cancelEditBtn");
   const removePhotoBtn = document.getElementById("removePatientPhotoBtn");
+  const photoFileInput = document.getElementById("patientPhotoFileInput");
+  const uploadPhotoBtn = document.getElementById("uploadPatientPhotoBtn");
+  const photoUploadStatus = document.getElementById("patientPhotoUploadStatus");
 
   setTodayIfEmpty("fechaAlta");
   renderPatientList();
@@ -799,8 +881,9 @@ function bindPatientForm() {
   if (cancelBtn) cancelBtn.addEventListener("click", resetPatientFormState);
 
   if (photoInput) {
-    const updatePhotoPreviewFromText = async () => {
-      const photo = await readPatientPhotoForSubmit();
+    const updatePhotoPreviewFromText = () => {
+      if (currentPatientPhotoFile) return;
+      const photo = normalizePatientPhotoPath(photoInput.value || currentPhoto || "");
       paintPatientPhotoPreview(photo);
     };
     photoInput.addEventListener("input", updatePhotoPreviewFromText);
@@ -812,8 +895,40 @@ function bindPatientForm() {
       event.preventDefault();
       event.stopPropagation();
       currentPhoto = "";
+      currentPatientPhotoFile = null;
+      if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
+      currentPatientPhotoObjectUrl = "";
       if (photoInput) photoInput.value = "";
+      if (photoUploadStatus) photoUploadStatus.textContent = "";
       paintPatientPhotoPreview("");
+    });
+  }
+
+  if (photoFileInput) {
+    photoFileInput.addEventListener("change", () => {
+      const file = photoFileInput.files && photoFileInput.files[0];
+      if (!file) return;
+      currentPatientPhotoFile = file;
+      if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
+      currentPatientPhotoObjectUrl = URL.createObjectURL(file);
+      currentPhoto = currentPatientPhotoObjectUrl;
+      const safeName = pmSafePhotoFileName(file.name);
+      if (photoInput) photoInput.value = safeName;
+      if (photoUploadStatus) photoUploadStatus.textContent = `Foto seleccionada: ${safeName}. Pulsa Subir foto o Guarda paciente.`;
+      paintPatientPhotoPreview(currentPatientPhotoObjectUrl);
+    });
+  }
+
+  if (uploadPhotoBtn) {
+    uploadPhotoBtn.addEventListener("click", async event => {
+      event.preventDefault();
+      if (!currentPatientPhotoFile) {
+        alert("Selecciona una foto primero.");
+        return;
+      }
+      const nick = document.getElementById("nickname")?.value || editingPatientNickname || "paciente";
+      const url = await pmUploadPatientPhotoToStorage(nick);
+      if (url && photoUploadStatus) photoUploadStatus.textContent = "Foto subida correctamente.";
     });
   }
 
@@ -830,8 +945,13 @@ function bindPatientForm() {
 
   const savePatient = async event => {
     if (event) event.preventDefault();
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = currentPatientPhotoFile ? "Subiendo y guardando..." : "Guardando...";
+    }
 
-    const photoToSave = await readPatientPhotoForSubmit();
+    try {
+      const photoToSave = await readPatientPhotoForSubmit();
 
     const peso = Number(document.getElementById("peso")?.value || 0);
     const alturaCm = Number(document.getElementById("altura")?.value || 0);
@@ -888,6 +1008,7 @@ function bindPatientForm() {
       notas: document.getElementById("notas")?.value.trim() || ""
     };
 
+    const wasEditing = Boolean(editingPatientNickname);
     if (editingPatientNickname) {
       const previousNickname = editingPatientNickname;
       const index = patients.findIndex(patient => patient.nickname === previousNickname);
@@ -908,23 +1029,35 @@ function bindPatientForm() {
           completedSessions.map(item => item.patientNickname === previousNickname ? { ...item, patientNickname: newPatient.nickname } : item)
         ));
       }
-
-      alert("Paciente actualizado correctamente.");
     } else {
       patients.push(newPatient);
-      alert("Paciente guardado correctamente.");
     }
 
     localStorage.setItem("patients", JSON.stringify(patients));
-    pmPushPatientsToCloud();
     localStorage.setItem("histories", JSON.stringify(histories));
     localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
     localStorage.setItem("sessions", JSON.stringify(sessions));
 
+    const synced = await pmPushPatientsToCloud();
+    await pmPushRelatedPatientKeysToCloud();
+
     currentPhoto = "";
+    currentPatientPhotoFile = null;
+    if (currentPatientPhotoObjectUrl) URL.revokeObjectURL(currentPatientPhotoObjectUrl);
+    currentPatientPhotoObjectUrl = "";
     resetPatientFormState();
     updateCounters();
     renderPatientList();
+    alert(synced ? (wasEditing ? "Paciente actualizado y sincronizado correctamente." : "Paciente guardado y sincronizado correctamente.") : "Paciente guardado localmente. Revisa la sincronización Supabase.");
+    } catch (error) {
+      console.error(error);
+      alert("No se pudo guardar el paciente. Revisa la consola.");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = editingPatientNickname ? "Actualizar paciente" : "Guardar paciente";
+      }
+    }
   };
 
   form.onsubmit = savePatient;
@@ -1292,8 +1425,15 @@ const patientHTML = `
         </div>
         <div class="photo-url-field">
           <span>fotos/</span>
-          <input id="foto" type="text" placeholder="troya13.jpg" autocomplete="off" />
-        </div><div class="imc-panel">
+          <input id="foto" type="text" placeholder="troya13.jpg o URL subida" autocomplete="off" />
+        </div>
+        <div class="photo-upload-actions">
+          <label class="secondary-btn photo-select-btn" for="patientPhotoFileInput">Elegir foto</label>
+          <input id="patientPhotoFileInput" type="file" accept="image/*" hidden />
+          <button class="primary-btn photo-upload-btn" id="uploadPatientPhotoBtn" type="button">⬆ Subir foto</button>
+        </div>
+        <div class="photo-upload-status" id="patientPhotoUploadStatus"></div>
+        <div class="imc-panel">
           <span>IMC automático</span>
           <strong id="imcValue">-</strong>
         </div>
@@ -4133,6 +4273,20 @@ async function pmRefreshValoracionesFromSupabase() {
   }
 }
 
+
+function updateValuationPatientPhotoBox() {
+  const box = document.getElementById("valuationPatientPhotoBox");
+  if (!box) return;
+  const nickname = document.getElementById("valuationPatient")?.value || "";
+  const patient = patients.find(p => p.nickname === nickname);
+  if (!patient) {
+    box.innerHTML = `<div class="valuation-patient-avatar">?</div><div><strong>Selecciona paciente</strong><span>Foto del paciente</span></div>`;
+    return;
+  }
+  const photo = getPatientPhotoSafe(patient);
+  box.innerHTML = `${photo ? `<img class="valuation-patient-avatar-img" src="${photo}" alt="${patient.nombre}">` : `<div class="valuation-patient-avatar">${(patient.nombre || "?").charAt(0).toUpperCase()}</div>`}<div><strong>${patient.nombre}</strong><span>@${patient.nickname}</span></div>`;
+}
+
 function bindValoracionesForm() {
   const form = document.getElementById("valuationsForm");
   const testsArea = document.getElementById("valuationTestsArea");
@@ -4177,6 +4331,9 @@ function bindValoracionesForm() {
     renderValuationsList(filter.value);
     renderValuationCharts(filter.value);
   });
+
+  document.getElementById("valuationPatient")?.addEventListener("change", updateValuationPatientPhotoBox);
+  updateValuationPatientPhotoBox();
 
   form.addEventListener("submit", event => {
     event.preventDefault();
@@ -4846,15 +5003,23 @@ const sections = {
       <p>Registra pruebas físicas con intentos, unidad de registro y observaciones cualitativas por test.</p>
 
       <form class="patient-form valuation-form" id="valuationsForm">
-        <div class="form-grid-2">
+        <div class="valuation-top-row">
           <div>
             <label for="valuationPatient">Selecciona paciente</label>
             <select id="valuationPatient" required>${patientOptions()}</select>
           </div>
 
-          <div>
+          <div class="valuation-date-short">
             <label for="valuationDate">Fecha</label>
             <input id="valuationDate" type="date" required />
+          </div>
+
+          <div class="valuation-patient-photo" id="valuationPatientPhotoBox">
+            <div class="valuation-patient-avatar">?</div>
+            <div>
+              <strong>Selecciona paciente</strong>
+              <span>Foto del paciente</span>
+            </div>
           </div>
         </div>
 
