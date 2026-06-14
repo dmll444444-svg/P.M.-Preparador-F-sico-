@@ -327,9 +327,20 @@ function persistAppData() {
   localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
 }
 
+function pmPushPatientsToCloud() {
+  try {
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+      window.PPF_SUPABASE.pushKey("patients").catch(error => console.warn("No se pudo sincronizar patients:", error));
+    }
+  } catch (error) {
+    console.warn("No se pudo sincronizar patients:", error);
+  }
+}
+
 function updateCounters() {
-  if (typeof pmRenderSessionAgendaKpis === "function") {
-    pmRenderSessionAgendaKpis();
+  const active = document.querySelector('.nav-item.active')?.dataset.section || "paciente";
+  if (typeof pmSetDashboardKpis === "function") {
+    pmSetDashboardKpis(active === "usuarios" ? "usuarios" : "paciente");
     return;
   }
   patientCounter.textContent = patients.length;
@@ -339,8 +350,27 @@ function updateCounters() {
 
 
 function getPatientPhoto(patient) {
+  return getPatientPhotoSafe(patient);
+}
+
+function normalizePatientPhotoPath(value = "") {
+  let raw = String(value || "").trim().replace(/^\/+/, "");
+  if (!raw) return "";
+  if (raw.startsWith("data:image") || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  raw = raw.replace(/^fotos[\\/]/i, "");
+  return `fotos/${raw}`;
+}
+
+function patientPhotoFileName(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("data:image") || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  return raw.replace(/^fotos[\\/]/i, "");
+}
+
+function getPatientPhotoSafe(patient) {
   if (!patient) return "";
-  return patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || patient.fotoPaciente || "";
+  return normalizePatientPhotoPath(patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || "");
 }
 
 function patientOptions() {
@@ -528,6 +558,8 @@ function editPatient(nickname) {
   if (contentInput) contentInput.checked = true;
 
   currentPhoto = getPatientPhotoSafe(patient);
+  const fotoInputEdit = document.getElementById("foto");
+  if (fotoInputEdit) fotoInputEdit.value = patientPhotoFileName(currentPhoto);
   paintPatientPhotoPreview(currentPhoto);
   setPatientPreviewPhoto(currentPhoto);
 
@@ -565,20 +597,7 @@ function deletePatient(nickname) {
 
 
 function getCurrentPatientPhotoForSave() {
-  const preview = document.getElementById("photoPreview");
-  const placeholder = document.getElementById("photoPlaceholder");
-
-  // Si se ha pulsado la X, currentPhoto queda vacío y el preview oculto: se guarda sin foto.
-  if (!currentPhoto && (!preview || preview.style.display === "none")) {
-    return "";
-  }
-
-  // Si hay una imagen nueva en preview, se guarda esa.
-  if (preview && preview.src && preview.style.display !== "none") {
-    return preview.src;
-  }
-
-  return currentPhoto || "";
+  return normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || "");
 }
 
 function updateRemovePhotoButton() {
@@ -658,31 +677,14 @@ function resolvePatientPhotoFromPreview() {
 
 
 function readPatientPhotoBeforeSave() {
-  const input = document.getElementById("foto");
-  const preview = document.getElementById("photoPreview");
-
-  const file = input?.files?.[0];
-
-  if (file) {
-    return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result || "");
-      reader.readAsDataURL(file);
-    });
-  }
-
-  if (preview && preview.style.display !== "none" && preview.src && preview.src.startsWith("data:image")) {
-    return Promise.resolve(preview.src);
-  }
-
-  return Promise.resolve(currentPhoto || "");
+  return Promise.resolve(normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || ""));
 }
 
 function setPatientPreviewPhoto(photo = "") {
   const preview = document.getElementById("photoPreview");
   const placeholder = document.getElementById("photoPlaceholder");
 
-  currentPhoto = photo || "";
+  currentPhoto = normalizePatientPhotoPath(photo || "");
 
   if (!preview || !placeholder) return;
 
@@ -701,25 +703,14 @@ function setPatientPreviewPhoto(photo = "") {
 
 
 function readPatientPhotoFileForButton() {
-  const input = document.getElementById("foto");
-  const file = input?.files?.[0];
-
-  if (file) {
-    return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result || "");
-      reader.readAsDataURL(file);
-    });
-  }
-
-  return Promise.resolve(currentPhoto || "");
+  return Promise.resolve(normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || ""));
 }
 
 function setPatientPhotoVisual(photo = "") {
   const preview = document.getElementById("photoPreview");
   const placeholder = document.getElementById("photoPlaceholder");
 
-  currentPhoto = photo || "";
+  currentPhoto = normalizePatientPhotoPath(photo || "");
 
   if (!preview || !placeholder) return;
 
@@ -758,6 +749,7 @@ async function updateOnlyPatientPhoto() {
   };
 
   localStorage.setItem("patients", JSON.stringify(patients));
+  pmPushPatientsToCloud();
   setPatientPhotoVisual(photo);
   renderPatientList();
 
@@ -765,123 +757,15 @@ async function updateOnlyPatientPhoto() {
 }
 
 
-
-function ppfGetSupabaseClientForStorage() {
-  try {
-    if (window.ppfSupabaseClient) return window.ppfSupabaseClient;
-    const cfg = window.PPF_SUPABASE_CONFIG || {};
-    if (!window.supabase || !cfg.url || !cfg.anonKey) return null;
-    window.ppfSupabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey);
-    return window.ppfSupabaseClient;
-  } catch (error) {
-    console.warn("No se pudo crear cliente Supabase Storage:", error);
-    return null;
-  }
-}
-
-function ppfSlugFileName(value = "paciente") {
-  return String(value || "paciente")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .toLowerCase() || "paciente";
-}
-
-function ppfIsDataImage(value = "") {
-  return typeof value === "string" && value.startsWith("data:image");
-}
-
-function ppfLooksLikeImageUrl(value = "") {
-  return typeof value === "string" && value && !ppfIsDataImage(value);
-}
-
-async function uploadPatientPhotoToStorage(file, nickname = "") {
-  if (!file) return "";
-
-  const status = document.getElementById("photoUploadStatus");
-  if (status) status.textContent = "Subiendo foto...";
-
-  const client = ppfGetSupabaseClientForStorage();
-  if (!client) {
-    if (status) status.textContent = "Supabase Storage no está disponible.";
-    throw new Error("Supabase Storage no está disponible.");
-  }
-
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const safeNick = ppfSlugFileName(nickname || document.getElementById("nickname")?.value || "paciente");
-  const path = `${safeNick}/${safeNick}-${Date.now()}.${ext}`;
-
-  const { error } = await client
-    .storage
-    .from("patient-photos")
-    .upload(path, file, {
-      cacheControl: "3600",
-      upsert: true,
-      contentType: file.type || "image/jpeg"
-    });
-
-  if (error) {
-    if (status) status.textContent = "Error subiendo foto.";
-    throw error;
-  }
-
-  const { data } = client.storage.from("patient-photos").getPublicUrl(path);
-  const publicUrl = data?.publicUrl || "";
-
-  if (status) status.textContent = publicUrl ? "Foto subida correctamente." : "Foto subida.";
-  return publicUrl;
-}
-
-async function uploadSelectedPatientPhotoOnly() {
-  const input = document.getElementById("foto");
-  const file = input?.files?.[0];
-  const nickname = document.getElementById("nickname")?.value.trim() || editingPatientNickname || "";
-
-  if (!file) {
-    alert("Primero selecciona una foto.");
-    return "";
-  }
-
-  if (!nickname) {
-    alert("Escribe el nickname antes de subir la foto.");
-    return "";
-  }
-
-  try {
-    const publicUrl = await uploadPatientPhotoToStorage(file, nickname);
-    currentPhoto = publicUrl;
-    paintPatientPhotoPreview(publicUrl);
-    if (input) input.value = "";
-    return publicUrl;
-  } catch (error) {
-    console.error(error);
-    alert("No se pudo subir la foto a Supabase Storage.");
-    return "";
-  }
-}
-
-async function readPatientPhotoForSubmit(nickname = "") {
-  const input = document.getElementById("foto");
-  const file = input?.files?.[0];
-
-  if (file) {
-    return await uploadPatientPhotoToStorage(file, nickname || document.getElementById("nickname")?.value || editingPatientNickname || "paciente");
-  }
-
-  const preview = document.getElementById("photoPreview");
-  const previewSrc = preview?.getAttribute("src") || "";
-
-  if (ppfLooksLikeImageUrl(previewSrc)) return previewSrc;
-  if (ppfLooksLikeImageUrl(currentPhoto)) return currentPhoto;
-
-  return "";
+function readPatientPhotoForSubmit() {
+  return Promise.resolve(normalizePatientPhotoPath(document.getElementById("foto")?.value || currentPhoto || ""));
 }
 
 function paintPatientPhotoPreview(photo = "") {
   const preview = document.getElementById("photoPreview");
   const placeholder = document.getElementById("photoPlaceholder");
 
-  currentPhoto = photo || "";
+  currentPhoto = normalizePatientPhotoPath(photo || "");
 
   if (!preview || !placeholder) return;
 
@@ -898,11 +782,6 @@ function paintPatientPhotoPreview(photo = "") {
   if (typeof updateRemovePhotoButton === "function") updateRemovePhotoButton();
 }
 
-function getPatientPhotoSafe(patient) {
-  if (!patient) return "";
-  return patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || "";
-}
-
 function bindPatientForm() {
   const form = document.getElementById("patientForm");
   const photoInput = document.getElementById("foto");
@@ -912,7 +791,6 @@ function bindPatientForm() {
   const submitBtn = document.getElementById("patientSubmitBtn");
   const cancelBtn = document.getElementById("cancelEditBtn");
   const removePhotoBtn = document.getElementById("removePatientPhotoBtn");
-  const uploadPhotoBtn = document.getElementById("uploadPatientPhotoBtn");
 
   setTodayIfEmpty("fechaAlta");
   renderPatientList();
@@ -921,23 +799,12 @@ function bindPatientForm() {
   if (cancelBtn) cancelBtn.addEventListener("click", resetPatientFormState);
 
   if (photoInput) {
-    photoInput.addEventListener("change", async () => {
-      const file = photoInput.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => paintPatientPhotoPreview(reader.result || "");
-      reader.readAsDataURL(file);
-      const status = document.getElementById("photoUploadStatus");
-      if (status) status.textContent = "Foto seleccionada. Se subirá al guardar paciente.";
-    });
-  }
-
-  if (uploadPhotoBtn) {
-    uploadPhotoBtn.addEventListener("click", async event => {
-      event.preventDefault();
-      event.stopPropagation();
-      await uploadSelectedPatientPhotoOnly();
-    });
+    const updatePhotoPreviewFromText = async () => {
+      const photo = await readPatientPhotoForSubmit();
+      paintPatientPhotoPreview(photo);
+    };
+    photoInput.addEventListener("input", updatePhotoPreviewFromText);
+    photoInput.addEventListener("change", updatePhotoPreviewFromText);
   }
 
   if (removePhotoBtn) {
@@ -946,8 +813,6 @@ function bindPatientForm() {
       event.stopPropagation();
       currentPhoto = "";
       if (photoInput) photoInput.value = "";
-      const status = document.getElementById("photoUploadStatus");
-      if (status) status.textContent = "";
       paintPatientPhotoPreview("");
     });
   }
@@ -966,6 +831,8 @@ function bindPatientForm() {
   const savePatient = async event => {
     if (event) event.preventDefault();
 
+    const photoToSave = await readPatientPhotoForSubmit();
+
     const peso = Number(document.getElementById("peso")?.value || 0);
     const alturaCm = Number(document.getElementById("altura")?.value || 0);
     const alturaM = alturaCm / 100;
@@ -974,14 +841,6 @@ function bindPatientForm() {
     const nombre = document.getElementById("nombre")?.value.trim() || "";
     const nickname = document.getElementById("nickname")?.value.trim() || "";
     const passwordValue = document.getElementById("accessPassword")?.value.trim() || "";
-    let photoToSave = "";
-    try {
-      photoToSave = await readPatientPhotoForSubmit(nickname);
-    } catch (error) {
-      console.error(error);
-      alert("No se pudo subir la foto. El paciente no se ha guardado para evitar perder datos.");
-      return;
-    }
 
     if (!nombre || !nickname) {
       alert("Nombre y nickname son obligatorios.");
@@ -1050,34 +909,22 @@ function bindPatientForm() {
         ));
       }
 
-      // Confirmación al final, después de sincronizar con Supabase.
+      alert("Paciente actualizado correctamente.");
     } else {
       patients.push(newPatient);
-      // Confirmación al final, después de sincronizar con Supabase.
+      alert("Paciente guardado correctamente.");
     }
 
     localStorage.setItem("patients", JSON.stringify(patients));
+    pmPushPatientsToCloud();
     localStorage.setItem("histories", JSON.stringify(histories));
     localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
     localStorage.setItem("sessions", JSON.stringify(sessions));
-
-    if (window.PPF_SUPABASE_READY) {
-      try { await window.PPF_SUPABASE_READY; } catch (_) {}
-    }
-
-    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-      const ok = await window.PPF_SUPABASE.pushKey("patients");
-      if (!ok) {
-        alert("Paciente guardado localmente, pero no se pudo confirmar la sincronización con Supabase. Revisa conexión antes de refrescar.");
-        return;
-      }
-    }
 
     currentPhoto = "";
     resetPatientFormState();
     updateCounters();
     renderPatientList();
-    alert(editingPatientNickname ? "Paciente actualizado y sincronizado correctamente." : "Paciente guardado y sincronizado correctamente.");
   };
 
   form.onsubmit = savePatient;
@@ -1433,20 +1280,20 @@ const patientHTML = `
 
       <div>
         <label>Foto del paciente</label>
-        <div class="photo-box">
+        <div class="photo-box photo-box-url">
           <button class="photo-remove-btn" type="button" id="removePatientPhotoBtn" title="Eliminar foto">✕</button>
-          <label class="photo-label">
-            <input id="foto" type="file" accept="image/*" />
+          <div class="photo-label photo-url-preview">
             <div class="photo-placeholder" id="photoPlaceholder">
-              <strong>Seleccionar foto</strong>
-              <span>Imagen del paciente</span>
+              <strong>Ruta foto</strong>
+              <span>Ej: troya13.jpg</span>
             </div>
             <img id="photoPreview" class="photo-preview" alt="Vista previa" />
-          </label>
+          </div>
         </div>
-        <button class="photo-upload-btn" type="button" id="uploadPatientPhotoBtn">⬆ Subir foto</button>
-        <small class="photo-upload-status" id="photoUploadStatus"></small>
-<div class="imc-panel">
+        <div class="photo-url-field">
+          <span>fotos/</span>
+          <input id="foto" type="text" placeholder="troya13.jpg" autocomplete="off" />
+        </div><div class="imc-panel">
           <span>IMC automático</span>
           <strong id="imcValue">-</strong>
         </div>
@@ -2059,7 +1906,7 @@ function bindSessionsForm() {
     }
 
     card.innerHTML = `
-      ${patient.foto ? `<img src="${patient.foto}" alt="${patient.nombre}">` : `<div class="session-selected-avatar">${patient.nombre.charAt(0).toUpperCase()}</div>`}
+      ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="session-selected-avatar">${patient.nombre.charAt(0).toUpperCase()}</div>`}
       <div>
         <strong>${patient.nombre}</strong>
         <span>@${patient.nickname}</span>
@@ -2247,40 +2094,105 @@ function bindSessionsForm() {
 }
 
 
-function pmFormatUserDate(value) {
-  if (!value) return "Nunca";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Nunca";
-  return date.toLocaleString("es-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
+
+function pmReadJson(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "null");
+    return value ?? fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function pmSessionPatientKey(session = {}) {
+  return String(session.patientNickname || session.nickname || session.patient || session.patientId || session.cliente || session.clientNickname || "").trim();
+}
+
+function pmSessionNumber(session = {}) {
+  return Number(session.numero || session.numeroSesion || session.sessionNumber || 0);
+}
+
+function pmIsSessionCompleted(session = {}, completed = []) {
+  const sid = String(session.id || session.sessionId || "");
+  const snum = pmSessionNumber(session);
+  const spatient = pmSessionPatientKey(session).toLowerCase();
+  return completed.some(item => {
+    const cid = String(item.sessionId || item.id || "");
+    const cpatient = String(item.patientNickname || item.nickname || item.patient || "").trim().toLowerCase();
+    const cnum = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
+    return (sid && cid && sid === cid) || (spatient && cpatient && spatient === cpatient && snum && cnum && snum === cnum);
   });
 }
 
-function pmGetUserStatsForPatient(patient = {}) {
-  let stats = {};
-  try { stats = JSON.parse(localStorage.getItem("userStats") || "{}"); } catch (_) { stats = {}; }
-  const key = patient.nickname || patient.username || patient.id || "";
-  return stats[key] || {};
+function pmSortSessionsLatest(list = []) {
+  return list.slice().sort((a, b) => {
+    const fa = String(a.fecha || "");
+    const fb = String(b.fecha || "");
+    if (fa !== fb) return fb.localeCompare(fa);
+    return pmSessionNumber(b) - pmSessionNumber(a);
+  });
 }
 
-function pmIsPatientOnline(stat = {}) {
-  if (!stat || !stat.online) return false;
+function pmSessionMicroLabel(session = {}) {
+  const micro = session.microciclo || session.micro || session.microcycle || pmSessionNumber(session) || "-";
+  return `Micro ${micro} · ${session.fecha || "-"}`;
+}
 
-  const lastSeen = new Date(stat.lastSeen || stat.lastLogin || 0).getTime();
-  const lastLogout = new Date(stat.lastLogout || 0).getTime();
+function pmSessionAgenda() {
+  const allSessions = pmReadJson("sessions", []);
+  const completed = pmReadJson("completedSessions", []);
+  const pending = [];
+  const done = [];
 
-  // Si el cierre de sesión es igual o posterior al último latido/login, siempre desconectado.
-  if (Number.isFinite(lastLogout) && Number.isFinite(lastSeen) && lastLogout >= lastSeen) return false;
+  patients.forEach(patient => {
+    const nick = String(patient.nickname || "").trim().toLowerCase();
+    const patientSessions = allSessions.filter(s => pmSessionPatientKey(s).toLowerCase() === nick);
+    const patientPending = pmSortSessionsLatest(patientSessions.filter(s => !pmIsSessionCompleted(s, completed)))[0];
+    if (patientPending) pending.push({ patient, session: patientPending });
 
-  // Si no hay latido válido, no lo damos por conectado para evitar falsos positivos.
-  if (!Number.isFinite(lastSeen)) return false;
+    const patientDone = pmSortSessionsLatest(patientSessions.filter(s => pmIsSessionCompleted(s, completed)))[0];
+    if (patientDone) done.push({ patient, session: patientDone });
+  });
 
-  // Presencia real: si no llega latido reciente, lo marcamos desconectado.
-  return (Date.now() - lastSeen) < (90 * 1000);
+  return { pending, done };
+}
+
+function pmFormatLastLogin(value) {
+  if (!value) return "Nunca";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Nunca";
+  return date.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+}
+
+function pmSetDashboardKpis(mode = "paciente") {
+  const cards = document.querySelectorAll(".dashboard-grid .stat-card");
+  if (cards.length < 3) return;
+  const setCard = (index, label, main, items = []) => {
+    const card = cards[index];
+    const span = card.querySelector("span");
+    const strong = card.querySelector("strong");
+    const oldList = card.querySelector(".kpi-mini-list");
+    if (oldList) oldList.remove();
+    if (span) span.textContent = label;
+    if (strong) strong.textContent = main;
+    if (items.length) {
+      const list = document.createElement("div");
+      list.className = "kpi-mini-list";
+      list.innerHTML = items.slice(0, 4).map(item => `<div>${item}</div>`).join("");
+      card.appendChild(list);
+    }
+  };
+
+  if (mode === "usuarios") {
+    const agenda = pmSessionAgenda();
+    setCard(0, "Pacientes activos", patients.length);
+    setCard(1, "Sesiones pendientes", agenda.pending.length, agenda.pending.map(item => `${item.patient.nombre} ${pmSessionMicroLabel(item.session)}`));
+    setCard(2, "Sesiones terminadas", agenda.done.length, agenda.done.map(item => `${item.patient.nombre} ${pmSessionMicroLabel(item.session)}`));
+  } else {
+    setCard(0, "Pacientes activos", patients.length);
+    setCard(1, "Registros historial", histories.length);
+    setCard(2, "Archivos guardados", patientFiles.length);
+  }
 }
 
 function renderUsersPage() {
@@ -2288,25 +2200,28 @@ function renderUsersPage() {
     return `<p>No hay pacientes creados todavía.</p>`;
   }
 
+  const stats = pmReadJson("userStats", {});
+
   return `
-    <div class="users-test-list">
+    <div class="users-test-list users-access-list">
       ${patients.map(patient => {
-        const stat = pmGetUserStatsForPatient(patient);
-        const online = pmIsPatientOnline(stat);
-        const lastLoginText = pmFormatUserDate(stat.lastLogin);
+        const key = patient.nickname || "";
+        const st = stats[key] || {};
+        const online = Boolean(st.online);
+        const lastLogin = pmFormatLastLogin(st.lastLogin);
         return `
-        <div class="user-test-card" style="display:flex;align-items:center;gap:14px;">
-          ${(getPatientPhotoSafe(patient) ? `<img class="patient-thumb" src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="patient-thumb">${patient.nombre.charAt(0).toUpperCase()}</div>`)
-          }
-          <div>
-            <strong>${patient.nombre}</strong>
-            <p>Accesos: ${stat.count || 0} · ${online ? "🟢 En línea" : "⚪ Desconectado"}</p>
+          <div class="user-test-card user-access-card">
+            ${(getPatientPhotoSafe(patient) ? `<img class="patient-thumb" src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="patient-thumb">${patient.nombre.charAt(0).toUpperCase()}</div>`)}
+            <div class="user-access-main">
+              <strong>${patient.nombre}</strong>
+              <p>Accesos: ${st.count || 0} · <span class="status-dot ${online ? "online" : "offline"}"></span> ${online ? "En línea" : "Desconectado"}</p>
+            </div>
+            <div class="user-last-login">
+              <span>Última conexión</span>
+              <strong>${lastLogin}</strong>
+            </div>
           </div>
-          <div class="user-last-login" style="margin-left:auto;text-align:right;color:#9fb2d8;font-size:.9rem;line-height:1.35;">
-            <span style="display:block;color:#22c55e;font-weight:800;">Última conexión</span>
-            <strong>${lastLoginText}</strong>
-          </div>
-        </div>`;
+        `;
       }).join("")}
     </div>
   `;
@@ -3421,7 +3336,7 @@ function renderGraphProDashboard(patientNickname = "") {
         <h2>${patient ? patient.nombre : "Todos los pacientes"}</h2>
         <p>Vista global de distribución, volumen, ejercicios y carga externa.</p>
       </div>
-      ${patient?.foto ? `<img src="${patient.foto}" alt="${patient.nombre}">` : `<div class="graph-pro-avatar">${patient ? patient.nombre.charAt(0).toUpperCase() : "PRO"}</div>`}
+      ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="graph-pro-avatar">${patient ? patient.nombre.charAt(0).toUpperCase() : "PRO"}</div>`}
     </section>
 
     <section class="periodicity-kpi-grid graph-pro-kpis">
@@ -3916,6 +3831,216 @@ function getValuationAttempts(test = {}) {
     .filter(value => value !== null);
 }
 
+function getPatientByNicknameSafe(nickname = "") {
+  return patients.find(p => String(p.nickname || "") === String(nickname || ""));
+}
+
+function valuationPatientInfoHTML(nickname = "") {
+  const patient = getPatientByNicknameSafe(nickname);
+  if (!patient) return `<div class="valuation-selected-patient-card empty">Selecciona un paciente para ver su foto.</div>`;
+  const photo = getPatientPhotoSafe(patient);
+  const avatar = photo
+    ? `<img class="valuation-selected-photo" src="${escapeValuationHtml(photo)}" alt="${escapeValuationHtml(patient.nombre || patient.nickname || "Paciente")}" />`
+    : `<div class="valuation-selected-photo valuation-selected-initial">${escapeValuationHtml((patient.nombre || patient.nickname || "P").charAt(0).toUpperCase())}</div>`;
+  return `
+    <div class="valuation-selected-patient-card">
+      ${avatar}
+      <strong>${escapeValuationHtml(patient.nombre || patient.nickname || "Paciente")}</strong>
+      <span>@${escapeValuationHtml(patient.nickname || "-")}</span>
+    </div>
+  `;
+}
+
+function updateValuationSelectedPatientInfo() {
+  const box = document.getElementById("valuationSelectedPatientInfo");
+  if (!box) return;
+  const nickname = document.getElementById("valuationPatient")?.value || "";
+  box.innerHTML = valuationPatientInfoHTML(nickname);
+}
+
+function normalizeValuationTestName(value = "") {
+  return String(value || "").trim();
+}
+
+function getValuationTestNames(patientNickname = "") {
+  const names = new Set();
+  valoraciones
+    .filter(item => !patientNickname || item.patientNickname === patientNickname)
+    .forEach(item => (item.tests || []).forEach(test => {
+      const name = normalizeValuationTestName(test.nombre);
+      if (name) names.add(name);
+    }));
+  return [...names].sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function updateValuationPdfTestOptions() {
+  const patientSelect = document.getElementById("valuationPdfPatient");
+  const testSelect = document.getElementById("valuationPdfTest");
+  if (!patientSelect || !testSelect) return;
+  const names = getValuationTestNames(patientSelect.value || "");
+  testSelect.innerHTML = `<option value="">Todos los TEST</option>` + names.map(name => `<option value="${escapeValuationHtml(name)}">${escapeValuationHtml(name)}</option>`).join("");
+}
+
+function getSelectedValuationIds() {
+  return [...document.querySelectorAll(".valuation-select-check:checked")].map(input => input.value).filter(Boolean);
+}
+
+function setAllValuationChecks(checked) {
+  document.querySelectorAll(".valuation-select-check").forEach(input => { input.checked = checked; });
+}
+
+function buildValuationRowsForReport(items = [], testFilter = "") {
+  return items.flatMap(valuation =>
+    (valuation.tests || [])
+      .filter(valuationHasRegisteredData)
+      .filter(test => !testFilter || normalizeValuationTestName(test.nombre).toLowerCase() === normalizeValuationTestName(testFilter).toLowerCase())
+      .map((test, index) => `
+        <tr>
+          <td>${escapeValuationHtml(valuation.fecha || "-")}</td>
+          <td>${index + 1}</td>
+          <td>${escapeValuationHtml(test.nombre || "-")}</td>
+          <td>${escapeValuationHtml(test.intento1 || "-")}</td>
+          <td>${escapeValuationHtml(test.intento2 || "-")}</td>
+          <td>${escapeValuationHtml(test.intento3 || "-")}</td>
+          <td>${escapeValuationHtml(test.unidad || "")}</td>
+          <td>${escapeValuationHtml(test.observaciones || "-")}</td>
+        </tr>
+      `)
+  ).join("");
+}
+
+function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = "", includeAllPatientCharts = false }) {
+  const reportItems = (items || []).slice().sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  const rows = buildValuationRowsForReport(reportItems, testFilter);
+  if (!rows) {
+    alert("No hay datos registrados para generar este PDF.");
+    return;
+  }
+
+  const patientPhoto = patient ? getPatientPhotoSafe(patient) : "";
+  const photoHtml = patientPhoto ? `<img class="pdf-patient-photo" src="${escapeValuationHtml(patientPhoto)}" alt="${escapeValuationHtml(patient.nombre || patient.nickname || "Paciente")}">` : "";
+
+  let chartGroups = [];
+  if (includeAllPatientCharts && patient) {
+    chartGroups = getValuationPdfChartGroupsForPatient(patient.nickname)
+      .filter(group => !testFilter || normalizeValuationTestName(group.testName).toLowerCase() === normalizeValuationTestName(testFilter).toLowerCase());
+  }
+  const chartsHtml = chartGroups.length
+    ? `<div class="pdf-section-break"></div><h1 class="pdf-section-title">Gráficas de evolución</h1>${chartGroups.map(renderValuationPdfChart).join("")}`
+    : "";
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <title>${escapeValuationHtml(title)}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; background:#ffffff; }
+        .header { display:flex; justify-content:space-between; gap:18px; border-bottom: 3px solid #22c55e; padding-bottom: 14px; margin-bottom: 22px; align-items:flex-start; }
+        .brand { color: #16a34a; font-weight: 800; font-size: 14px; text-transform: uppercase; }
+        h1 { margin: 8px 0 4px; font-size: 26px; }
+        .meta { color: #475569; font-size: 14px; line-height:1.45; }
+        .pdf-patient-photo { width:84px; height:84px; border-radius:18px; object-fit:cover; border:2px solid #22c55e; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
+        th { background: #0f172a; color: #fff; text-align: left; padding: 9px; }
+        td { border: 1px solid #cbd5e1; padding: 8px; vertical-align: top; }
+        tr:nth-child(even) td { background: #f8fafc; }
+        .footer { margin-top: 24px; color: #64748b; font-size: 12px; }
+        .pdf-section-break { page-break-before: always; }
+        .pdf-section-title { margin-top: 0; color:#0f172a; }
+        .pdf-chart-card { page-break-inside: avoid; margin: 22px 0; padding: 18px; border: 1px solid #dbeafe; border-radius: 18px; background: #f8fafc; }
+        .pdf-chart-title { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom: 12px; }
+        .pdf-chart-title h2 { margin:0 0 4px; color:#0f172a; font-size:20px; }
+        .pdf-chart-title p { margin:0; color:#64748b; font-size:12px; font-weight:700; }
+        .pdf-chart-title strong { color:#15803d; font-size:18px; white-space:nowrap; }
+        .pdf-chart { width:100%; height:auto; display:block; background:#fff; border-radius:14px; border:1px solid #e2e8f0; }
+        .pdf-grid { stroke:#cbd5e1; stroke-width:1; stroke-dasharray:4 5; }
+        .pdf-axis { stroke:#94a3b8; stroke-width:1; }
+        .pdf-scale { fill:#64748b; font-size:11px; font-weight:700; }
+        .pdf-date { fill:#475569; font-size:11px; font-weight:700; }
+        .pdf-bar { fill:#22c55e; stroke:#16a34a; stroke-width:1; }
+        .pdf-mean-line { stroke:#2563eb; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
+        .pdf-mean-point { fill:#3b82f6; stroke:#eff6ff; stroke-width:2; }
+        .pdf-chart-summary { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:12px; }
+        .pdf-chart-summary div { padding:10px; border:1px solid #e2e8f0; border-radius:12px; background:#fff; }
+        .pdf-chart-summary span { display:block; color:#64748b; font-size:10px; font-weight:800; text-transform:uppercase; margin-bottom:5px; }
+        .pdf-chart-summary b { display:block; color:#0f172a; font-size:15px; }
+        .pdf-chart-summary small { color:#64748b; font-weight:700; }
+        @media print { body { padding: 18px; } .pdf-chart-card { break-inside: avoid; } }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div>
+          <div class="brand">P.M Preparador Físico Online</div>
+          <h1>${escapeValuationHtml(title)}</h1>
+          <div class="meta">${escapeValuationHtml(subtitle || "")}<br>${testFilter ? `<strong>TEST:</strong> ${escapeValuationHtml(testFilter)}` : ""}</div>
+        </div>
+        ${photoHtml}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th><th>#</th><th>Test</th><th>Intento 1</th><th>Intento 2</th><th>Intento 3</th><th>Registro</th><th>Observaciones cualitativas</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${chartsHtml}
+      <div class="footer">Documento generado automáticamente desde Valoraciones PRO.</div>
+    </body>
+    </html>
+  `;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("Permite ventanas emergentes para generar el PDF.");
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 700);
+}
+
+function generateSelectedValuationsPDF() {
+  const ids = getSelectedValuationIds();
+  if (!ids.length) {
+    alert("Selecciona una o varias valoraciones.");
+    return;
+  }
+  const items = valoraciones.filter(item => ids.includes(item.id));
+  const firstPatient = items.length ? getPatientByNicknameSafe(items[0].patientNickname) : null;
+  openValuationPdfWindow({
+    title: "Valoraciones seleccionadas",
+    subtitle: `${items.length} valoración/es seleccionada/s`,
+    patient: firstPatient,
+    items,
+    includeAllPatientCharts: false
+  });
+}
+
+function generatePatientTestValuationsPDF() {
+  const patientNickname = document.getElementById("valuationPdfPatient")?.value || document.getElementById("valuationsFilter")?.value || "";
+  if (!patientNickname) {
+    alert("Selecciona un paciente para generar el PDF por paciente/TEST.");
+    return;
+  }
+  const testFilter = document.getElementById("valuationPdfTest")?.value || "";
+  const patient = getPatientByNicknameSafe(patientNickname);
+  const items = valoraciones.filter(item => item.patientNickname === patientNickname);
+  openValuationPdfWindow({
+    title: testFilter ? `Informe ${testFilter}` : "Informe completo de valoraciones",
+    subtitle: patient ? `${patient.nombre} · @${patient.nickname}` : patientNickname,
+    patient,
+    items,
+    testFilter,
+    includeAllPatientCharts: true
+  });
+}
+
 function getValuationChartGroups(filterNickname = "") {
   const groups = {};
 
@@ -4081,12 +4206,11 @@ function renderValuationMiniChart(group) {
           <strong>${escapeValuationHtml(String(last.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
           <small>${escapeValuationHtml(last.fecha)}</small>
         </div>
-        <div class="trend-kpi ${trend>0?"trend-up":trend<0?"trend-down":"trend-flat"}">
+        <div class="valuation-trend-kpi ${trend > 0 ? "trend-up" : trend < 0 ? "trend-down" : "trend-flat"}">
           <span>Tendencia</span>
-          <b class="trend-arrow">${trend>0?"↑":trend<0?"↓":"→"}</b>
+          <b class="valuation-trend-arrow" title="${trend > 0 ? "Ascendente" : trend < 0 ? "Descendente" : "Estable"}">${trend > 0 ? "↑" : trend < 0 ? "↓" : "→"}</b>
           <strong>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
           <small>${escapeValuationHtml(trendPctLabel)}</small>
-          <small class="trend-date">${escapeValuationHtml(last.fecha)}</small>
         </div>
       </div>
 
@@ -4177,13 +4301,23 @@ function renderValuationsList(filterNickname = "") {
 
   list.innerHTML = visible.map(item => {
     const patient = patients.find(p => p.nickname === item.patientNickname);
+    const photo = getPatientPhotoSafe(patient);
     return `
-      <article class="valuation-card">
+      <article class="valuation-card valuation-card-selectable">
         <div class="history-card-header">
-          <span class="history-type">Valoración</span>
+          <label class="valuation-select-row">
+            <input class="valuation-select-check" type="checkbox" value="${escapeValuationHtml(item.id)}" />
+            <span class="history-type">Valoración</span>
+          </label>
           <span class="history-date">${escapeValuationHtml(item.fecha || "-")}</span>
         </div>
-        <h3>${escapeValuationHtml(patient ? patient.nombre : item.patientNickname)}</h3>
+        <div class="valuation-card-patient-line">
+          ${photo ? `<img class="valuation-card-photo" src="${escapeValuationHtml(photo)}" alt="${escapeValuationHtml(patient?.nombre || item.patientNickname || "Paciente")}">` : ""}
+          <div>
+            <h3>${escapeValuationHtml(patient ? patient.nombre : item.patientNickname)}</h3>
+            <small>@${escapeValuationHtml(item.patientNickname || "-")}</small>
+          </div>
+        </div>
         <div class="valuation-card-tests">
           ${(item.tests || []).map((test, index) => `
             <div class="valuation-card-test">
@@ -4203,8 +4337,6 @@ function renderValuationsList(filterNickname = "") {
   }).join("");
 }
 
-
-
 async function pmRefreshValoracionesFromSupabase() {
   try {
     if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
@@ -4220,43 +4352,13 @@ async function pmRefreshValoracionesFromSupabase() {
   }
 }
 
-
-function updateValuationPatientPhotoCard() {
-  const select = document.getElementById("valuationPatient");
-  const card = document.getElementById("valuationPatientPhotoCard");
-  if (!select || !card) return;
-
-  const patient = patients.find(p => p.nickname === select.value);
-  const photo = getPatientPhotoSafe(patient);
-
-  if (!patient) {
-    card.innerHTML = `
-      <div class="patient-thumb">?</div>
-      <div><strong>Selecciona paciente</strong><span>Foto del paciente</span></div>
-    `;
-    return;
-  }
-
-  card.innerHTML = `
-    ${photo ? `<img class="patient-thumb" src="${photo}" alt="${patient.nombre}">` : `<div class="patient-thumb">${(patient.nombre || "?").charAt(0).toUpperCase()}</div>`}
-    <strong>${patient.nombre || patient.nickname}</strong>
-    <span>${patient.nickname || ""}</span>
-  `;
-}
-
 function bindValoracionesForm() {
   const form = document.getElementById("valuationsForm");
   const testsArea = document.getElementById("valuationTestsArea");
   const addBtn = document.getElementById("addValuationTestBtn");
   const filter = document.getElementById("valuationsFilter");
-  const patientSelect = document.getElementById("valuationPatient");
 
   if (!form || !testsArea) return;
-
-  if (patientSelect) {
-    patientSelect.addEventListener("change", updateValuationPatientPhotoCard);
-    updateValuationPatientPhotoCard();
-  }
 
   setTodayIfEmpty("valuationDate");
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
@@ -4294,6 +4396,20 @@ function bindValoracionesForm() {
     renderValuationsList(filter.value);
     renderValuationCharts(filter.value);
   });
+
+  document.getElementById("valuationPatient")?.addEventListener("change", updateValuationSelectedPatientInfo);
+  updateValuationSelectedPatientInfo();
+
+  const pdfPatient = document.getElementById("valuationPdfPatient");
+  if (pdfPatient) {
+    pdfPatient.addEventListener("change", updateValuationPdfTestOptions);
+    updateValuationPdfTestOptions();
+  }
+
+  document.getElementById("valuationSelectAllBtn")?.addEventListener("click", () => setAllValuationChecks(true));
+  document.getElementById("valuationClearSelectionBtn")?.addEventListener("click", () => setAllValuationChecks(false));
+  document.getElementById("valuationPdfSelectedBtn")?.addEventListener("click", generateSelectedValuationsPDF);
+  document.getElementById("valuationPdfPatientTestBtn")?.addEventListener("click", generatePatientTestValuationsPDF);
 
   form.addEventListener("submit", event => {
     event.preventDefault();
@@ -4519,133 +4635,19 @@ function renderValuationPdfChart(group) {
 function generateValuationPDF(id) {
   const item = valoraciones.find(value => value.id === id);
   if (!item) return;
-
   const tests = (item.tests || []).filter(valuationHasRegisteredData);
-
   if (!tests.length) {
     alert("Esta valoración no tiene datos registrados para generar PDF.");
     return;
   }
-
   const patient = patients.find(p => p.nickname === item.patientNickname);
-  const patientName = patient ? patient.nombre : item.patientNickname;
-
-  const patientValuations = valoraciones
-    .filter(value => value.patientNickname === item.patientNickname)
-    .slice()
-    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-
-  const rows = patientValuations.flatMap(valuation =>
-    (valuation.tests || [])
-      .filter(valuationHasRegisteredData)
-      .map((test, index) => `
-        <tr>
-          <td>${escapeValuationHtml(valuation.fecha || "-")}</td>
-          <td>${index + 1}</td>
-          <td>${escapeValuationHtml(test.nombre || "-")}</td>
-          <td>${escapeValuationHtml(test.intento1 || "-")}</td>
-          <td>${escapeValuationHtml(test.intento2 || "-")}</td>
-          <td>${escapeValuationHtml(test.intento3 || "-")}</td>
-          <td>${escapeValuationHtml(test.unidad || "")}</td>
-          <td>${escapeValuationHtml(test.observaciones || "-")}</td>
-        </tr>
-      `)
-  ).join("");
-
-  const chartGroups = getValuationPdfChartGroupsForPatient(item.patientNickname);
-  const chartsHtml = chartGroups.length
-    ? `<div class="pdf-section-break"></div><h1 class="pdf-section-title">Gráficas de evolución por test</h1>${chartGroups.map(renderValuationPdfChart).join("")}`
-    : "";
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8" />
-      <title>Valoraciones ${escapeValuationHtml(patientName)}</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; background:#ffffff; }
-        .header { border-bottom: 3px solid #22c55e; padding-bottom: 14px; margin-bottom: 22px; }
-        .brand { color: #16a34a; font-weight: 800; font-size: 14px; text-transform: uppercase; }
-        h1 { margin: 8px 0 4px; font-size: 26px; }
-        .meta { color: #475569; font-size: 14px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
-        th { background: #0f172a; color: #fff; text-align: left; padding: 9px; }
-        td { border: 1px solid #cbd5e1; padding: 8px; vertical-align: top; }
-        tr:nth-child(even) td { background: #f8fafc; }
-        .footer { margin-top: 24px; color: #64748b; font-size: 12px; }
-
-        .pdf-section-break { page-break-before: always; }
-        .pdf-section-title { margin-top: 0; color:#0f172a; }
-        .pdf-chart-card { page-break-inside: avoid; margin: 22px 0; padding: 18px; border: 1px solid #dbeafe; border-radius: 18px; background: #f8fafc; }
-        .pdf-chart-title { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom: 12px; }
-        .pdf-chart-title h2 { margin:0 0 4px; color:#0f172a; font-size:20px; }
-        .pdf-chart-title p { margin:0; color:#64748b; font-size:12px; font-weight:700; }
-        .pdf-chart-title strong { color:#15803d; font-size:18px; white-space:nowrap; }
-        .pdf-chart { width:100%; height:auto; display:block; background:#fff; border-radius:14px; border:1px solid #e2e8f0; }
-        .pdf-grid { stroke:#cbd5e1; stroke-width:1; stroke-dasharray:4 5; }
-        .pdf-axis { stroke:#94a3b8; stroke-width:1; }
-        .pdf-scale { fill:#64748b; font-size:11px; font-weight:700; }
-        .pdf-date { fill:#475569; font-size:11px; font-weight:700; }
-        .pdf-bar { fill:#22c55e; stroke:#16a34a; stroke-width:1; }
-        .pdf-mean-line { stroke:#2563eb; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
-        .pdf-mean-point { fill:#3b82f6; stroke:#eff6ff; stroke-width:2; }
-        .pdf-chart-summary { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:12px; }
-        .pdf-chart-summary div { padding:10px; border:1px solid #e2e8f0; border-radius:12px; background:#fff; }
-        .pdf-chart-summary span { display:block; color:#64748b; font-size:10px; font-weight:800; text-transform:uppercase; margin-bottom:5px; }
-        .pdf-chart-summary b { display:block; color:#0f172a; font-size:15px; }
-        .pdf-chart-summary small { color:#64748b; font-weight:700; }
-
-        @media print {
-          body { padding: 18px; }
-          .pdf-chart-card { break-inside: avoid; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <div class="brand">P.M Preparador Físico Online</div>
-        <h1>Informe completo de valoraciones</h1>
-        <div class="meta"><strong>Paciente:</strong> ${escapeValuationHtml(patientName)} · <strong>Generado desde valoración:</strong> ${escapeValuationHtml(item.fecha || "-")}</div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>#</th>
-            <th>Test</th>
-            <th>Intento 1</th>
-            <th>Intento 2</th>
-            <th>Intento 3</th>
-            <th>Registro</th>
-            <th>Observaciones cualitativas</th>
-          </tr>
-        </thead>
-        <tbody>${rows || `<tr><td colspan="8">No hay datos registrados.</td></tr>`}</tbody>
-      </table>
-
-      ${chartsHtml}
-
-      <div class="footer">Documento generado automáticamente. Incluye todos los datos registrados del paciente y las gráficas numéricas agrupadas por test.</div>
-    </body>
-    </html>
-  `;
-
-  const win = window.open("", "_blank");
-  if (!win) {
-    alert("Permite ventanas emergentes para generar el PDF.");
-    return;
-  }
-
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-
-  setTimeout(() => {
-    win.print();
-  }, 650);
+  openValuationPdfWindow({
+    title: "Informe de valoración",
+    subtitle: `${patient ? `${patient.nombre} · @${patient.nickname}` : item.patientNickname} · ${item.fecha || "-"}`,
+    patient,
+    items: [item],
+    includeAllPatientCharts: false
+  });
 }
 
 
@@ -4672,12 +4674,11 @@ const sections = {
   },
   usuarios: {
     title: "Usuarios",
-    html: () => `
+    html: `
       <h2>Usuarios</h2>
       <p>Control de accesos y estado de conexión de clientes.</p>
-      <div id="usersListArea">${renderUsersPage()}</div>
-    `,
-    afterRender: pmPullUsersStatsAndPaint
+      ${renderUsersPage()}
+    `
   },
   historial: { title: "Historial", html: historialHTML, afterRender: bindHistoryForm },
   archivos: { title: "Archivos", html: archivosHTML, afterRender: bindFilesForm },
@@ -4964,25 +4965,19 @@ const sections = {
       <p>Registra pruebas físicas con intentos, unidad de registro y observaciones cualitativas por test.</p>
 
       <form class="patient-form valuation-form" id="valuationsForm">
-        <div class="valuation-top-grid">
+        <div class="valuation-top-row">
           <div>
             <label for="valuationPatient">Selecciona paciente</label>
             <select id="valuationPatient" required>${patientOptions()}</select>
           </div>
 
-          <div>
+          <div class="valuation-date-field">
             <label for="valuationDate">Fecha</label>
             <input id="valuationDate" type="date" required />
           </div>
-
-          <div class="valuation-patient-photo-card" id="valuationPatientPhotoCard">
-            <div class="patient-thumb">?</div>
-            <div>
-              <strong>Selecciona paciente</strong>
-              <span>Foto del paciente</span>
-            </div>
-          </div>
         </div>
+
+        <div id="valuationSelectedPatientInfo" class="valuation-selected-patient-wrap"></div>
 
         <div class="valuation-tests-area" id="valuationTestsArea">
           ${valuationTestRow(1)}
@@ -5001,6 +4996,28 @@ const sections = {
           ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
         </select>
       </div>
+
+      <section class="valuation-pdf-toolbar patient-form">
+        <div>
+          <h3>PDF Valoraciones PRO</h3>
+          <p>Genera informes individuales, seleccionados o por paciente y TEST.</p>
+        </div>
+        <div class="valuation-pdf-actions">
+          <button class="secondary-btn" id="valuationSelectAllBtn" type="button">Seleccionar visibles</button>
+          <button class="secondary-btn" id="valuationClearSelectionBtn" type="button">Limpiar selección</button>
+          <button class="primary-btn" id="valuationPdfSelectedBtn" type="button">PDF seleccionadas</button>
+        </div>
+        <div class="valuation-pdf-filters">
+          <select id="valuationPdfPatient">
+            <option value="">Paciente para PDF</option>
+            ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
+          </select>
+          <select id="valuationPdfTest">
+            <option value="">Todos los TEST</option>
+          </select>
+          <button class="primary-btn" id="valuationPdfPatientTestBtn" type="button">PDF paciente / TEST</button>
+        </div>
+      </section>
 
       <section class="valuation-charts-panel">
         <div class="module-panel-header">
@@ -5021,33 +5038,11 @@ const sections = {
 function renderSection(key) {
   const section = sections[key];
   sectionTitle.textContent = section.title;
-  contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
+  contentArea.innerHTML = section.html;
+  pmSetDashboardKpis(key === "usuarios" ? "usuarios" : "paciente");
   if (section.afterRender) section.afterRender();
-  if (typeof updateCounters === "function") updateCounters();
+  pmSetDashboardKpis(key === "usuarios" ? "usuarios" : "paciente");
 }
-
-
-async function pmPullUsersStatsAndPaint() {
-  try {
-    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pull === "function") {
-      await window.PPF_SUPABASE.pull();
-    }
-  } catch (_) {}
-
-  const area = document.getElementById("usersListArea");
-  if (area) area.innerHTML = renderUsersPage();
-}
-
-async function pmRefreshUsersOnlinePanel() {
-  const activeNav = document.querySelector(".nav-item.active");
-  if (!activeNav || activeNav.dataset.section !== "usuarios") return;
-  await pmPullUsersStatsAndPaint();
-}
-setInterval(pmRefreshUsersOnlinePanel, 10000);
-window.addEventListener("focus", pmRefreshUsersOnlinePanel);
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) pmRefreshUsersOnlinePanel();
-});
 
 navItems.forEach(item => {
   item.addEventListener("click", () => {
@@ -5209,13 +5204,9 @@ function pmRefreshAdminRuntimeData() {
   const h = document.getElementById("historyCounter");
   const f = document.getElementById("fileCounter");
 
-  if (typeof pmRenderSessionAgendaKpis === "function") {
-    pmRenderSessionAgendaKpis();
-  } else {
-    if (p) p.textContent = patients.length;
-    if (h) h.textContent = histories.length;
-    if (f) f.textContent = patientFiles.length;
-  }
+  if (p) p.textContent = patients.length;
+  if (h) h.textContent = histories.length;
+  if (f) f.textContent = patientFiles.length;
 }
 
 function pmBindAdminHeaderLogout() {
@@ -5249,181 +5240,6 @@ if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "func
 
 
 
-// PM AGENDA KPIs: sesiones pendientes y terminadas por cliente
-function pmAgendaSafeJSON(key, fallback) {
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
-    return Array.isArray(fallback) && !Array.isArray(value) ? fallback : value;
-  } catch (_) {
-    return fallback;
-  }
-}
-
-function pmAgendaNormalize(value = "") {
-  return String(value || "").trim().toLowerCase();
-}
-
-function pmAgendaPatientKey(patient = {}) {
-  return pmAgendaNormalize(patient.nickname || patient.id || patient.nombre || patient.name || "");
-}
-
-function pmAgendaSessionPatientKey(session = {}) {
-  return pmAgendaNormalize(
-    session.patientNickname ||
-    session.nickname ||
-    session.patient ||
-    session.patientId ||
-    session.cliente ||
-    session.clientNickname ||
-    session.userNickname ||
-    ""
-  );
-}
-
-function pmAgendaSessionNumber(session = {}) {
-  return Number(session.numero || session.numeroSesion || session.sessionNumber || session.number || 0) || 0;
-}
-
-function pmAgendaSessionDateValue(session = {}) {
-  const raw = session.fecha || session.date || session.createdAt || session.updatedAt || "";
-  const t = Date.parse(raw);
-  return Number.isFinite(t) ? t : 0;
-}
-
-function pmAgendaMicroLabel(session = {}) {
-  const micro = session.microciclo || session.micro || session.microcycle || session.microcicloNumber || "-";
-  return `Micro ${micro}`;
-}
-
-function pmAgendaSessionLabel(session = {}) {
-  return `${pmAgendaMicroLabel(session)} · ${session.fecha || session.date || "Sin fecha"}`;
-}
-
-function pmAgendaIsCompleted(session, completedSessions = []) {
-  const sid = String(session?.id || session?.sessionId || "");
-  const sPatient = pmAgendaSessionPatientKey(session);
-  const sNumber = pmAgendaSessionNumber(session);
-
-  return completedSessions.some(item => {
-    const itemSid = String(item?.sessionId || item?.id || "");
-    if (sid && itemSid && sid === itemSid) return true;
-
-    const itemPatient = pmAgendaNormalize(item?.patientNickname || item?.nickname || item?.patient || item?.patientId || item?.cliente || "");
-    const itemNumber = Number(item?.numero || item?.numeroSesion || item?.sessionNumber || item?.number || 0) || 0;
-    return Boolean(sPatient && itemPatient && sPatient === itemPatient && sNumber && itemNumber && sNumber === itemNumber);
-  });
-}
-
-function pmAgendaLatestByPatient(list = []) {
-  const map = new Map();
-  list.forEach(session => {
-    const key = pmAgendaSessionPatientKey(session);
-    if (!key) return;
-    const previous = map.get(key);
-    const currentScore = pmAgendaSessionDateValue(session) * 10000 + pmAgendaSessionNumber(session);
-    const previousScore = previous ? pmAgendaSessionDateValue(previous) * 10000 + pmAgendaSessionNumber(previous) : -1;
-    if (!previous || currentScore >= previousScore) map.set(key, session);
-  });
-  return map;
-}
-
-function pmAgendaBuildRows(type = "pending") {
-  const patientsList = pmAgendaSafeJSON("patients", []);
-  const sessionsList = pmAgendaSafeJSON("sessions", []);
-  const completedList = pmAgendaSafeJSON("completedSessions", []);
-  const completed = [];
-  const pending = [];
-
-  sessionsList.forEach(session => {
-    if (!session || session.deleted) return;
-    if (pmAgendaIsCompleted(session, completedList)) completed.push(session);
-    else pending.push(session);
-  });
-
-  const latestMap = pmAgendaLatestByPatient(type === "completed" ? completed : pending);
-
-  return patientsList
-    .map(patient => {
-      const pKey = pmAgendaPatientKey(patient);
-      const session = latestMap.get(pKey);
-      if (!session) return null;
-      return {
-        name: patient.nombre || patient.name || patient.nickname || "Paciente",
-        label: pmAgendaSessionLabel(session),
-        sort: pmAgendaSessionDateValue(session) * 10000 + pmAgendaSessionNumber(session)
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.sort - a.sort);
-}
-
-function pmAgendaKpiHTML(rows = []) {
-  if (!rows.length) return `<span class="agenda-kpi-number">0</span>`;
-  return `
-    <span class="agenda-kpi-number">${rows.length}</span>
-    <span class="agenda-kpi-list">
-      ${rows.slice(0, 4).map(row => `
-        <span class="agenda-kpi-row">
-          <em>${row.name}</em>
-          <b>${row.label}</b>
-        </span>
-      `).join("")}
-    </span>
-  `;
-}
-
-function pmRenderSessionAgendaKpis() {
-  const p = document.getElementById("patientCounter");
-  const h = document.getElementById("historyCounter");
-  const f = document.getElementById("fileCounter");
-
-  const activeSection = document.querySelector(".nav-item.active")?.dataset.section || "paciente";
-  const patientsList = pmAgendaSafeJSON("patients", []);
-
-  if (p) p.textContent = patientsList.length;
-
-  // La agenda solo debe aparecer en la pestaña Usuarios.
-  // En Paciente y resto de pestañas mantenemos KPIs antiguos.
-  if (activeSection !== "usuarios") {
-    if (h) {
-      const card = h.closest(".stat-card");
-      if (card) card.classList.remove("agenda-stat-card");
-      const label = card ? card.querySelector("span") : null;
-      if (label) label.textContent = "Registros historial";
-      h.textContent = pmAgendaSafeJSON("histories", []).length;
-    }
-    if (f) {
-      const card = f.closest(".stat-card");
-      if (card) card.classList.remove("agenda-stat-card");
-      const label = card ? card.querySelector("span") : null;
-      if (label) label.textContent = "Archivos guardados";
-      f.textContent = pmAgendaSafeJSON("patientFiles", []).length;
-    }
-    return;
-  }
-
-  const pendingRows = pmAgendaBuildRows("pending");
-  const completedRows = pmAgendaBuildRows("completed");
-
-  if (h) {
-    const card = h.closest(".stat-card");
-    if (card) card.classList.add("agenda-stat-card");
-    const label = card ? card.querySelector("span") : null;
-    if (label) label.textContent = "Sesiones pendientes";
-    h.innerHTML = pmAgendaKpiHTML(pendingRows);
-  }
-  if (f) {
-    const card = f.closest(".stat-card");
-    if (card) card.classList.add("agenda-stat-card");
-    const label = card ? card.querySelector("span") : null;
-    if (label) label.textContent = "Sesiones terminadas";
-    f.innerHTML = pmAgendaKpiHTML(completedRows);
-  }
-}
-
-window.pmRenderSessionAgendaKpis = pmRenderSessionAgendaKpis;
-
-
 // PM FIX: KPI pacientes y arranque directo en pestaña Paciente
 async function pmRefreshPatientsKpiAndPage() {
   try {
@@ -5438,8 +5254,9 @@ async function pmRefreshPatientsKpiAndPage() {
   try { histories = JSON.parse(localStorage.getItem("histories") || "[]"); } catch (_) { histories = []; }
   try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
 
-  if (typeof pmRenderSessionAgendaKpis === "function") {
-    pmRenderSessionAgendaKpis();
+  if (typeof pmSetDashboardKpis === "function") {
+    const active = document.querySelector('.nav-item.active')?.dataset.section || "paciente";
+    pmSetDashboardKpis(active === "usuarios" ? "usuarios" : "paciente");
   } else {
     if (patientCounter) patientCounter.textContent = patients.length;
     if (historyCounter) historyCounter.textContent = histories.length;
@@ -5460,11 +5277,22 @@ document.addEventListener("DOMContentLoaded", () => {
 setTimeout(pmRefreshPatientsKpiAndPage, 250);
 setTimeout(pmRefreshPatientsKpiAndPage, 1000);
 setTimeout(pmRefreshPatientsKpiAndPage, 2500);
-setTimeout(() => { if (typeof pmRenderSessionAgendaKpis === "function") pmRenderSessionAgendaKpis(); }, 3200);
-setInterval(() => { if (typeof pmRenderSessionAgendaKpis === "function") pmRenderSessionAgendaKpis(); }, 2000); // PM AGENDA AUTO REFRESH FINAL
 
 if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
   window.PPF_SUPABASE_READY.then(pmRefreshPatientsKpiAndPage).catch(() => {});
 }
 
 })();
+
+
+setInterval(() => {
+  try {
+    if (document.querySelector('.nav-item.active')?.dataset.section === "usuarios") {
+      patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      sessions = JSON.parse(localStorage.getItem("sessions") || "[]");
+      histories = JSON.parse(localStorage.getItem("histories") || "[]");
+      patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]");
+      renderSection("usuarios");
+    }
+  } catch (_) {}
+}, 30000);
