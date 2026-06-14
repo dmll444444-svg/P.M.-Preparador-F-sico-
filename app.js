@@ -101,16 +101,13 @@ if (form) {
     try {
       const stats = JSON.parse(localStorage.getItem("userStats") || "{}");
       const key = user.nickname || user.username;
-      stats[key] = stats[key] || {count:0,online:false,lastLogin:null};
-      stats[key].count += 1;
+      stats[key] = stats[key] || { count: 0, online: false, lastLogin: null, lastLogout: null };
+      stats[key].count = Number(stats[key].count || 0) + 1;
       stats[key].online = true;
       stats[key].lastLogin = new Date().toISOString();
-      stats[key].lastSeen = new Date().toISOString();
       localStorage.setItem("userStats", JSON.stringify(stats));
-      if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-        window.PPF_SUPABASE.pushKey("userStats").catch(() => {});
-      }
-    } catch(e){}
+      if (window.PPF_SUPABASE?.pushKey) window.PPF_SUPABASE.pushKey("userStats").catch(()=>{});
+    } catch(e) {}
 
     if (message) {
       message.textContent = `Acceso correcto. Bienvenido, ${user.nickname}`;
