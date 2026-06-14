@@ -4237,7 +4237,8 @@ function updateValuationPatientPhotoCard() {
 
   card.innerHTML = `
     ${photo ? `<img class="patient-thumb" src="${photo}" alt="${patient.nombre}">` : `<div class="patient-thumb">${(patient.nombre || "?").charAt(0).toUpperCase()}</div>`}
-    <div><strong>${patient.nombre || patient.nickname}</strong><span>${patient.nickname || ""}</span></div>
+    <strong>${patient.nombre || patient.nickname}</strong>
+    <span>${patient.nickname || ""}</span>
   `;
 }
 
@@ -4979,13 +4980,6 @@ const sections = {
               <span>Foto del paciente</span>
             </div>
           </div>
-        </div>
-
-        <div class="valuation-table-head">
-          <span>TEST 1</span>
-          <span>Datos registrados</span>
-          <span>Registro</span>
-          <span>Observaciones cualitativas</span>
         </div>
 
         <div class="valuation-tests-area" id="valuationTestsArea">
