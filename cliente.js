@@ -9,6 +9,10 @@
 
 const currentUser = JSON.parse(localStorage.getItem("currentUser"));
 
+function pmClientUserStatKey(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
 function pmClientUpdateOnlineState(online, options = {}) {
   const pushCloud = options.pushCloud !== false;
   try {
@@ -16,17 +20,22 @@ function pmClientUpdateOnlineState(online, options = {}) {
     if (!user) return;
 
     const stats = JSON.parse(localStorage.getItem("userStats") || "{}");
-    const key = user.nickname || user.username;
+    const key = pmClientUserStatKey(user.nickname || user.username);
     if (!key) return;
 
-    stats[key] = stats[key] || { count: 0, online: false, lastLogin: null };
+    stats[key] = stats[key] || { count: 0, online: false, lastLogin: null, lastSeen: null };
     const now = new Date().toISOString();
     stats[key].online = Boolean(online);
     if (online) {
+      if (!Number(stats[key].count || 0) && !stats[key].lastLogin) {
+        stats[key].count = 1;
+        stats[key].lastLogin = now;
+      }
       stats[key].lastSeen = now;
       delete stats[key].lastLogout;
     } else {
       stats[key].lastLogout = now;
+      stats[key].online = false;
       // Hacemos que el último logout domine sobre lastSeen para que admin lo pinte offline al instante.
       stats[key].lastSeen = now;
     }

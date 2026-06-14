@@ -2161,6 +2161,61 @@ function pmSessionAgenda() {
   return { pending, done };
 }
 
+
+function pmUserStatKey(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function pmParseDateMs(value) {
+  if (!value) return 0;
+  const t = new Date(value).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function pmLatestIso(...values) {
+  let best = "";
+  let bestMs = 0;
+  values.forEach(value => {
+    const ms = pmParseDateMs(value);
+    if (ms > bestMs) {
+      bestMs = ms;
+      best = value;
+    }
+  });
+  return best;
+}
+
+function pmGetMergedUserStat(stats = {}, patient = {}) {
+  const candidates = [
+    patient.nickname,
+    pmUserStatKey(patient.nickname),
+    patient.id,
+    pmUserStatKey(patient.id),
+    patient.nombre,
+    pmUserStatKey(patient.nombre)
+  ].filter(Boolean);
+
+  const merged = { count: 0, online: false, lastLogin: null, lastSeen: null, lastLogout: null };
+  candidates.forEach(key => {
+    const item = stats[key];
+    if (!item || typeof item !== "object") return;
+    const count = Number(item.count ?? item.accessCount ?? item.accesos ?? 0);
+    if (count > merged.count) merged.count = count;
+    merged.lastLogin = pmLatestIso(merged.lastLogin, item.lastLogin, item.lastConnection, item.ultimaConexion);
+    merged.lastSeen = pmLatestIso(merged.lastSeen, item.lastSeen);
+    merged.lastLogout = pmLatestIso(merged.lastLogout, item.lastLogout);
+    if (item.online) merged.online = true;
+  });
+
+  const now = Date.now();
+  const seenMs = pmParseDateMs(merged.lastSeen);
+  const logoutMs = pmParseDateMs(merged.lastLogout);
+  const fresh = seenMs && (now - seenMs) < 120000;
+  const logoutDominates = logoutMs && (!seenMs || logoutMs >= seenMs);
+  merged.online = Boolean(merged.online && fresh && !logoutDominates);
+  return merged;
+}
+
 function pmFormatLastLogin(value) {
   if (!value) return "Nunca";
   const date = new Date(value);
@@ -2209,8 +2264,7 @@ function renderUsersPage() {
   return `
     <div class="users-test-list users-access-list">
       ${patients.map(patient => {
-        const key = patient.nickname || "";
-        const st = stats[key] || {};
+        const st = pmGetMergedUserStat(stats, patient);
         const online = Boolean(st.online);
         const lastLogin = pmFormatLastLogin(st.lastLogin);
         return `
