@@ -340,7 +340,7 @@ function pmPushPatientsToCloud() {
 function updateCounters() {
   const active = document.querySelector('.nav-item.active')?.dataset.section || "paciente";
   if (typeof pmSetDashboardKpis === "function") {
-    pmSetDashboardKpis(active === "usuarios" ? "usuarios" : "paciente");
+    pmSetDashboardKpis(active);
     return;
   }
   patientCounter.textContent = patients.length;
@@ -2226,6 +2226,7 @@ function pmFormatLastLogin(value) {
 function pmSetDashboardKpis(mode = "paciente") {
   const cards = document.querySelectorAll(".dashboard-grid .stat-card");
   if (cards.length < 3) return;
+
   const setCard = (index, label, main, items = []) => {
     const card = cards[index];
     const span = card.querySelector("span");
@@ -2242,27 +2243,43 @@ function pmSetDashboardKpis(mode = "paciente") {
     }
   };
 
-  if (mode === "usuarios") {
+  const renderNormalKpis = () => {
+    setCard(0, "Pacientes activos", patients.length);
+    setCard(1, "Registros historial", histories.length);
+    setCard(2, "Archivos guardados", patientFiles.length);
+  };
+
+  const renderAgendaKpis = () => {
     const agenda = pmSessionAgenda();
     setCard(0, "Pacientes activos", patients.length);
     setCard(1, "Sesiones pendientes", agenda.pending.length, agenda.pending.map(item => `${item.patient.nombre} ${pmSessionMicroLabel(item.session)}`));
     setCard(2, "Sesiones terminadas", agenda.done.length, agenda.done.map(item => `${item.patient.nombre} ${pmSessionMicroLabel(item.session)}`));
-  } else {
+  };
+
+  const renderBibliotecaKpis = () => {
+    const movilidad = exerciseLibrary.filter(e => libraryHasCategory(e, "Movilidad")).length;
+    const activacion = exerciseLibrary.filter(e => libraryHasCategory(e, "Activación")).length;
+    const principal = exerciseLibrary.filter(e => libraryHasCategory(e, "Sesión Principal")).length;
     setCard(0, "Pacientes activos", patients.length);
-    if (mode === "biblioteca") {
-      const movilidad = exerciseLibrary.filter(e=>libraryHasCategory(e,"Movilidad")).length;
-      const activacion = exerciseLibrary.filter(e=>libraryHasCategory(e,"Activación")).length;
-      const principal = exerciseLibrary.filter(e=>libraryHasCategory(e,"Sesión Principal")).length;
-      setCard(1, "Ejercicios biblioteca", exerciseLibrary.length, [
-        `Movilidad: ${movilidad}`,
-        `Activación: ${activacion}`,
-        `Sesión Principal: ${principal}`
-      ]);
-    } else {
-      setCard(1, "Registros historial", histories.length || 0);
-    }
+    setCard(1, "Ejercicios biblioteca", exerciseLibrary.length, [
+      `Movilidad: ${movilidad}`,
+      `Activación: ${activacion}`,
+      `Sesión Principal: ${principal}`
+    ]);
     setCard(2, "Archivos guardados", patientFiles.length);
+  };
+
+  if (mode === "usuarios" || mode === "sesiones") {
+    renderAgendaKpis();
+    return;
   }
+
+  if (mode === "biblioteca") {
+    renderBibliotecaKpis();
+    return;
+  }
+
+  renderNormalKpis();
 }
 
 function renderUsersPage() {
