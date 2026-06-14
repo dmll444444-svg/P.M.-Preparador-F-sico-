@@ -2249,14 +2249,18 @@ function pmSetDashboardKpis(mode = "paciente") {
     setCard(2, "Sesiones terminadas", agenda.done.length, agenda.done.map(item => `${item.patient.nombre} ${pmSessionMicroLabel(item.session)}`));
   } else {
     setCard(0, "Pacientes activos", patients.length);
-    const movilidad = exerciseLibrary.filter(e=>libraryHasCategory(e,"Movilidad")).length;
-    const activacion = exerciseLibrary.filter(e=>libraryHasCategory(e,"Activación")).length;
-    const principal = exerciseLibrary.filter(e=>libraryHasCategory(e,"Sesión Principal")).length;
-    setCard(1, "Ejercicios biblioteca", exerciseLibrary.length, [
-      `Movilidad: ${movilidad}`,
-      `Activación: ${activacion}`,
-      `Sesión Principal: ${principal}`
-    ]);
+    if (mode === "biblioteca") {
+      const movilidad = exerciseLibrary.filter(e=>libraryHasCategory(e,"Movilidad")).length;
+      const activacion = exerciseLibrary.filter(e=>libraryHasCategory(e,"Activación")).length;
+      const principal = exerciseLibrary.filter(e=>libraryHasCategory(e,"Sesión Principal")).length;
+      setCard(1, "Ejercicios biblioteca", exerciseLibrary.length, [
+        `Movilidad: ${movilidad}`,
+        `Activación: ${activacion}`,
+        `Sesión Principal: ${principal}`
+      ]);
+    } else {
+      setCard(1, "Registros historial", histories.length || 0);
+    }
     setCard(2, "Archivos guardados", patientFiles.length);
   }
 }
