@@ -4336,3 +4336,5 @@ aside.client-sidebar {
   }
 }
 
+
+.trend-kpi{position:relative}.trend-arrow{position:absolute;top:6px;right:8px;font-size:18px}.trend-up .trend-arrow{color:#22c55e}.trend-down .trend-arrow{color:#ef4444}.trend-flat .trend-arrow{color:#94a3b8}.trend-date{position:absolute;top:8px;right:28px;font-size:10px;opacity:.8}

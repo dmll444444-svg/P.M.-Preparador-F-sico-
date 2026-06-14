@@ -4081,10 +4081,12 @@ function renderValuationMiniChart(group) {
           <strong>${escapeValuationHtml(String(last.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
           <small>${escapeValuationHtml(last.fecha)}</small>
         </div>
-        <div>
+        <div class="trend-kpi ${trend>0?"trend-up":trend<0?"trend-down":"trend-flat"}">
           <span>Tendencia</span>
+          <b class="trend-arrow">${trend>0?"↑":trend<0?"↓":"→"}</b>
           <strong>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
           <small>${escapeValuationHtml(trendPctLabel)}</small>
+          <small class="trend-date">${escapeValuationHtml(last.fecha)}</small>
         </div>
       </div>
 
