@@ -4169,6 +4169,25 @@ function parseValuationNumber(value = "") {
   return Number.isFinite(number) ? number : null;
 }
 
+function formatValuationChartNumber(value, decimals = 2) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value || "");
+  return number.toFixed(decimals);
+}
+
+function valuationDateSortValue(value = "") {
+  const raw = String(value || "").trim();
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const es = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (es) return `${es[3]}-${String(es[2]).padStart(2, "0")}-${String(es[1]).padStart(2, "0")}`;
+  return raw;
+}
+
+function compareValuationDates(a = {}, b = {}) {
+  return valuationDateSortValue(a.fecha).localeCompare(valuationDateSortValue(b.fecha)) || String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+}
+
 function getValuationAttempts(test = {}) {
   return [test.intento1, test.intento2, test.intento3]
     .map(parseValuationNumber)
@@ -4274,7 +4293,7 @@ function buildValuationChartGroupsFromItems(items = [], patientNickname = "") {
   (items || [])
     .filter(item => !patientNickname || item.patientNickname === patientNickname)
     .slice()
-    .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .sort(compareValuationDates)
     .forEach(item => {
       const patient = patients.find(p => p.nickname === item.patientNickname);
       const patientName = patient ? patient.nombre : item.patientNickname;
@@ -4306,7 +4325,7 @@ function buildValuationChartGroupsFromItems(items = [], patientNickname = "") {
     .map(group => ({
       ...group,
       days: Object.values(group.days)
-        .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))
+        .sort((a, b) => valuationDateSortValue(a.fecha).localeCompare(valuationDateSortValue(b.fecha)))
         .map(day => {
           const mean = day.attempts.reduce((acc, value) => acc + value, 0) / day.attempts.length;
           return { ...day, mean: Number(mean.toFixed(2)) };
@@ -4317,7 +4336,7 @@ function buildValuationChartGroupsFromItems(items = [], patientNickname = "") {
 }
 
 function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = "", includeAllPatientCharts = false }) {
-  const reportItems = (items || []).slice().sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  const reportItems = (items || []).slice().sort(compareValuationDates);
   const rows = buildValuationRowsForReport(reportItems, testFilter);
   if (!rows) {
     alert("No hay datos registrados para generar este PDF.");
@@ -4369,7 +4388,8 @@ function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = 
         .pdf-axis { stroke:#94a3b8; stroke-width:1; }
         .pdf-scale { display:none; }
         .pdf-date { fill:#475569; font-size:11px; font-weight:700; }
-        .pdf-bar-value { fill:#0f172a; font-size:10px; font-weight:900; paint-order:stroke; stroke:#ffffff; stroke-width:3px; }
+        .pdf-bar-value { fill:#ffffff; font-size:6.5px; font-weight:950; paint-order:stroke; stroke:#0f172a; stroke-width:1.6px; }
+        .pdf-mean-value { fill:#1d4ed8; font-size:9px; font-weight:900; paint-order:stroke; stroke:#ffffff; stroke-width:3px; }
         .pdf-trend-kpi { position:relative; padding-right:34px !important; }
         .pdf-trend-arrow { position:absolute; top:9px; right:9px; width:24px; height:24px; display:grid; place-items:center; border-radius:999px; font-size:18px; font-weight:950; }
         .pdf-trend-kpi.trend-up .pdf-trend-arrow { color:#16a34a; background:#dcfce7; }
@@ -4464,7 +4484,7 @@ function getValuationChartGroups(filterNickname = "") {
   valoraciones
     .filter(item => !filterNickname || item.patientNickname === filterNickname)
     .slice()
-    .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .sort(compareValuationDates)
     .forEach(item => {
       const patient = patients.find(p => p.nickname === item.patientNickname);
       const patientName = patient ? patient.nombre : item.patientNickname;
@@ -4496,7 +4516,7 @@ function getValuationChartGroups(filterNickname = "") {
     .map(group => ({
       ...group,
       days: Object.values(group.days)
-        .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))
+        .sort((a, b) => valuationDateSortValue(a.fecha).localeCompare(valuationDateSortValue(b.fecha)))
         .map(day => {
           const mean = day.attempts.reduce((acc, value) => acc + value, 0) / day.attempts.length;
           return { ...day, mean: Number(mean.toFixed(2)) };
@@ -4628,7 +4648,7 @@ function renderValuationMiniChart(group) {
         <div class="valuation-trend-kpi ${trend > 0 ? "trend-up" : trend < 0 ? "trend-down" : "trend-flat"}">
           <span>Tendencia</span>
           <b class="valuation-trend-arrow" title="${trend > 0 ? "Ascendente" : trend < 0 ? "Descendente" : "Estable"}">${trend > 0 ? "↑" : trend < 0 ? "↓" : "→"}</b>
-          <strong>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
+          <strong>${escapeValuationHtml(formatValuationChartNumber(trend, 2).replace(/^([^\-])/, trend > 0 ? "+$1" : "$1"))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
           <small>${escapeValuationHtml(trendPctLabel)}</small>
         </div>
       </div>
@@ -4771,6 +4791,21 @@ async function pmRefreshValoracionesFromSupabase() {
   }
 }
 
+function applyValuationUnitAutofill(row) {
+  if (!row) return;
+  const attempt1 = row.querySelector(".valuation-attempt-1");
+  const attempt2 = row.querySelector(".valuation-attempt-2");
+  const attempt3 = row.querySelector(".valuation-attempt-3");
+  const unit1 = row.querySelector(".valuation-attempt-unit-1");
+  const unit2 = row.querySelector(".valuation-attempt-unit-2");
+  const unit3 = row.querySelector(".valuation-attempt-unit-3");
+  const mainUnit = unit1?.value || unit2?.value || unit3?.value || "";
+  if (!mainUnit) return;
+  if (String(attempt1?.value || "").trim() && unit1 && !unit1.value) unit1.value = mainUnit;
+  if (String(attempt2?.value || "").trim() && unit2 && !unit2.value) unit2.value = mainUnit;
+  if (String(attempt3?.value || "").trim() && unit3 && !unit3.value) unit3.value = mainUnit;
+}
+
 function bindValoracionesForm() {
   const form = document.getElementById("valuationsForm");
   const testsArea = document.getElementById("valuationTestsArea");
@@ -4811,6 +4846,16 @@ function bindValoracionesForm() {
     refreshValuationNumbers();
   });
 
+  testsArea.addEventListener("input", event => {
+    if (!event.target.closest(".valuation-attempt-1, .valuation-attempt-2, .valuation-attempt-3")) return;
+    applyValuationUnitAutofill(event.target.closest("[data-valuation-row]"));
+  });
+
+  testsArea.addEventListener("change", event => {
+    if (!event.target.closest(".valuation-attempt-unit-1, .valuation-attempt-unit-2, .valuation-attempt-unit-3")) return;
+    applyValuationUnitAutofill(event.target.closest("[data-valuation-row]"));
+  });
+
   filter?.addEventListener("change", () => {
     renderValuationsList(filter.value);
     renderValuationCharts(filter.value);
@@ -4847,8 +4892,8 @@ function bindValoracionesForm() {
       intento2: row.querySelector(".valuation-attempt-2")?.value.trim() || "",
       intento3: row.querySelector(".valuation-attempt-3")?.value.trim() || "",
       unidad1: row.querySelector(".valuation-attempt-unit-1")?.value || "",
-      unidad2: row.querySelector(".valuation-attempt-unit-2")?.value || "",
-      unidad3: row.querySelector(".valuation-attempt-unit-3")?.value || "",
+      unidad2: row.querySelector(".valuation-attempt-unit-2")?.value || (row.querySelector(".valuation-attempt-2")?.value.trim() ? (row.querySelector(".valuation-attempt-unit-1")?.value || "") : ""),
+      unidad3: row.querySelector(".valuation-attempt-unit-3")?.value || (row.querySelector(".valuation-attempt-3")?.value.trim() ? (row.querySelector(".valuation-attempt-unit-1")?.value || "") : ""),
       unidad: row.querySelector(".valuation-attempt-unit-1")?.value || row.querySelector(".valuation-attempt-unit-2")?.value || row.querySelector(".valuation-attempt-unit-3")?.value || "",
       observaciones: row.querySelector(".valuation-observations")?.value.trim() || ""
     })).filter(test => test.nombre || test.intento1 || test.intento2 || test.intento3 || test.observaciones);
@@ -4957,7 +5002,7 @@ function getValuationPdfChartGroupsForPatient(patientNickname) {
   return getValuationChartGroups(patientNickname)
     .map(group => ({
       ...group,
-      days: [...(group.days || [])].sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))
+      days: [...(group.days || [])].sort((a, b) => valuationDateSortValue(a.fecha).localeCompare(valuationDateSortValue(b.fecha)))
     }))
     .filter(group => group.days.length);
 }
@@ -5008,7 +5053,7 @@ function renderValuationPdfChart(group) {
           <h2>${escapeValuationHtml(group.testName)}${group.unit ? ` (${escapeValuationHtml(group.unit)})` : ""}</h2>
           <p>Fechas ordenadas de más antigua a más reciente · barras: intentos individuales · línea: media diaria</p>
         </div>
-        <strong>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
+        <strong>${escapeValuationHtml(formatValuationChartNumber(newest.mean, 2))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
       </div>
 
       <svg class="pdf-chart" viewBox="0 0 ${width} ${height}">
@@ -5032,7 +5077,7 @@ function renderValuationPdfChart(group) {
               <rect class="pdf-bar" x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4">
                 <title>${escapeValuationHtml(day.fecha)} · Intento ${attemptIndex + 1}: ${escapeValuationHtml(String(value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
               </rect>
-              <text x="${x + (barWidth / 2)}" y="${height - padY - 7}" text-anchor="middle" class="pdf-bar-value">${escapeValuationHtml(String(value))}</text>
+              <text x="${x + (barWidth / 2)}" y="${height - padY - 8}" text-anchor="middle" class="pdf-bar-value" textLength="${Math.max(12, barWidth + 3)}" lengthAdjust="spacingAndGlyphs">${escapeValuationHtml(formatValuationChartNumber(value, 2))}</text>
             `;
           }).join("");
         }).join("")}
@@ -5041,6 +5086,7 @@ function renderValuationPdfChart(group) {
 
         ${meanPoints.map(point => `
           <circle class="pdf-mean-point" cx="${point.x}" cy="${point.y}" r="5.5"></circle>
+          <text class="pdf-mean-value" x="${Math.max(padX + 4, point.x - 10)}" y="${Math.max(14, point.y - 10)}" text-anchor="end">${escapeValuationHtml(formatValuationChartNumber(point.mean, 2))}</text>
         `).join("")}
 
         ${meanPoints.map((point, index) => {
@@ -5050,9 +5096,9 @@ function renderValuationPdfChart(group) {
       </svg>
 
       <div class="pdf-chart-summary">
-        <div><span>Inicial</span><b>${escapeValuationHtml(String(oldest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(oldest.fecha)}</small></div>
-        <div><span>Actual</span><b>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(newest.fecha)}</small></div>
-        <div class="pdf-trend-kpi ${trendClass}"><span>Tendencia</span><i class="pdf-trend-arrow">${trendArrow}</i><b>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(trendPctLabel)}</small></div>
+        <div><span>Inicial</span><b>${escapeValuationHtml(formatValuationChartNumber(oldest.mean, 2))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(oldest.fecha)}</small></div>
+        <div><span>Actual</span><b>${escapeValuationHtml(formatValuationChartNumber(newest.mean, 2))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(newest.fecha)}</small></div>
+        <div class="pdf-trend-kpi ${trendClass}"><span>Tendencia</span><i class="pdf-trend-arrow">${trendArrow}</i><b>${escapeValuationHtml(formatValuationChartNumber(trend, 2).replace(/^([^\-])/, trend > 0 ? "+$1" : "$1"))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(trendPctLabel)}</small></div>
       </div>
     </section>
   `;
