@@ -4539,7 +4539,7 @@ function renderValuationMiniChart(group) {
 
   const width = 760;
   const height = 360;
-  const padX = 42;
+  const padX = 68;
   const padY = 46;
   const chartW = width - padX * 2;
   const chartH = height - padY * 2;
@@ -4550,7 +4550,7 @@ function renderValuationMiniChart(group) {
   const maxAttempts = Math.max(...days.map(day => day.attempts.length), 1);
   const daySlot = days.length === 1 ? chartW * 0.44 : Math.min(84, chartW / Math.max(days.length, 1));
   const barGap = 6;
-  const barWidth = Math.max(9, Math.min(18, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
+  const barWidth = Math.max(8, Math.min(15, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
 
   const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
   const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
