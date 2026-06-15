@@ -4389,7 +4389,7 @@ function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = 
         .pdf-axis { stroke:#94a3b8; stroke-width:1; }
         .pdf-scale { display:none; }
         .pdf-date { fill:#475569; font-size:9px; font-weight:700; }
-        .pdf-bar-value { fill:#ffffff; font-size:4.3px; font-weight:950; paint-order:stroke; stroke:#0f172a; stroke-width:.9px; }
+        .pdf-bar-value { fill:#ffffff; font-size:3.8px; font-weight:950; paint-order:stroke; stroke:#0f172a; stroke-width:.9px; }
         .pdf-mean-value { fill:#1d4ed8; font-size:7px; font-weight:900; paint-order:stroke; stroke:#ffffff; stroke-width:2px; }
         .pdf-trend-kpi { position:relative; padding-right:34px !important; }
         .pdf-trend-arrow { position:absolute; top:9px; right:9px; width:24px; height:24px; display:grid; place-items:center; border-radius:999px; font-size:18px; font-weight:950; }
@@ -5023,18 +5023,23 @@ function renderValuationPdfChart(group) {
 
   const width = 720;
   const height = 235;
-  const padX = 26;
+  const padX = 34;
   const padY = 38;
   const chartW = width - padX * 2;
   const chartH = height - padY * 2;
 
-  const xForDay = index => days.length === 1 ? width / 2 : padX + (index * (chartW / (days.length - 1)));
   const yForValue = value => height - padY - (((value - min) / range) * chartH);
 
   const maxAttempts = Math.max(...days.map(day => day.attempts.length), 1);
-  const daySlot = days.length === 1 ? chartW * 0.42 : Math.min(78, chartW / Math.max(days.length, 1));
-  const barGap = 6;
-  const barWidth = Math.max(10, Math.min(18, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
+  const daySlot = days.length === 1 ? chartW * 0.42 : Math.min(72, chartW / Math.max(days.length, 1));
+  const barGap = 5;
+  const barWidth = Math.max(8, Math.min(15, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
+  const maxGroupW = maxAttempts * barWidth + (maxAttempts - 1) * barGap;
+  const groupHalf = (maxGroupW / 2) + 5;
+  const leftCenter = padX + groupHalf;
+  const rightCenter = width - padX - groupHalf;
+  const usableCenterW = Math.max(1, rightCenter - leftCenter);
+  const xForDay = index => days.length === 1 ? width / 2 : leftCenter + (index * (usableCenterW / (days.length - 1)));
 
   const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
   const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
@@ -5079,7 +5084,7 @@ function renderValuationPdfChart(group) {
               <rect class="pdf-bar" x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4">
                 <title>${escapeValuationHtml(day.fecha)} · Intento ${attemptIndex + 1}: ${escapeValuationHtml(String(value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
               </rect>
-              <text x="${x + (barWidth / 2)}" y="${height - padY - 5}" text-anchor="middle" class="pdf-bar-value" textLength="${Math.max(8, barWidth - 2)}" lengthAdjust="spacingAndGlyphs">${escapeValuationHtml(formatValuationChartNumber(value, 2))}</text>
+              <text x="${x + (barWidth / 2)}" y="${height - padY - 5}" text-anchor="middle" class="pdf-bar-value" textLength="${Math.max(6, barWidth - 3)}" lengthAdjust="spacingAndGlyphs">${escapeValuationHtml(formatValuationChartNumber(value, 2))}</text>
             `;
           }).join("");
         }).join("")}
