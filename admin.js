@@ -4365,7 +4365,8 @@ function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = 
       <meta charset="UTF-8" />
       <title>${escapeValuationHtml(title)}</title>
       <style>
-        body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; background:#ffffff; }
+        @page { size: A4 portrait; margin: 10mm; }
+        body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; background:#ffffff; }
         .header { display:flex; justify-content:space-between; gap:18px; border-bottom: 3px solid #22c55e; padding-bottom: 14px; margin-bottom: 22px; align-items:flex-start; }
         .brand { color: #16a34a; font-weight: 800; font-size: 14px; text-transform: uppercase; }
         h1 { margin: 8px 0 4px; font-size: 26px; }
@@ -4378,18 +4379,18 @@ function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = 
         .footer { margin-top: 24px; color: #64748b; font-size: 12px; }
         .pdf-section-break { page-break-before: always; }
         .pdf-section-title { margin-top: 0; color:#0f172a; }
-        .pdf-chart-card { page-break-inside: avoid; margin: 22px 0; padding: 18px; border: 1px solid #dbeafe; border-radius: 18px; background: #f8fafc; }
-        .pdf-chart-title { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom: 12px; }
-        .pdf-chart-title h2 { margin:0 0 4px; color:#0f172a; font-size:20px; }
-        .pdf-chart-title p { margin:0; color:#64748b; font-size:12px; font-weight:700; }
-        .pdf-chart-title strong { color:#15803d; font-size:18px; white-space:nowrap; }
+        .pdf-chart-card { page-break-inside: avoid; margin: 10px 0; padding: 10px; border: 1px solid #dbeafe; border-radius: 14px; background: #f8fafc; }
+        .pdf-chart-title { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom: 6px; }
+        .pdf-chart-title h2 { margin:0 0 3px; color:#0f172a; font-size:16px; }
+        .pdf-chart-title p { margin:0; color:#64748b; font-size:9px; font-weight:700; }
+        .pdf-chart-title strong { color:#15803d; font-size:14px; white-space:nowrap; }
         .pdf-chart { width:100%; height:auto; display:block; background:#fff; border-radius:14px; border:1px solid #e2e8f0; }
         .pdf-grid { stroke:#cbd5e1; stroke-width:1; stroke-dasharray:4 5; }
         .pdf-axis { stroke:#94a3b8; stroke-width:1; }
         .pdf-scale { display:none; }
-        .pdf-date { fill:#475569; font-size:11px; font-weight:700; }
-        .pdf-bar-value { fill:#ffffff; font-size:6.5px; font-weight:950; paint-order:stroke; stroke:#0f172a; stroke-width:1.6px; }
-        .pdf-mean-value { fill:#1d4ed8; font-size:9px; font-weight:900; paint-order:stroke; stroke:#ffffff; stroke-width:3px; }
+        .pdf-date { fill:#475569; font-size:9px; font-weight:700; }
+        .pdf-bar-value { fill:#ffffff; font-size:4.3px; font-weight:950; paint-order:stroke; stroke:#0f172a; stroke-width:.9px; }
+        .pdf-mean-value { fill:#1d4ed8; font-size:7px; font-weight:900; paint-order:stroke; stroke:#ffffff; stroke-width:2px; }
         .pdf-trend-kpi { position:relative; padding-right:34px !important; }
         .pdf-trend-arrow { position:absolute; top:9px; right:9px; width:24px; height:24px; display:grid; place-items:center; border-radius:999px; font-size:18px; font-weight:950; }
         .pdf-trend-kpi.trend-up .pdf-trend-arrow { color:#16a34a; background:#dcfce7; }
@@ -4397,14 +4398,14 @@ function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = 
         .pdf-trend-kpi.trend-flat .pdf-trend-arrow { color:#475569; background:#e2e8f0; }
         .pdf-chart-subtitle { color:#64748b; font-size:12px; font-weight:700; }
         .pdf-bar { fill:#22c55e; stroke:#16a34a; stroke-width:1; }
-        .pdf-mean-line { stroke:#2563eb; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
-        .pdf-mean-point { fill:#3b82f6; stroke:#eff6ff; stroke-width:2; }
-        .pdf-chart-summary { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:12px; }
-        .pdf-chart-summary div { padding:10px; border:1px solid #e2e8f0; border-radius:12px; background:#fff; }
-        .pdf-chart-summary span { display:block; color:#64748b; font-size:10px; font-weight:800; text-transform:uppercase; margin-bottom:5px; }
-        .pdf-chart-summary b { display:block; color:#0f172a; font-size:15px; }
-        .pdf-chart-summary small { color:#64748b; font-weight:700; }
-        @media print { body { padding: 18px; } .pdf-chart-card { break-inside: avoid; } }
+        .pdf-mean-line { stroke:#2563eb; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+        .pdf-mean-point { fill:#3b82f6; stroke:#eff6ff; stroke-width:1.5; }
+        .pdf-chart-summary { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:7px; }
+        .pdf-chart-summary div { padding:7px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; }
+        .pdf-chart-summary span { display:block; color:#64748b; font-size:8px; font-weight:800; text-transform:uppercase; margin-bottom:3px; }
+        .pdf-chart-summary b { display:block; color:#0f172a; font-size:11px; }
+        .pdf-chart-summary small { color:#64748b; font-weight:700; font-size:8px; }
+        @media print { body { padding: 0; } .pdf-section-break { page-break-before: always; } .pdf-chart-card { break-inside: avoid; page-break-inside: avoid; } }
       </style>
     </head>
     <body>
@@ -4538,7 +4539,7 @@ function renderValuationMiniChart(group) {
 
   const width = 760;
   const height = 360;
-  const padX = 58;
+  const padX = 42;
   const padY = 46;
   const chartW = width - padX * 2;
   const chartH = height - padY * 2;
@@ -4588,7 +4589,6 @@ function renderValuationMiniChart(group) {
           const y = yForValue(tick);
           return `
             <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="valuation-grid-line" />
-            <text x="${padX - 12}" y="${y + 4}" text-anchor="end" class="valuation-chart-scale">${escapeValuationHtml(String(tick))}</text>
           `;
         }).join("")}
 
@@ -4799,11 +4799,13 @@ function applyValuationUnitAutofill(row) {
   const unit1 = row.querySelector(".valuation-attempt-unit-1");
   const unit2 = row.querySelector(".valuation-attempt-unit-2");
   const unit3 = row.querySelector(".valuation-attempt-unit-3");
-  const mainUnit = unit1?.value || unit2?.value || unit3?.value || "";
-  if (!mainUnit) return;
-  if (String(attempt1?.value || "").trim() && unit1 && !unit1.value) unit1.value = mainUnit;
-  if (String(attempt2?.value || "").trim() && unit2 && !unit2.value) unit2.value = mainUnit;
-  if (String(attempt3?.value || "").trim() && unit3 && !unit3.value) unit3.value = mainUnit;
+  const primaryUnit = unit1?.value || unit2?.value || unit3?.value || "";
+  if (!primaryUnit) return;
+
+  // Intento 1 manda: si el intento 2/3 tiene dato, hereda automáticamente la unidad del intento 1.
+  if (unit1 && !unit1.value && String(attempt1?.value || "").trim()) unit1.value = primaryUnit;
+  if (unit2 && String(attempt2?.value || "").trim()) unit2.value = primaryUnit;
+  if (unit3 && String(attempt3?.value || "").trim()) unit3.value = primaryUnit;
 }
 
 function bindValoracionesForm() {
@@ -5020,9 +5022,9 @@ function renderValuationPdfChart(group) {
   const range = max - min || 1;
 
   const width = 720;
-  const height = 310;
-  const padX = 28;
-  const padY = 52;
+  const height = 235;
+  const padX = 26;
+  const padY = 38;
   const chartW = width - padX * 2;
   const chartH = height - padY * 2;
 
@@ -5030,9 +5032,9 @@ function renderValuationPdfChart(group) {
   const yForValue = value => height - padY - (((value - min) / range) * chartH);
 
   const maxAttempts = Math.max(...days.map(day => day.attempts.length), 1);
-  const daySlot = days.length === 1 ? chartW * 0.42 : Math.min(82, chartW / Math.max(days.length, 1));
-  const barGap = 5;
-  const barWidth = Math.max(8, Math.min(17, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
+  const daySlot = days.length === 1 ? chartW * 0.42 : Math.min(78, chartW / Math.max(days.length, 1));
+  const barGap = 6;
+  const barWidth = Math.max(10, Math.min(18, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
 
   const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
   const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
@@ -5077,7 +5079,7 @@ function renderValuationPdfChart(group) {
               <rect class="pdf-bar" x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4">
                 <title>${escapeValuationHtml(day.fecha)} · Intento ${attemptIndex + 1}: ${escapeValuationHtml(String(value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
               </rect>
-              <text x="${x + (barWidth / 2)}" y="${height - padY - 8}" text-anchor="middle" class="pdf-bar-value" textLength="${Math.max(12, barWidth + 3)}" lengthAdjust="spacingAndGlyphs">${escapeValuationHtml(formatValuationChartNumber(value, 2))}</text>
+              <text x="${x + (barWidth / 2)}" y="${height - padY - 5}" text-anchor="middle" class="pdf-bar-value" textLength="${Math.max(8, barWidth - 2)}" lengthAdjust="spacingAndGlyphs">${escapeValuationHtml(formatValuationChartNumber(value, 2))}</text>
             `;
           }).join("");
         }).join("")}
