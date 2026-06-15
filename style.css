@@ -4365,3 +4365,53 @@ aside.client-sidebar {
 .session-card-actions {
   flex-wrap: wrap;
 }
+
+/* =========================================================
+   PM Valoraciones PRO v2 · Unidades por intento + PDF limpio
+   ========================================================= */
+.valuation-test-row-pro-v2 {
+  grid-template-columns: minmax(180px, 1fr) minmax(330px, 1.35fr) minmax(260px, 1fr) auto !important;
+  align-items: end !important;
+  gap: 14px !important;
+}
+
+.valuation-attempt-unit-grid {
+  display: grid;
+  grid-template-columns: minmax(72px, .85fr) minmax(82px, .65fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.valuation-attempt-unit-grid input {
+  min-width: 0 !important;
+}
+
+.valuation-attempt-unit-grid select {
+  min-width: 0 !important;
+  padding-left: 10px !important;
+  padding-right: 8px !important;
+}
+
+.valuation-observations-wrap textarea {
+  min-height: 46px !important;
+  resize: vertical;
+}
+
+.valuation-test-name-wrap label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.valuation-attempts-pro-v2 label,
+.valuation-observations-wrap label {
+  display: none !important;
+}
+
+@media (max-width: 980px) {
+  .valuation-test-row-pro-v2 {
+    grid-template-columns: 1fr !important;
+  }
+  .valuation-attempt-unit-grid {
+    grid-template-columns: 1fr 120px;
+  }
+}

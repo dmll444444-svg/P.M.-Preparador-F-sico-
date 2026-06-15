@@ -4117,36 +4117,32 @@ function escapeValuationHtml(value = "") {
 }
 
 function valuationUnitOptions(selected = "") {
-  return ["", "cm", "m", "kg", "segundos", "ms", "N", "N/Kg peso", "m/s", "%", "puntos"]
-    .map(unit => `<option value="${unit}" ${unit === selected ? "selected" : ""}>${unit || ""}</option>`)
+  return ["", "cm", "mm", "m", "km", "s", "segundos", "ms", "min", "m/s", "km/h", "kg", "N", "N/kg", "N/Kg peso", "W", "W/kg", "%", "ppm", "puntos", "repeticiones", "saltos", "contactos", "RPE"]
+    .map(unit => `<option value="${unit}" ${unit === selected ? "selected" : ""}>${unit || "Unidad"}</option>`)
     .join("");
 }
 
 function valuationTestRow(number = 1) {
   return `
-    <div class="valuation-test-row" data-valuation-row>
-      <div>
+    <div class="valuation-test-row valuation-test-row-pro-v2" data-valuation-row>
+      <div class="valuation-test-name-wrap">
         <label>TEST ${number}</label>
         <input class="valuation-test-name" type="text" placeholder="Ej: CMJ, Sprint 10 m, IMTP..." required />
       </div>
 
-      <div class="valuation-attempts">
-        <label>Datos registrados</label>
-        <div class="valuation-attempt-grid">
+      <div class="valuation-attempts valuation-attempts-pro-v2">
+        <div class="valuation-attempt-unit-grid">
           <input class="valuation-attempt-1" type="text" placeholder="Intento 1" />
+          <select class="valuation-attempt-unit-1">${valuationUnitOptions()}</select>
           <input class="valuation-attempt-2" type="text" placeholder="Intento 2" />
+          <select class="valuation-attempt-unit-2">${valuationUnitOptions()}</select>
           <input class="valuation-attempt-3" type="text" placeholder="Intento 3" />
+          <select class="valuation-attempt-unit-3">${valuationUnitOptions()}</select>
         </div>
       </div>
 
-      <div>
-        <label>Registro</label>
-        <select class="valuation-unit">${valuationUnitOptions()}</select>
-      </div>
-
-      <div>
-        <label>Observaciones cualitativas</label>
-        <textarea class="valuation-observations" placeholder="Observaciones técnicas, calidad de movimiento, compensaciones..."></textarea>
+      <div class="valuation-observations-wrap">
+        <textarea class="valuation-observations" placeholder="Observaciones cualitativas"></textarea>
       </div>
 
       <button class="valuation-remove-btn" type="button" title="Eliminar test">✕</button>
@@ -4177,6 +4173,20 @@ function getValuationAttempts(test = {}) {
   return [test.intento1, test.intento2, test.intento3]
     .map(parseValuationNumber)
     .filter(value => value !== null);
+}
+
+function getValuationAttemptUnit(test = {}, attemptIndex = 1) {
+  return test[`unidad${attemptIndex}`] || test.unidad || "";
+}
+
+function getValuationPrimaryUnit(test = {}) {
+  return test.unidad1 || test.unidad2 || test.unidad3 || test.unidad || "";
+}
+
+function formatValuationAttempt(value = "", unit = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "-";
+  return `${raw}${unit ? ` ${unit}` : ""}`;
 }
 
 function getPatientByNicknameSafe(nickname = "") {
@@ -4247,14 +4257,63 @@ function buildValuationRowsForReport(items = [], testFilter = "") {
           <td>${escapeValuationHtml(valuation.fecha || "-")}</td>
           <td>${index + 1}</td>
           <td>${escapeValuationHtml(test.nombre || "-")}</td>
-          <td>${escapeValuationHtml(test.intento1 || "-")}</td>
-          <td>${escapeValuationHtml(test.intento2 || "-")}</td>
-          <td>${escapeValuationHtml(test.intento3 || "-")}</td>
-          <td>${escapeValuationHtml(test.unidad || "")}</td>
+          <td>${escapeValuationHtml(formatValuationAttempt(test.intento1, getValuationAttemptUnit(test, 1)))}</td>
+          <td>${escapeValuationHtml(formatValuationAttempt(test.intento2, getValuationAttemptUnit(test, 2)))}</td>
+          <td>${escapeValuationHtml(formatValuationAttempt(test.intento3, getValuationAttemptUnit(test, 3)))}</td>
+          <td>${escapeValuationHtml(getValuationPrimaryUnit(test))}</td>
           <td>${escapeValuationHtml(test.observaciones || "-")}</td>
         </tr>
       `)
   ).join("");
+}
+
+
+function buildValuationChartGroupsFromItems(items = [], patientNickname = "") {
+  const groups = {};
+
+  (items || [])
+    .filter(item => !patientNickname || item.patientNickname === patientNickname)
+    .slice()
+    .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .forEach(item => {
+      const patient = patients.find(p => p.nickname === item.patientNickname);
+      const patientName = patient ? patient.nombre : item.patientNickname;
+
+      (item.tests || []).forEach(test => {
+        const testName = String(test.nombre || "").trim();
+        const unit = String(getValuationPrimaryUnit(test) || "").trim();
+        const attempts = getValuationAttempts(test);
+        if (!testName || !attempts.length) return;
+
+        const key = `${item.patientNickname}__${testName.toLowerCase()}__${unit}`;
+        if (!groups[key]) {
+          groups[key] = {
+            patientNickname: item.patientNickname,
+            patientName,
+            testName,
+            unit,
+            days: {}
+          };
+        }
+
+        const fecha = item.fecha || "-";
+        if (!groups[key].days[fecha]) groups[key].days[fecha] = { fecha, attempts: [] };
+        groups[key].days[fecha].attempts.push(...attempts);
+      });
+    });
+
+  return Object.values(groups)
+    .map(group => ({
+      ...group,
+      days: Object.values(group.days)
+        .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))
+        .map(day => {
+          const mean = day.attempts.reduce((acc, value) => acc + value, 0) / day.attempts.length;
+          return { ...day, mean: Number(mean.toFixed(2)) };
+        })
+    }))
+    .filter(group => group.days.length)
+    .sort((a, b) => a.patientName.localeCompare(b.patientName, "es") || a.testName.localeCompare(b.testName, "es"));
 }
 
 function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = "", includeAllPatientCharts = false }) {
@@ -4271,6 +4330,9 @@ function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = 
   let chartGroups = [];
   if (includeAllPatientCharts && patient) {
     chartGroups = getValuationPdfChartGroupsForPatient(patient.nickname)
+      .filter(group => !testFilter || normalizeValuationTestName(group.testName).toLowerCase() === normalizeValuationTestName(testFilter).toLowerCase());
+  } else {
+    chartGroups = buildValuationChartGroupsFromItems(reportItems, patient?.nickname || "")
       .filter(group => !testFilter || normalizeValuationTestName(group.testName).toLowerCase() === normalizeValuationTestName(testFilter).toLowerCase());
   }
   const chartsHtml = chartGroups.length
@@ -4305,8 +4367,15 @@ function openValuationPdfWindow({ title, subtitle, patient, items, testFilter = 
         .pdf-chart { width:100%; height:auto; display:block; background:#fff; border-radius:14px; border:1px solid #e2e8f0; }
         .pdf-grid { stroke:#cbd5e1; stroke-width:1; stroke-dasharray:4 5; }
         .pdf-axis { stroke:#94a3b8; stroke-width:1; }
-        .pdf-scale { fill:#64748b; font-size:11px; font-weight:700; }
+        .pdf-scale { display:none; }
         .pdf-date { fill:#475569; font-size:11px; font-weight:700; }
+        .pdf-bar-value { fill:#0f172a; font-size:10px; font-weight:900; paint-order:stroke; stroke:#ffffff; stroke-width:3px; }
+        .pdf-trend-kpi { position:relative; padding-right:34px !important; }
+        .pdf-trend-arrow { position:absolute; top:9px; right:9px; width:24px; height:24px; display:grid; place-items:center; border-radius:999px; font-size:18px; font-weight:950; }
+        .pdf-trend-kpi.trend-up .pdf-trend-arrow { color:#16a34a; background:#dcfce7; }
+        .pdf-trend-kpi.trend-down .pdf-trend-arrow { color:#dc2626; background:#fee2e2; }
+        .pdf-trend-kpi.trend-flat .pdf-trend-arrow { color:#475569; background:#e2e8f0; }
+        .pdf-chart-subtitle { color:#64748b; font-size:12px; font-weight:700; }
         .pdf-bar { fill:#22c55e; stroke:#16a34a; stroke-width:1; }
         .pdf-mean-line { stroke:#2563eb; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
         .pdf-mean-point { fill:#3b82f6; stroke:#eff6ff; stroke-width:2; }
@@ -4402,7 +4471,7 @@ function getValuationChartGroups(filterNickname = "") {
 
       (item.tests || []).forEach(test => {
         const testName = String(test.nombre || "").trim();
-        const unit = String(test.unidad || "").trim();
+        const unit = String(getValuationPrimaryUnit(test) || "").trim();
         const attempts = getValuationAttempts(test);
         if (!testName || !attempts.length) return;
 
@@ -4472,7 +4541,9 @@ function renderValuationMiniChart(group) {
   const trendPct = first.mean ? Number(((trend / first.mean) * 100).toFixed(2)) : 0;
   const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
 
-  const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+  const yTicks = [(maxRaw + minRaw) / 2].map(value => Number(value.toFixed(2)));
+  const trendClass = trend > 0 ? "trend-up" : trend < 0 ? "trend-down" : "trend-flat";
+  const trendArrow = trend > 0 ? "↑" : trend < 0 ? "↓" : "→";
 
   return `
     <article class="valuation-chart-card valuation-chart-pro-card">
@@ -4670,7 +4741,7 @@ function renderValuationsList(filterNickname = "") {
           ${(item.tests || []).map((test, index) => `
             <div class="valuation-card-test">
               <strong>TEST ${index + 1}: ${escapeValuationHtml(test.nombre || "-")}</strong>
-              <p><b>Datos:</b> ${escapeValuationHtml(test.intento1 || "-")} · ${escapeValuationHtml(test.intento2 || "-")} · ${escapeValuationHtml(test.intento3 || "-")} ${escapeValuationHtml(test.unidad || "")}</p>
+              <p><b>Datos:</b> ${escapeValuationHtml(formatValuationAttempt(test.intento1, getValuationAttemptUnit(test, 1)))} · ${escapeValuationHtml(formatValuationAttempt(test.intento2, getValuationAttemptUnit(test, 2)))} · ${escapeValuationHtml(formatValuationAttempt(test.intento3, getValuationAttemptUnit(test, 3)))}</p>
               <p><b>Observaciones:</b> ${escapeValuationHtml(test.observaciones || "-")}</p>
             </div>
           `).join("")}
@@ -4775,7 +4846,10 @@ function bindValoracionesForm() {
       intento1: row.querySelector(".valuation-attempt-1")?.value.trim() || "",
       intento2: row.querySelector(".valuation-attempt-2")?.value.trim() || "",
       intento3: row.querySelector(".valuation-attempt-3")?.value.trim() || "",
-      unidad: row.querySelector(".valuation-unit")?.value || "",
+      unidad1: row.querySelector(".valuation-attempt-unit-1")?.value || "",
+      unidad2: row.querySelector(".valuation-attempt-unit-2")?.value || "",
+      unidad3: row.querySelector(".valuation-attempt-unit-3")?.value || "",
+      unidad: row.querySelector(".valuation-attempt-unit-1")?.value || row.querySelector(".valuation-attempt-unit-2")?.value || row.querySelector(".valuation-attempt-unit-3")?.value || "",
       observaciones: row.querySelector(".valuation-observations")?.value.trim() || ""
     })).filter(test => test.nombre || test.intento1 || test.intento2 || test.intento3 || test.observaciones);
 
@@ -4844,14 +4918,18 @@ function editValuation(id) {
       const attempt1 = row.querySelector(".valuation-attempt-1");
       const attempt2 = row.querySelector(".valuation-attempt-2");
       const attempt3 = row.querySelector(".valuation-attempt-3");
-      const unit = row.querySelector(".valuation-unit");
+      const unit1 = row.querySelector(".valuation-attempt-unit-1");
+      const unit2 = row.querySelector(".valuation-attempt-unit-2");
+      const unit3 = row.querySelector(".valuation-attempt-unit-3");
       const observations = row.querySelector(".valuation-observations");
 
       if (name) name.value = test.nombre || "";
       if (attempt1) attempt1.value = test.intento1 || "";
       if (attempt2) attempt2.value = test.intento2 || "";
       if (attempt3) attempt3.value = test.intento3 || "";
-      if (unit) unit.value = test.unidad || "";
+      if (unit1) unit1.value = test.unidad1 || test.unidad || "";
+      if (unit2) unit2.value = test.unidad2 || test.unidad || "";
+      if (unit3) unit3.value = test.unidad3 || test.unidad || "";
       if (observations) observations.value = test.observaciones || "";
     });
 
@@ -4879,7 +4957,7 @@ function getValuationPdfChartGroupsForPatient(patientNickname) {
   return getValuationChartGroups(patientNickname)
     .map(group => ({
       ...group,
-      days: [...(group.days || [])].sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")))
+      days: [...(group.days || [])].sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))
     }))
     .filter(group => group.days.length);
 }
@@ -4897,9 +4975,9 @@ function renderValuationPdfChart(group) {
   const range = max - min || 1;
 
   const width = 720;
-  const height = 300;
-  const padX = 55;
-  const padY = 38;
+  const height = 310;
+  const padX = 28;
+  const padY = 52;
   const chartW = width - padX * 2;
   const chartH = height - padY * 2;
 
@@ -4913,20 +4991,22 @@ function renderValuationPdfChart(group) {
 
   const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
   const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
-  const newest = meanPoints[0];
-  const oldest = meanPoints[meanPoints.length - 1];
+  const oldest = meanPoints[0];
+  const newest = meanPoints[meanPoints.length - 1];
   const trend = Number((newest.mean - oldest.mean).toFixed(2));
   const trendLabel = trend > 0 ? `+${trend}` : String(trend);
   const trendPct = oldest.mean ? Number(((trend / oldest.mean) * 100).toFixed(2)) : 0;
   const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
-  const yTicks = [maxRaw, (maxRaw + minRaw) / 2, minRaw].map(value => Number(value.toFixed(2)));
+  const yTicks = [(maxRaw + minRaw) / 2].map(value => Number(value.toFixed(2)));
+  const trendClass = trend > 0 ? "trend-up" : trend < 0 ? "trend-down" : "trend-flat";
+  const trendArrow = trend > 0 ? "↑" : trend < 0 ? "↓" : "→";
 
   return `
     <section class="pdf-chart-card">
       <div class="pdf-chart-title">
         <div>
           <h2>${escapeValuationHtml(group.testName)}${group.unit ? ` (${escapeValuationHtml(group.unit)})` : ""}</h2>
-          <p>Fechas ordenadas de más nueva a más antigua · barras: intentos individuales · línea: media diaria</p>
+          <p>Fechas ordenadas de más antigua a más reciente · barras: intentos individuales · línea: media diaria</p>
         </div>
         <strong>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</strong>
       </div>
@@ -4934,10 +5014,7 @@ function renderValuationPdfChart(group) {
       <svg class="pdf-chart" viewBox="0 0 ${width} ${height}">
         ${yTicks.map(tick => {
           const y = yForValue(tick);
-          return `
-            <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="pdf-grid" />
-            <text x="${padX - 10}" y="${y + 4}" text-anchor="end" class="pdf-scale">${escapeValuationHtml(String(tick))}</text>
-          `;
+          return `<line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="pdf-grid" />`;
         }).join("")}
 
         <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="pdf-axis" />
@@ -4955,6 +5032,7 @@ function renderValuationPdfChart(group) {
               <rect class="pdf-bar" x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4">
                 <title>${escapeValuationHtml(day.fecha)} · Intento ${attemptIndex + 1}: ${escapeValuationHtml(String(value))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</title>
               </rect>
+              <text x="${x + (barWidth / 2)}" y="${height - padY - 7}" text-anchor="middle" class="pdf-bar-value">${escapeValuationHtml(String(value))}</text>
             `;
           }).join("");
         }).join("")}
@@ -4972,9 +5050,9 @@ function renderValuationPdfChart(group) {
       </svg>
 
       <div class="pdf-chart-summary">
-        <div><span>Más antigua</span><b>${escapeValuationHtml(String(oldest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(oldest.fecha)}</small></div>
-        <div><span>Más reciente</span><b>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(newest.fecha)}</small></div>
-        <div><span>Tendencia</span><b>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(trendPctLabel)}</small></div>
+        <div><span>Inicial</span><b>${escapeValuationHtml(String(oldest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(oldest.fecha)}</small></div>
+        <div><span>Actual</span><b>${escapeValuationHtml(String(newest.mean))}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(newest.fecha)}</small></div>
+        <div class="pdf-trend-kpi ${trendClass}"><span>Tendencia</span><i class="pdf-trend-arrow">${trendArrow}</i><b>${escapeValuationHtml(trendLabel)}${group.unit ? ` ${escapeValuationHtml(group.unit)}` : ""}</b><small>${escapeValuationHtml(trendPctLabel)}</small></div>
       </div>
     </section>
   `;
