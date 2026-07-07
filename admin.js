@@ -1575,16 +1575,25 @@ function getNextSessionNumber(patientNickname) {
   return patientSessions.length + 1;
 }
 
-function getMicrocycleInfo(patientNickname, date) {
+function getMicrocycleInfo(patientNickname, date, manualNumber = "") {
   if (!patientNickname || !date) {
-    return { number: "-", label: "Selecciona paciente y fecha" };
+    return { number: "-", label: "Selecciona paciente y fecha", manual: false };
+  }
+
+  if (manualNumber) {
+    return {
+      number: Number(manualNumber),
+      label: `Micro ${manualNumber} · ${date} · Manual`,
+      manual: true
+    };
   }
 
   const microNumber = getComputedMicrocycleNumber(patientNickname, date);
 
   return {
     number: microNumber,
-    label: `Micro ${microNumber} · ${date}`
+    label: `Micro ${microNumber} · ${date}`,
+    manual: false
   };
 }
 
@@ -1740,6 +1749,8 @@ function bindSessionsForm() {
   const microciclo = document.getElementById("sessionMicrocycle");
   const microcicloDate = document.getElementById("sessionMicrocycleDate");
   const microcicloNumber = document.getElementById("sessionMicrocycleNumber");
+  const microManualCheck = document.getElementById("sessionMicroManualCheck");
+  const microManualSelect = document.getElementById("sessionMicroManualSelect");
   const date = document.getElementById("sessionDate");
   const filter = document.getElementById("sessionsFilter");
   const kpiClientName = document.getElementById("kpiClientName");
@@ -1759,12 +1770,32 @@ function bindSessionsForm() {
   const saveCurrentBlockBtn = document.getElementById("saveCurrentBlockBtn");
   const pasteCopiedSessionBtn = document.getElementById("pasteCopiedSessionBtn");
   const loadLastSessionBtn = document.getElementById("loadLastSessionBtn");
-  const sessionClipboardStatus = document.getElementById("sessionClipboardStatus");
 
+  
   if (!form) return;
 
+  
   let activeModule = "movilidad";
   let activePrincipalBlock = "bloque1";
+
+  const getMicroManualControls = () => ({
+    check: document.getElementById("sessionMicroManualCheck"),
+    select: document.getElementById("sessionMicroManualSelect")
+  });
+
+  setTimeout(() => {
+    const { check, select } = getMicroManualControls();
+
+    if (!check || !select) return;
+
+    select.style.display = check.checked ? "block" : "none";
+
+    check.addEventListener("change", () => {
+      select.style.display = check.checked ? "block" : "none";
+    });
+  }, 0);
+
+
 
   const principalTypes = ["F. ppal. TS", "F. ppal. TI", "Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos", "Mov. Olímpicos"];
   const activationTypes = ["T. Superior", "T. Inferior", "Core", "Pliometría"];
@@ -2268,16 +2299,48 @@ function bindSessionsForm() {
 
 
   function commitSessionToStorageStable(payload) {
-    const index = sessions.findIndex(item => item.id === payload.id);
     const storedPayload = JSON.parse(JSON.stringify(payload));
+    storedPayload.updatedAt = new Date().toISOString();
+
+    /*
+      FIX PPF PRO:
+      Si por cualquier motivo se pierde editingSessionId al editar, no creamos una sesión duplicada.
+      Primero buscamos por ID y, como segunda defensa, por paciente + número de sesión.
+    */
+    let index = sessions.findIndex(item => String(item.id) === String(storedPayload.id));
+
+    if (
+      index === -1 &&
+      storedPayload.patientNickname &&
+      storedPayload.numero
+    ) {
+      index = sessions.findIndex(item =>
+        String(item.patientNickname) === String(storedPayload.patientNickname) &&
+        String(item.numero) === String(storedPayload.numero)
+      );
+    }
 
     if (index !== -1) {
+      storedPayload.id = sessions[index].id || storedPayload.id;
       sessions.splice(index, 1, storedPayload);
     } else {
       sessions.push(storedPayload);
     }
 
+    window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
+
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+      window.PPF_SUPABASE.pushKey("sessions").catch(error =>
+        console.warn("No se pudo sincronizar sessions:", error)
+      );
+    }
+
+    if (typeof syncRuntimeToDB === "function") {
+      syncRuntimeToDB().catch(error =>
+        console.warn("No se pudo sincronizar IndexedDB:", error)
+      );
+    }
   }
 
   form.addEventListener("submit", event => {
@@ -2292,13 +2355,27 @@ function bindSessionsForm() {
     const modulesForSave = cloneAllModulesForStorage(existing);
     const computedMicro = Number(getComputedMicrocycleNumber(patientNickname, date.value));
 
-    const payload = {
-      id: editingSessionId || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
-      patientNickname,
-      numero: existing ? existing.numero : getNextSessionNumber(patientNickname),
-      fecha: date.value,
-      microciclo: computedMicro,
-      microcicloLabel: `Micro ${computedMicro} · ${date.value}`,
+    const microManualCheck = document.getElementById("sessionMicroManualCheck");
+    const microManualSelect = document.getElementById("sessionMicroManualSelect");
+
+    const microManualActive = Boolean(microManualCheck && microManualCheck.checked);
+
+    const rawManualMicro = String(microManualSelect?.value || "").trim();
+    const manualMicroNumber = Number(rawManualMicro.replace(/\D/g, ""));
+
+    const selectedMicro = microManualActive && manualMicroNumber
+      ? manualMicroNumber
+      : computedMicro;
+
+  const payload = {
+  id: existing?.id || editingSessionId || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+  patientNickname,
+  numero: existing ? existing.numero : getNextSessionNumber(patientNickname),
+  fecha: date.value,
+  microciclo: selectedMicro,
+  microManual: microManualActive,
+  microcicloManual: microManualActive,
+  microcicloLabel: `Micro ${selectedMicro} · ${date.value}${microManualActive ? " · Manual" : ""}`,
       modules: modulesForSave,
       movilidad: modulesForSave.movilidad.filter(item => !item.deleted && item.nombre).map(item => item.nombre),
       activacion: modulesForSave.activacion.filter(item => !item.deleted && item.nombre).map(item => item.nombre),
@@ -2320,7 +2397,7 @@ function bindSessionsForm() {
   });
 
   window.loadSessionIntoForm = function(sessionId) {
-    const session = sessions.find(item => item.id === sessionId);
+    const session = sessions.find(item => String(item.id) === String(sessionId));
     if (!session) return;
 
     const patient = patients.find(item => item.nickname === session.patientNickname);
@@ -2354,6 +2431,17 @@ function bindSessionsForm() {
     saveSessionBtn.dataset.editing = sessionId;
     activePrincipalBlock = "bloque1";
     renderModule("movilidad");
+    const { check: editMicroManualCheck, select: editMicroManualSelect } = getMicroManualControls();
+
+    if (editMicroManualCheck && editMicroManualSelect) {
+      const isManual = Boolean(session.microManual || session.microcicloManual);
+
+      editMicroManualCheck.checked = isManual;
+      editMicroManualSelect.style.display = isManual ? "block" : "none";
+      editMicroManualSelect.value = String(session.microciclo || 1);
+    }
+
+
     refreshSessionInfo();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -2506,10 +2594,30 @@ function pmSetDashboardKpis(mode = "paciente") {
   };
 
   const renderNormalKpis = () => {
-    setCard(0, "Pacientes activos", patients.length);
-    setCard(1, "Registros historial", histories.length);
-    setCard(2, "Archivos guardados", patientFiles.length);
-  };
+  setCard(0, "Pacientes activos", patients.length);
+
+  if (mode === "valoraciones") {
+    const ultimas = [...valoraciones]
+      .sort((a, b) =>
+        String(b.fecha || "").localeCompare(String(a.fecha || "")) ||
+        String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+      )
+      .slice(0, 4)
+      .map(item => {
+        const patient = patients.find(p => p.nickname === item.patientNickname);
+        const nombre = patient ? patient.nombre : (item.patientNickname || "Paciente");
+        const test = (item.tests || []).map(t => t.nombre).filter(Boolean).join(", ") || "Valoración";
+        return `${nombre} · ${item.fecha || "-"} · ${test}`;
+      });
+
+    setCard(1, "Valoraciones generadas", valoraciones.length);
+    setCard(2, "Últimas valoraciones", ultimas.length || "-", ultimas);
+    return;
+  }
+
+  setCard(1, "Registros historial", histories.length);
+  setCard(2, "Archivos guardados", patientFiles.length);
+};
 
   const renderAgendaKpis = () => {
     const agenda = pmSessionAgenda();
@@ -2815,15 +2923,6 @@ function deleteLibraryExercise(id) {
   renderSection("biblioteca");
 }
 
-
-
-
-
-
-
-
-
-
 function getSessionExercises(session) {
   const exercises = [];
 
@@ -2892,32 +2991,38 @@ function getWeeklyVolumeData(patientNickname = "") {
 
   const grouped = {};
 
-  filtered.forEach(session => {
-    const key = `M${session.microciclo}`;
-    if (!grouped[key]) {
-      grouped[key] = {
-        micro: Number(session.microciclo),
-        label: key,
-        series: 0,
-        exercises: 0,
-        sessionsInMicro: 0,
-        sessions: 0,
-        tonnage: 0
-      };
-    }
+ filtered.forEach(session => {
+
+  const micro = Number(session.microciclo || 1);
+  const key = `M${micro}`;
+
+  if (!grouped[key]) {
+    grouped[key] = {
+      micro,
+      label: key,
+      series: 0,
+      exercises: 0,
+      sessionsInMicro: 0,
+      sessions: 0,
+      tonnage: 0,
+      dates: []
+    };
+  }
 
     grouped[key].series += getSessionTotalSeries(session);
     grouped[key].exercises += getSessionExercises(session).length;
     grouped[key].sessionsInMicro += 1;
+    if (session.fecha && !grouped[key].dates.includes(session.fecha)) {
+      grouped[key].dates.push(session.fecha);
+    }
     grouped[key].tonnage += getSessionTonnage(session);
   });
 
   const ordered = Object.values(grouped).sort((a, b) => a.micro - b.micro);
-  let cumulativeSessions = 0;
   ordered.forEach(item => {
-    cumulativeSessions += item.sessionsInMicro;
-    item.sessions = cumulativeSessions;
-  });
+  item.sessions = item.sessionsInMicro;
+});
+
 
   return ordered;
 }
@@ -2938,7 +3043,8 @@ function getPlyometricVolumeData(patientNickname = "") {
       series: 0,
       exercises: 0,
       sessionsInMicro: item.sessionsInMicro || 0,
-      sessions: item.sessions || 0
+      sessions: item.sessions || 0,
+      dates: item.dates || []
     };
   });
 
@@ -2963,7 +3069,8 @@ function getPlyometricVolumeData(patientNickname = "") {
           series: 0,
           exercises: 0,
           sessionsInMicro: 0,
-          sessions: 0
+          sessions: 0,
+          dates: []
         };
       }
 
@@ -3013,7 +3120,7 @@ function getTrainingDistribution(patientNickname = "") {
   return Object.entries(buckets).map(([label, value]) => ({ label, value }));
 }
 
-function getPeriodicityKpis(patientNickname = "") {
+function getKpis(patientNickname = "") {
   const weekly = getWeeklyVolumeData(patientNickname);
   const plyo = getPlyometricVolumeData(patientNickname);
 
@@ -3026,7 +3133,7 @@ function getPeriodicityKpis(patientNickname = "") {
 
   return {
     currentMicro: latest.label,
-    sessions: latest.sessions,
+    sessions: weekly.reduce((sum, item) => sum + Number(item.sessionsInMicro || item.sessions || 0), 0),
     series: totalSeries,
     exercises: totalExercises,
     plyoSeries: totalPlyoSeries,
@@ -3035,10 +3142,77 @@ function getPeriodicityKpis(patientNickname = "") {
   };
 }
 
+function escapePeriodicityTooltipAttr(value = "") {
+  return String(value || "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[char]));
+}
+
+function ensurePeriodicityVolumeTooltip() {
+  if (document.getElementById("periodicityVolumeTooltip")) return;
+
+  const tooltip = document.createElement("div");
+  tooltip.id = "periodicityVolumeTooltip";
+  tooltip.style.position = "absolute";
+  tooltip.style.zIndex = "99999";
+  tooltip.style.pointerEvents = "none";
+  tooltip.style.display = "none";
+  tooltip.style.maxWidth = "280px";
+  tooltip.style.padding = "12px 14px";
+  tooltip.style.borderRadius = "14px";
+  tooltip.style.background = "rgba(2, 6, 23, 0.96)";
+  tooltip.style.border = "1px solid rgba(34, 197, 94, 0.45)";
+  tooltip.style.boxShadow = "0 18px 45px rgba(0,0,0,.38)";
+  tooltip.style.color = "#e5fcef";
+  tooltip.style.fontSize = "12px";
+  tooltip.style.lineHeight = "1.45";
+  tooltip.style.whiteSpace = "pre-line";
+  document.body.appendChild(tooltip);
+
+  document.addEventListener("pointermove", event => {
+    const target = event.target.closest(".periodicity-tooltip-source");
+    if (!target) {
+      tooltip.style.display = "none";
+      return;
+    }
+
+    tooltip.textContent = target.dataset.tooltip || "";
+    tooltip.style.display = "block";
+
+    const offset = 16;
+    let left = event.pageX + offset;
+    let top = event.pageY + offset;
+
+    const rect = tooltip.getBoundingClientRect();
+
+    if (left + rect.width > window.scrollX + window.innerWidth - 14) {
+      left = event.pageX - rect.width - offset;
+    }
+
+    if (top + rect.height > window.scrollY + window.innerHeight - 14) {
+      top = event.pageY - rect.height - offset;
+    }
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  });
+
+  document.addEventListener("pointerout", event => {
+    if (!event.target.closest(".periodicity-tooltip-source")) return;
+    tooltip.style.display = "none";
+  });
+}
+
 function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay datos registrados todavía.", options = {}) {
   const chart = document.getElementById(chartId);
   const tbody = document.getElementById(tableBodyId);
   if (!chart || !tbody) return;
+
+  ensurePeriodicityVolumeTooltip();
 
   if (data.length === 0) {
     chart.innerHTML = `<p>${emptyMessage}</p>`;
@@ -3048,19 +3222,48 @@ function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay
 
   const valueKey = options.valueKey || "series";
   const maxValue = Math.max(...data.map(item => item[valueKey] || 0), 1);
+  const currentMicroNumber = Math.max(...data.map(item => Number(item.micro) || 0));
 
   chart.innerHTML = data.map(item => {
     const value = item[valueKey] || 0;
     const height = Math.max((value / maxValue) * 100, 6);
+    const realSessions = Number(item.sessionsInMicro || item.sessions || 0);
+    const sessionDates = (item.dates || []).filter(Boolean);
+    const sessionDatesLabel = sessionDates.length ? sessionDates.join(" · ") : "Sin fechas registradas";
+
+    const tooltipLines = [
+      item.label,
+      `Sesiones: ${realSessions}`,
+      `Ejercicios: ${item.exercises ?? 0}`,
+      `Series: ${item.series ?? 0}`,
+      Number(item.tonnage || 0) ? `Tonelaje: ${Math.round(item.tonnage)} kg` : "",
+      sessionDates.length ? `Fechas: ${sessionDates.join(" · ")}` : ""
+    ].filter(Boolean);
+
+    const tooltipText = tooltipLines.join("\n");
+    const tooltipTitle = tooltipLines.join(" | ");
+    const safeTooltip = escapePeriodicityTooltipAttr(tooltipText);
+    const safeTitle = escapePeriodicityTooltipAttr(tooltipTitle);
+    const safeDates = escapePeriodicityTooltipAttr(sessionDatesLabel);
+    const shownValue = options.format ? options.format(value) : value;
+    const valueClass = String(shownValue).length >= 5 ? "bar-value-compact" : "";
+    const isCurrentMicro = currentMicroNumber > 0 && Number(item.micro) === currentMicroNumber;
+    const finalTooltip = isCurrentMicro ? `${tooltipText}\n\n🟢 ` : tooltipText;
+    const safeFinalTooltip = escapePeriodicityTooltipAttr(finalTooltip);
+    const currentLabel = isCurrentMicro ? "● " : "";
+    
     return `
-      <div class="volume-bar-item">
+      <div class="volume-bar-item periodicity-tooltip-source ${isCurrentMicro ? "current-micro" : ""}" data-tooltip="${safeFinalTooltip}">
         <div class="volume-bar-wrap">
+          ${isCurrentMicro ? `<span class="current-micro-badge">Actual</span>` : ""}
           <div class="volume-bar" style="height:${height}%">
-            <span>${options.format ? options.format(value) : value}</span>
+            <span class="${valueClass}">${shownValue}</span>
           </div>
         </div>
-        <strong>${item.label}</strong>
-        <small>${item.sessions} sesión${item.sessions === 1 ? "" : "es"}</small>
+        <strong>${currentLabel}${item.label}</strong>
+        <small>
+          ${isCurrentMicro ? " · " : ""}${realSessions} sesión${realSessions === 1 ? "" : "es"}
+        </small>
       </div>
     `;
   }).join("");
@@ -3068,12 +3271,13 @@ function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay
   tbody.innerHTML = data.map(item => `
     <tr>
       <td>${item.label}</td>
-      <td>${options.format ? options.format(item[valueKey] || 0) : (item[valueKey] || 0)}</td>
-      <td>${item.sessions}</td>
+      <td>${item.sessionsInMicro || item.sessions || 0}</td>
       <td>${item.exercises ?? "-"}</td>
+      <td>${options.format ? options.format(item[valueKey] || 0) : (item[valueKey] || 0)}</td>
     </tr>
   `).join("");
 }
+
 
 
 function getSessionExercisesForDistribution(session) {
@@ -3136,7 +3340,7 @@ function getDistributionSeriesValue(item) {
   return Number.isFinite(series) && series > 0 ? series : 1;
 }
 
-function buildPeriodicityDistributionData(patientNickname = "") {
+function buildDistributionData(patientNickname = "") {
   const distribution = {
     "T. Superior": 0,
     "T. Inferior": 0,
@@ -3155,6 +3359,34 @@ function buildPeriodicityDistributionData(patientNickname = "") {
     });
 
   return distribution;
+}
+
+// Compatibilidad Periodicidad PRO: algunas partes del panel llaman a estos nombres.
+// Si no existen, el render se corta y las gráficas quedan vacías.
+function buildPeriodicityDistributionData(patientNickname = "") {
+  return buildDistributionData(patientNickname);
+}
+
+function renderPeriodicityDistributionRows(patientNickname = "") {
+  const distribution = buildPeriodicityDistributionData(patientNickname);
+  const total = Object.values(distribution).reduce((sum, value) => sum + (Number(value) || 0), 0);
+
+  return Object.entries(distribution).map(([label, value]) => {
+    const percent = total ? Math.round(((Number(value) || 0) / total) * 100) : 0;
+    return `
+      <div class="distribution-row">
+        <span>${label}</span>
+        <div class="distribution-track">
+          <div class="distribution-fill" style="width:${percent}%"></div>
+        </div>
+        <strong>${percent}%</strong>
+      </div>
+    `;
+  }).join("");
+}
+
+function getPeriodicityKpis(patientNickname = "") {
+  return getKpis(patientNickname);
 }
 
 
@@ -3181,7 +3413,7 @@ function updatePeriodicityDistributionChart(patientNickname = "") {
   chart.innerHTML = renderPeriodicityDistributionRows(patientNickname);
 }
 
-function renderPeriodicityDistributionRows(patientNickname = "") {
+function renderDistributionRows(patientNickname = "") {
   const distribution = buildPeriodicityDistributionData(patientNickname);
   const total = Object.values(distribution).reduce((sum, value) => sum + (Number(value) || 0), 0);
 
@@ -3217,7 +3449,7 @@ function renderPeriodicityKpis(patientNickname = "") {
   if (!area) return;
 
   area.innerHTML = `
-    <article class="periodicity-kpi"><span>Micro actual</span><strong>${kpis.currentMicro}</strong></article>
+    <article class="periodicity-kpi"><span></span><strong>${kpis.currentMicro}</strong></article>
     <article class="periodicity-kpi"><span>Sesiones acumuladas</span><strong>${kpis.sessions}</strong></article>
     <article class="periodicity-kpi"><span>Series acumuladas</span><strong>${kpis.series}</strong></article>
     <article class="periodicity-kpi"><span>Ejercicios programados</span><strong>${kpis.exercises}</strong></article>
@@ -3225,6 +3457,90 @@ function renderPeriodicityKpis(patientNickname = "") {
     <article class="periodicity-kpi plyo"><span>Ejercicios pliometría</span><strong>${kpis.plyoExercises}</strong></article>
     <article class="periodicity-kpi"><span>Tonelaje Kg</span><strong>${Math.round(kpis.tonnage)}</strong></article>
   `;
+}
+
+
+function animatePeriodicityBars() {
+  const charts = document.querySelectorAll(".volume-chart");
+
+  charts.forEach(chart => {
+    chart.classList.remove("ppf-chart-animated");
+
+    const bars = chart.querySelectorAll(".volume-bar");
+    bars.forEach(bar => {
+      bar.classList.remove("ppf-bar-animate");
+      bar.style.animationDelay = "0ms";
+    });
+  });
+
+  if (window.ppfPeriodicityObserver) {
+    window.ppfPeriodicityObserver.disconnect();
+  }
+
+  window.ppfPeriodicityObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+
+      const chart = entry.target;
+      if (chart.classList.contains("ppf-chart-animated")) return;
+
+      chart.classList.add("ppf-chart-animated");
+
+      chart.querySelectorAll(".volume-bar").forEach((bar, index) => {
+        bar.classList.remove("ppf-bar-animate");
+        bar.style.animationDelay = `${index * 45}ms`;
+
+        void bar.offsetWidth;
+
+        bar.classList.add("ppf-bar-animate");
+      });
+    });
+  }, {
+    threshold: 0.28
+  });
+
+  charts.forEach(chart => window.ppfPeriodicityObserver.observe(chart));
+}
+
+
+function animatePeriodicityDistribution() {
+  const chart = document.getElementById("distributionChart");
+  if (!chart) return;
+
+  chart.classList.remove("ppf-distribution-chart-animated");
+
+  chart.querySelectorAll(".distribution-fill").forEach(fill => {
+    fill.classList.remove("ppf-distribution-animate");
+    fill.style.animationDelay = "0ms";
+  });
+
+  if (window.ppfPeriodicityDistributionObserver) {
+    window.ppfPeriodicityDistributionObserver.disconnect();
+  }
+
+  window.ppfPeriodicityDistributionObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+
+      const targetChart = entry.target;
+      if (targetChart.classList.contains("ppf-distribution-chart-animated")) return;
+
+      targetChart.classList.add("ppf-distribution-chart-animated");
+
+      targetChart.querySelectorAll(".distribution-fill").forEach((fill, index) => {
+        fill.classList.remove("ppf-distribution-animate");
+        fill.style.animationDelay = `${index * 90}ms`;
+
+        void fill.offsetWidth;
+
+        fill.classList.add("ppf-distribution-animate");
+      });
+    });
+  }, {
+    threshold: 0.28
+  });
+
+  window.ppfPeriodicityDistributionObserver.observe(chart);
 }
 
 function renderWeeklyVolumeChart(patientNickname = "") {
@@ -3256,10 +3572,18 @@ function renderWeeklyVolumeChart(patientNickname = "") {
   );
   updatePeriodicityDistributionChart(patientNickname);
 
+  if (typeof animatePeriodicityBars === "function") {
+    setTimeout(animatePeriodicityBars, 40);
+  }
+
+  if (typeof animatePeriodicityDistribution === "function") {
+    setTimeout(animatePeriodicityDistribution, 120);
+  }
+
 }
 
 
-function refreshPeriodicityDistributionFixed() {
+function refreshDistributionFixed() {
   const filter =
     document.getElementById("periodicityPatientFilter") ||
     document.getElementById("periodicityFilter") ||
@@ -3322,6 +3646,19 @@ function bindPeriodicityPanel() {
   const filter = document.getElementById("periodicityPatientFilter");
   if (!filter) return;
 
+  const getPeriodicityNickname = () => {
+    const value = String(filter.value || "").trim();
+    const selectedText = String(filter.options?.[filter.selectedIndex]?.textContent || "").trim();
+
+    const patient =
+      patients.find(p => String(p.nickname || "") === value) ||
+      patients.find(p => String(p.nombre || "") === value) ||
+      patients.find(p => String(p.nickname || "") === selectedText) ||
+      patients.find(p => String(p.nombre || "") === selectedText);
+
+    return patient ? patient.nickname : value;
+  };
+
   const clearPeriodicity = () => {
     ["weeklyVolumeChart", "plyometricVolumeChart", "tonnageChart", "distributionChart"].forEach(id => {
       const element = document.getElementById(id);
@@ -3335,25 +3672,28 @@ function bindPeriodicityPanel() {
   };
 
   const run = () => {
+    const nickname = getPeriodicityNickname();
+
     if (typeof renderPeriodicityPatientCard === "function") {
-      renderPeriodicityPatientCard(filter.value);
+      renderPeriodicityPatientCard(nickname);
     }
 
-    if (!filter.value) {
+    if (!nickname) {
       clearPeriodicity();
       return;
     }
 
-    renderWeeklyVolumeChart(filter.value);
+    renderWeeklyVolumeChart(nickname);
 
     if (typeof updatePeriodicityDistributionChart === "function") {
-      updatePeriodicityDistributionChart(filter.value);
+      updatePeriodicityDistributionChart(nickname);
     }
   };
 
   filter.addEventListener("change", run);
   run();
 }
+
 
 
 
@@ -3415,24 +3755,68 @@ function normalizeSessionMicrocycles(patientNickname = "") {
     ? [patientNickname]
     : [...new Set(sessions.map(session => session.patientNickname).filter(Boolean))];
 
+  let changed = false;
+
   nicknames.forEach(nickname => {
     const dates = getPatientSortedSessionDates(nickname);
 
     sessions = sessions.map(session => {
       if (session.patientNickname !== nickname || !session.fecha) return session;
 
+      const existingMicro = Number(session.microciclo);
+      const labelSaysManual = String(session.microcicloLabel || "").toLowerCase().includes("manual");
+      const isManual = Boolean(session.microManual || session.microcicloManual || labelSaysManual);
+
+      /*
+        FIX PPF PRO:
+        - Si la sesión ya trae un micro guardado, NUNCA se recalcula.
+        - Esto protege los micros manuales al cerrar/abrir y también cuando entra Supabase/IndexedDB.
+        - Solo se calcula micro automático para sesiones antiguas que no tengan microciclo válido.
+      */
+      if (Number.isFinite(existingMicro) && existingMicro > 0) {
+        const nextLabel = `Micro ${existingMicro} · ${session.fecha}${isManual ? " · Manual" : ""}`;
+
+        if (
+          session.microciclo !== existingMicro ||
+          session.microcicloLabel !== nextLabel ||
+          (isManual && (!session.microManual || !session.microcicloManual))
+        ) {
+          changed = true;
+        }
+
+        return {
+          ...session,
+          microciclo: existingMicro,
+          microManual: isManual ? true : Boolean(session.microManual),
+          microcicloManual: isManual ? true : Boolean(session.microcicloManual),
+          microcicloLabel: nextLabel
+        };
+      }
+
       const micro = dates.indexOf(session.fecha) + 1;
+      changed = true;
+
       return {
         ...session,
         microciclo: micro,
+        microManual: false,
+        microcicloManual: false,
         microcicloLabel: `Micro ${micro} · ${session.fecha}`
       };
     });
   });
 
-  localStorage.setItem("sessions", JSON.stringify(sessions));
-}
+  if (changed) {
+    window.sessions = sessions;
+    localStorage.setItem("sessions", JSON.stringify(sessions));
 
+    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
+      window.PPF_SUPABASE.pushKey("sessions").catch(error =>
+        console.warn("No se pudo sincronizar sessions:", error)
+      );
+    }
+  }
+}
 
 
 function getAllSessionExercisesForAdmin(session) {
@@ -4662,6 +5046,11 @@ function renderValuationCharts(filterNickname = "") {
   const area = document.getElementById("valuationChartsArea");
   if (!area) return;
 
+  if (!filterNickname) {
+    area.innerHTML = "";
+    return;
+  }
+
   const groups = getValuationChartGroups(filterNickname);
 
   if (!groups.length) {
@@ -4825,7 +5214,7 @@ function bindValoracionesForm() {
     }).catch(error => console.warn("No se pudo sincronizar valoraciones:", error));
   }
   renderValuationsList();
-  renderValuationCharts();
+  renderValuationCharts("");
   ensureValuationChartTooltip();
   pmRefreshValoracionesFromSupabase();
 
@@ -4860,6 +5249,11 @@ function bindValoracionesForm() {
 
   filter?.addEventListener("change", () => {
     renderValuationsList(filter.value);
+    if (!filter.value) {
+      const area = document.getElementById("valuationChartsArea");
+      if (area) area.innerHTML = "";
+      return;
+    }
     renderValuationCharts(filter.value);
   });
 
@@ -5195,12 +5589,35 @@ const sections = {
           <article class="session-kpi-card"><span>Cliente</span><strong id="kpiClientName">-</strong></article>
           <article class="session-kpi-card"><span>Nickname</span><strong id="kpiClientNickname">-</strong></article>
           <article class="session-kpi-card"><span>Sesión</span><strong>Nº <b id="sessionNumber">-</b></strong></article>
+
           <article class="session-kpi-card">
             <span>Microciclo</span>
+
             <strong id="sessionMicrocycle">-</strong>
             <small id="sessionMicrocycleDate">Selecciona fecha</small>
+
+            <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.82rem;">
+              <div class="micro-manual-wrap">
+                <label class="micro-manual-label">
+                  <input
+                    type="checkbox"
+                    id="sessionMicroManualCheck"
+                    class="micro-manual-check"
+                  >
+                  <span>Micro Manual</span>
+                </label>
+              </div>
+            </label>
+
+            <select id="sessionMicroManualSelect" style="margin-top:6px;display:none;">
+              ${Array.from({length:52},(_,i)=>
+                `<option value="${i+1}">Micro ${i+1}</option>`
+              ).join("")}
+            </select>
+
             <input id="sessionMicrocycleNumber" type="hidden" />
           </article>
+          
         </section>
 
         <section class="session-pro-actions" aria-label="Herramientas de copia de sesiones">
@@ -5237,7 +5654,7 @@ const sections = {
             <button type="button" class="principal-block-btn" data-principal-block="bloque4">Bloque 4</button>
           </div>
 
-          <div id="principalBlockNotesWrap" class="principal-block-notes" style="display:none;">
+          <div id="principalBlockNotesWrap" class="principal-block-notes" style="">
             <label id="principalBlockNotesLabel">Objetivo / Observaciones del bloque</label>
             <textarea id="principalBlockNotes" placeholder="Ej: Fuerza máxima, potencia horizontal, hipertrofia tren inferior..."></textarea>
 </div>
@@ -5313,7 +5730,7 @@ const sections = {
           </div>
           <div class="volume-table-wrap">
             <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Series</th><th>Sesiones</th><th>Ejercicios</th></tr></thead>
+              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Series</th></tr></thead>
               <tbody id="weeklyVolumeTableBody"></tbody>
             </table>
           </div>
@@ -5341,14 +5758,14 @@ const sections = {
           </div>
           <div class="volume-table-wrap">
             <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Series Plyo</th><th>Sesiones</th><th>Ejercicios Plyo</th></tr></thead>
+              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios Plyo</th><th>Series Plyo</th></tr></thead>
               <tbody id="plyometricVolumeTableBody"></tbody>
             </table>
           </div>
         </article>
       </section>
 
-      <section class="periodicity-dashboard">
+      <section class="periodicity-dashboard kg-dashboard-row">
         <article class="periodicity-card">
           <div class="module-panel-header">
             <div>
@@ -5363,28 +5780,28 @@ const sections = {
         <article class="periodicity-card">
           <div class="module-panel-header">
             <div>
-              <p class="eyebrow">Distribución</p>
-              <h3>TS · TI · Core · Plyo</h3>
-            </div>
-          </div>
-          <div class="distribution-chart" id="distributionChart"></div>
-        </article>
-      </section>
-
-      <section class="periodicity-dashboard">
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
               <p class="eyebrow">Resumen tonelaje</p>
               <h3>Detalle de carga externa</h3>
             </div>
           </div>
           <div class="volume-table-wrap">
             <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Tonelaje Kg</th><th>Sesiones</th><th>Ejercicios</th></tr></thead>
+              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Tonelaje Kg</th></tr></thead>
               <tbody id="tonnageTableBody"></tbody>
             </table>
           </div>
+        </article>
+      </section>
+
+      <section class="periodicity-dashboard distribution-dashboard-row">
+        <article class="periodicity-card distribution-wide-card">
+          <div class="module-panel-header">
+            <div>
+              <p class="eyebrow">Distribución</p>
+              <h3>TS · TI · Core · Plyo</h3>
+            </div>
+          </div>
+          <div class="distribution-chart" id="distributionChart"></div>
         </article>
       </section>
     `,
@@ -5477,7 +5894,7 @@ const sections = {
       <div class="patient-form" style="margin-top:26px;">
         <label for="valuationsFilter">Filtrar valoraciones por paciente</label>
         <select id="valuationsFilter">
-          <option value="">Todos los pacientes</option>
+          <option value="">Elegir Paciente</option>
           ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
         </select>
       </div>

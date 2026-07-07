@@ -560,6 +560,28 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   gap: 18px;
 }
 
+.micro-manual-wrap{
+  margin-top:10px;
+  margin-bottom:10px;
+}
+
+.micro-manual-label{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  cursor:pointer;
+  font-weight:700;
+  font-size:20px;
+  color:#fff;
+}
+
+.micro-manual-check{
+  width:28px;
+  height:28px;
+  cursor:pointer;
+  accent-color:#22c55e;
+}
+
 .kpi-module {
   border-radius: 24px;
   padding: 20px;
@@ -1322,7 +1344,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .periodicity-dashboard {
   margin-top: 24px;
   display: grid;
-  grid-template-columns: 1.4fr .9fr;
+  grid-template-columns: minmax(0, 1.45fr) minmax(360px, .85fr);
   gap: 18px;
 }
 
@@ -4413,3 +4435,1031 @@ aside.client-sidebar {
     grid-template-columns: 1fr 120px;
   }
 }
+
+/* Microciclo manual · Creación sesiones PRO v2 */
+.session-manual-micro-control {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.session-manual-micro-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  color: #d1fae5;
+}
+
+.session-manual-micro-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: #22c55e;
+}
+
+.session-manual-micro-wrap {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.session-manual-micro-wrap select {
+  width: 100%;
+}
+
+.volume-bar span {
+  max-width: 100%;
+  display: block;
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.volume-bar span.bar-value-compact {
+  font-size: 13px;
+  letter-spacing: -0.4px;
+  transform: scaleX(0.92);
+  transform-origin: center;
+}
+
+@keyframes ppfBarGrow {
+  from {
+    transform: scaleY(0);
+    opacity: 0.35;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.volume-bar {
+  transform-origin: bottom;
+  animation: ppfBarGrow 0.99s ease-out both;
+}
+
+.periodicity-card {
+  min-height: 420px;
+}
+
+.volume-table-wrap {
+  max-height: 310px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.volume-chart {
+  min-height: 300px;
+  align-items: end;
+}
+
+.volume-table-wrap::-webkit-scrollbar {
+  width: 8px;
+}
+
+.volume-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(34, 197, 94, .45);
+  border-radius: 999px;
+}
+
+.volume-table-wrap {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.volume-chart {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+}
+
+.volume-bar-item {
+  flex: 0 0 62px;
+  min-width: 62px;
+}
+
+.volume-chart::-webkit-scrollbar {
+  height: 8px;
+}
+
+.volume-chart::-webkit-scrollbar-thumb {
+  background: rgba(34, 197, 94, .45);
+  border-radius: 999px;
+}
+
+.volume-chart::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, .35);
+}
+/* Periodicidad PRO - layout homogéneo 75/25 + distribución inferior */
+.periodicity-dashboard {
+  grid-template-columns: minmax(0, 2.75fr) minmax(320px, 1fr);
+  align-items: stretch;
+}
+
+.periodicity-dashboard > .periodicity-card {
+  min-width: 0;
+}
+
+.kg-dashboard-row {
+  grid-template-columns: minmax(0, 2.75fr) minmax(320px, 1fr);
+}
+
+.distribution-dashboard-row {
+  grid-template-columns: 1fr;
+}
+
+.distribution-wide-card {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 300px;
+}
+
+.distribution-wide-card .distribution-chart {
+  max-width: none;
+  width: 100%;
+}
+
+.distribution-wide-card .distribution-row {
+  grid-template-columns: 150px minmax(0, 1fr) 60px;
+  gap: 18px;
+}
+
+@media (max-width: 1000px) {
+  .periodicity-dashboard,
+  .kg-dashboard-row,
+  .distribution-dashboard-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/*=========================================================
+ Animación general
+========================================================= */
+.volume-bar{
+    position:relative;
+    overflow:visible;
+
+    transition:
+        transform .22s ease,
+        filter .22s ease,
+        box-shadow .22s ease;
+}
+
+/*=========================================================
+Glow elegante
+========================================================= */
+.volume-bar:hover{
+
+    transform:scale(1.04);
+
+    filter:brightness(1.05);
+
+    box-shadow:
+        0 0 10px rgba(55,255,145,.28),
+        0 0 22px rgba(55,255,145,.15);
+}
+
+/*=========================================================
+Elevar la barra
+========================================================= */
+.volume-bar:hover{
+    z-index:20;
+}
+
+/*=========================================================
+Iluminar las etiquetas inferiores
+========================================================= */
+.volume-bar-item strong{
+    transition:.22s;
+}
+
+.volume-bar-item small{
+    transition:.22s;
+}
+
+.volume-bar-item:hover strong{
+    color:#6CFFAE;
+    text-shadow:0 0 8px rgba(80,255,160,.45);
+}
+
+.volume-bar-item:hover small{
+    color:#B6FFD4;
+}
+
+/*=========================================================
+Animación del tooltip
+========================================================= */
+.periodicity-tooltip{
+
+    opacity:0;
+
+    transform:translateY(8px);
+
+    transition:
+        opacity .18s ease,
+        transform .18s ease;
+
+    pointer-events:none;
+}
+.periodicity-tooltip.visible{
+
+    opacity:1;
+
+    transform:translateY(0);
+}
+
+/*=========================================================
+Glow del tooltip
+========================================================= */
+.periodicity-tooltip{
+
+    border:1px solid rgba(72,255,165,.35);
+
+    box-shadow:
+
+        0 8px 20px rgba(0,0,0,.45),
+
+        0 0 14px rgba(60,255,150,.15);
+}
+
+/*=========================================================
+Animar el número de dentro
+========================================================= */
+.volume-bar span{
+
+    transition:
+        transform .22s,
+        color .22s;
+}
+.volume-bar:hover span{
+
+    transform:scale(1.08);
+
+    color:white;
+}
+
+/*=========================================================
+Glow del borde del gráfico
+========================================================= */
+.periodicity-card{
+
+    transition:
+        border-color .25s,
+        box-shadow .25s;
+}
+
+.periodicity-card:has(.volume-bar:hover){
+
+    border-color:rgba(60,255,150,.35);
+
+    box-shadow:
+        0 0 18px rgba(50,255,145,.08);
+}
+
+@keyframes ppfBarGrow {
+  from {
+    transform: scaleY(0);
+    opacity: .35;
+  }
+
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.volume-bar {
+  transform-origin: bottom;
+  animation: ppfBarGrow .55s ease-out both;
+}
+
+.volume-bar-item:nth-child(1) .volume-bar { animation-delay: .03s; }
+.volume-bar-item:nth-child(2) .volume-bar { animation-delay: .06s; }
+.volume-bar-item:nth-child(3) .volume-bar { animation-delay: .09s; }
+.volume-bar-item:nth-child(4) .volume-bar { animation-delay: .12s; }
+.volume-bar-item:nth-child(5) .volume-bar { animation-delay: .15s; }
+.volume-bar-item:nth-child(6) .volume-bar { animation-delay: .18s; }
+.volume-bar-item:nth-child(7) .volume-bar { animation-delay: .21s; }
+.volume-bar-item:nth-child(8) .volume-bar { animation-delay: .24s; }
+.volume-bar-item:nth-child(9) .volume-bar { animation-delay: .27s; }
+.volume-bar-item:nth-child(10) .volume-bar { animation-delay: .30s; }
+
+/*=========================================================
+Implementación Final
+========================================================= */
+.volume-bar.ppf-bar-animate {
+  transform-origin: bottom;
+  animation: ppfBarGrowJs .58s cubic-bezier(.22, 1.25, .36, 1) both;
+}
+
+@keyframes ppfBarGrowJs {
+  0% {
+    transform: translateY(22px) scaleY(.12);
+    opacity: 0;
+  }
+
+  65% {
+    transform: translateY(-4px) scaleY(1.04);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(0) scaleY(1);
+    opacity: 1;
+  }
+}
+
+/*=========================================================
+Animación Dashboard Distribución
+========================================================= */
+.distribution-fill {
+  transform-origin: left;
+}
+
+.distribution-fill.ppf-distribution-animate {
+  animation: ppfDistributionGrow .95s cubic-bezier(.22, 1.15, .36, 1) both;
+}
+
+@keyframes ppfDistributionGrow {
+  from {
+    transform: scaleX(0);
+    opacity: .35;
+  }
+
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+/* =========================================================
+   PPF PRO · Microciclo actual destacado en Periodicidad
+   ========================================================= */
+.volume-bar-item.current-micro {
+  position: relative;
+  z-index: 8;
+}
+
+.volume-bar-item.current-micro .volume-bar-wrap {
+  position: relative;
+  border: 1px solid rgba(34, 197, 94, 0.34);
+  box-shadow:
+    inset 0 0 18px rgba(34, 197, 94, 0.08),
+    0 0 18px rgba(34, 197, 94, 0.10);
+}
+
+.current-micro-badge {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #4ade80, #22c55e);
+  color: #022c22;
+  font-size: 10px;
+  font-weight: 1000;
+  line-height: 1;
+  letter-spacing: .02em;
+  box-shadow:
+    0 0 0 2px rgba(34, 197, 94, 0.20),
+    0 10px 24px rgba(34, 197, 94, 0.32),
+    0 0 20px rgba(34, 197, 94, 0.28);
+  pointer-events: none;
+}
+
+.volume-bar-item.current-micro .volume-bar {
+  border: 2px solid rgba(187, 247, 208, 0.94);
+  filter: brightness(1.12) saturate(1.08);
+  box-shadow:
+    0 0 16px rgba(34, 197, 94, 0.50),
+    0 0 42px rgba(34, 197, 94, 0.24);
+}
+
+.volume-bar-item.current-micro .volume-bar.ppf-bar-animate {
+  animation:
+    ppfBarGrowJs .58s cubic-bezier(.22, 1.25, .36, 1) both,
+    ppfCurrentMicroGlow 2.2s ease-in-out .75s infinite alternate;
+}
+
+.volume-bar-item.current-micro strong {
+  color: #7dffb2;
+  text-shadow: 0 0 10px rgba(80, 255, 160, 0.54);
+  font-weight: 1000;
+}
+
+.volume-bar-item.current-micro small {
+  color: #bbf7d0;
+  font-weight: 900;
+}
+
+@keyframes ppfCurrentMicroGlow {
+  from {
+    box-shadow:
+      0 0 13px rgba(34, 197, 94, 0.32),
+      0 0 30px rgba(34, 197, 94, 0.14);
+  }
+  to {
+    box-shadow:
+      0 0 24px rgba(34, 197, 94, 0.68),
+      0 0 58px rgba(34, 197, 94, 0.30);
+  }
+}
+
+/* =========================================================
+   PPF PRO · Periodicidad en App Cliente
+   ========================================================= */
+.client-periodicity-dashboard {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+
+.client-periodicity-bottom {
+  margin-top: 18px;
+}
+
+.client-periodicity-card .volume-chart {
+  min-height: 330px;
+  padding-top: 34px;
+  padding-bottom: 8px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.client-periodicity-card .volume-bar-item {
+  min-width: 78px;
+}
+
+.client-periodicity-card .volume-table-wrap {
+  margin-top: 12px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.client-periodicity-card .current-micro-badge {
+  top: -24px;
+}
+
+.client-periodicity-card .volume-bar-item.current-micro small {
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.client-periodicity-card .volume-bar-item.current-micro strong {
+  color: #7dffb2;
+}
+
+.client-latest-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 1100px) {
+  .client-periodicity-dashboard,
+  .client-periodicity-bottom,
+  .client-latest-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Cliente PRO · Mis Valoraciones igual que Admin */
+.client-valuations-pro.content-card {
+  padding: 28px;
+}
+.client-valuations-pro .valuation-charts-grid-pro {
+  display: grid;
+  grid-template-columns: 1fr !important;
+  gap: 18px;
+}
+.client-valuations-pro .client-chart-bar,
+.client-valuations-pro .valuation-bar-value-bottom {
+  display: none !important;
+}
+.client-valuations-pro .valuation-line-chart text:not(.valuation-chart-date) {
+  display: none !important;
+}
+.client-valuations-pro .valuation-chart-date {
+  display: block !important;
+  fill: #94a3b8 !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+.client-valuations-pro .valuation-chart-summary {
+  grid-template-columns: repeat(3, minmax(0, 170px));
+}
+@media (max-width: 900px) {
+  .client-valuations-pro .valuation-chart-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   PPF PRO · FASE 1 Dashboard Cliente Mobile PRO
+   Mantiene el mismo motor de datos y gráficas, solo adapta
+   la estética responsive de la pantalla Inicio/Dashboard.
+   ========================================================= */
+@media (max-width: 768px) {
+  .client-main .client-pro-hero {
+    margin: 8px 0 14px !important;
+    padding: 16px !important;
+    border-radius: 28px !important;
+    display: grid !important;
+    grid-template-columns: 72px 1fr !important;
+    gap: 14px !important;
+    align-items: center !important;
+    background:
+      radial-gradient(circle at 12% 10%, rgba(34,197,94,.25), transparent 42%),
+      linear-gradient(135deg, rgba(34,197,94,.12), rgba(20,184,166,.06)),
+      rgba(15,23,42,.78) !important;
+    border: 1px solid rgba(34,197,94,.24) !important;
+    box-shadow: 0 18px 45px rgba(0,0,0,.32), inset 0 0 28px rgba(34,197,94,.035) !important;
+  }
+
+  .client-main .client-pro-hero .client-profile-photo,
+  .client-main .client-pro-hero .client-profile-photo.fallback {
+    width: 72px !important;
+    height: 72px !important;
+    border-radius: 22px !important;
+    box-shadow: 0 10px 26px rgba(0,0,0,.28) !important;
+  }
+
+  .client-main .client-pro-hero .eyebrow {
+    font-size: 10px !important;
+    letter-spacing: .06em !important;
+    text-transform: uppercase !important;
+    margin-bottom: 3px !important;
+  }
+
+  .client-main .client-pro-hero h2 {
+    font-size: 20px !important;
+    line-height: 1.05 !important;
+    margin: 0 0 6px !important;
+  }
+
+  .client-main .client-pro-hero p:not(.eyebrow) {
+    display: none !important;
+  }
+
+  .client-main .client-pro-hero .patient-tags {
+    margin-top: 7px !important;
+    gap: 6px !important;
+  }
+
+  .client-main .client-pro-hero .patient-tags span {
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+    font-weight: 900 !important;
+    background: rgba(255,255,255,.07) !important;
+    border: 1px solid rgba(255,255,255,.06) !important;
+  }
+
+  .client-main .client-periodicity-kpis,
+  .client-main .periodicity-kpi-grid.client-periodicity-kpis {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    margin: 12px 0 14px !important;
+  }
+
+  .client-main .client-periodicity-kpis .periodicity-kpi {
+    min-height: 92px !important;
+    padding: 14px !important;
+    border-radius: 22px !important;
+    background:
+      linear-gradient(135deg, rgba(34,197,94,.10), rgba(20,184,166,.055)),
+      rgba(15,23,42,.76) !important;
+    border: 1px solid rgba(34,197,94,.20) !important;
+    box-shadow: inset 0 0 24px rgba(255,255,255,.018) !important;
+  }
+
+  .client-main .client-periodicity-kpis .periodicity-kpi span {
+    font-size: 10px !important;
+    line-height: 1.15 !important;
+    text-transform: uppercase !important;
+    letter-spacing: .045em !important;
+    color: #9fb4d0 !important;
+  }
+
+  .client-main .client-periodicity-kpis .periodicity-kpi strong {
+    font-size: 24px !important;
+    line-height: 1 !important;
+  }
+
+  .client-main .client-periodicity-kpis .periodicity-kpi:first-child,
+  .client-main .client-periodicity-kpis .periodicity-kpi:last-child {
+    border-color: rgba(34,197,94,.34) !important;
+    background:
+      radial-gradient(circle at top right, rgba(34,197,94,.18), transparent 46%),
+      rgba(15,23,42,.80) !important;
+  }
+
+  .client-main .client-periodicity-dashboard,
+  .client-main .client-periodicity-bottom,
+  .client-main .client-latest-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    margin-top: 14px !important;
+  }
+
+  .client-main .client-periodicity-card,
+  .client-main .client-pro-card {
+    padding: 16px !important;
+    border-radius: 26px !important;
+    background: rgba(15,23,42,.74) !important;
+    border: 1px solid rgba(255,255,255,.08) !important;
+    box-shadow: 0 16px 38px rgba(0,0,0,.22), inset 0 0 24px rgba(255,255,255,.015) !important;
+    overflow: hidden !important;
+  }
+
+  .client-main .client-periodicity-card .module-panel-header,
+  .client-main .client-pro-card .module-panel-header {
+    margin-bottom: 8px !important;
+  }
+
+  .client-main .client-periodicity-card .module-panel-header h3,
+  .client-main .client-pro-card .module-panel-header h3 {
+    font-size: 21px !important;
+    line-height: 1.12 !important;
+  }
+
+  .client-main .client-periodicity-card .volume-chart {
+    min-height: 265px !important;
+    height: auto !important;
+    padding: 34px 4px 8px !important;
+    gap: 14px !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    scroll-snap-type: x proximity !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .client-main .client-periodicity-card .volume-chart::-webkit-scrollbar {
+    height: 5px !important;
+  }
+
+  .client-main .client-periodicity-card .volume-chart::-webkit-scrollbar-thumb {
+    background: rgba(34,197,94,.45) !important;
+    border-radius: 999px !important;
+  }
+
+  .client-main .client-periodicity-card .volume-bar-item {
+    min-width: 66px !important;
+    height: 245px !important;
+    scroll-snap-align: start !important;
+  }
+
+  .client-main .client-periodicity-card .volume-bar-wrap {
+    height: 178px !important;
+    border-radius: 18px !important;
+  }
+
+  .client-main .client-periodicity-card .volume-bar {
+    width: 38px !important;
+  }
+
+  .client-main .client-periodicity-card .volume-bar span {
+    font-size: 11px !important;
+  }
+
+  .client-main .client-periodicity-card .current-micro-badge {
+    top: -28px !important;
+    margin-bottom: 7px !important;
+  }
+
+  .client-main .client-periodicity-card .volume-bar-item strong {
+    font-size: 13px !important;
+  }
+
+  .client-main .client-periodicity-card .volume-bar-item small {
+    font-size: 11px !important;
+  }
+
+  .client-main .client-periodicity-card .volume-table-wrap {
+    max-height: 210px !important;
+    margin-top: 10px !important;
+    overflow: auto !important;
+    border-radius: 18px !important;
+  }
+
+  .client-main .client-periodicity-card .volume-table th,
+  .client-main .client-periodicity-card .volume-table td {
+    padding: 10px 8px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+  }
+
+  .client-main .client-distribution-card .distribution-chart {
+    gap: 13px !important;
+    margin-top: 14px !important;
+  }
+
+  .client-main .client-distribution-card .distribution-row {
+    grid-template-columns: 76px 1fr 42px !important;
+    gap: 9px !important;
+  }
+
+  .client-main .client-distribution-card .distribution-row span,
+  .client-main .client-distribution-card .distribution-row strong {
+    font-size: 12px !important;
+  }
+
+  .client-main .client-distribution-card .distribution-track {
+    height: 15px !important;
+  }
+
+  .client-main .client-latest-grid .client-latest-list {
+    margin-top: 10px !important;
+    gap: 10px !important;
+  }
+
+  .client-main .client-latest-grid .client-latest-card {
+    border-radius: 18px !important;
+    background: rgba(255,255,255,.052) !important;
+    border: 1px solid rgba(255,255,255,.06) !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .client-main .client-periodicity-kpis,
+  .client-main .periodicity-kpi-grid.client-periodicity-kpis {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
+/* =========================================================
+   FASE 2 · CLIENTE MOBILE PERIODICIDAD PRO
+   Misma estética visual que Admin/Cliente escritorio,
+   adaptada a móvil/PWA.
+   ========================================================= */
+@media (max-width: 800px), (pointer: coarse) and (max-width: 1024px) {
+
+  .periodicity-dashboard,
+  .client-periodicity-dashboard,
+  .client-pro-grid,
+  .client-periodicity-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    margin-top: 14px !important;
+  }
+
+  .periodicity-kpi-grid,
+  .client-pro-kpis,
+  .graph-pro-kpis {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    margin: 14px 0 !important;
+  }
+
+  .periodicity-kpi,
+  .client-pro-kpis article,
+  .graph-pro-kpis article {
+    min-height: 92px !important;
+    padding: 14px !important;
+    border-radius: 22px !important;
+    background:
+      linear-gradient(135deg, rgba(34,197,94,.10), rgba(20,184,166,.06)),
+      rgba(15,23,42,.76) !important;
+    border: 1px solid rgba(34,197,94,.18) !important;
+    box-shadow: inset 0 0 22px rgba(34,197,94,.025) !important;
+  }
+
+  .periodicity-kpi span,
+  .client-pro-kpis span,
+  .graph-pro-kpis span {
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: .03em !important;
+    color: #94a3b8 !important;
+  }
+
+  .periodicity-kpi strong,
+  .client-pro-kpis strong,
+  .graph-pro-kpis strong {
+    font-size: 23px !important;
+    line-height: 1.1 !important;
+    color: #ffffff !important;
+  }
+
+  .periodicity-card,
+  .client-pro-card,
+  .graph-pro-card {
+    padding: 16px !important;
+    border-radius: 26px !important;
+    background: rgba(15,23,42,.72) !important;
+    border: 1px solid rgba(255,255,255,.08) !important;
+    box-shadow:
+      0 18px 44px rgba(0,0,0,.22),
+      inset 0 0 24px rgba(255,255,255,.018) !important;
+    overflow: hidden !important;
+  }
+
+  .periodicity-card .module-panel-header,
+  .client-pro-card .module-panel-header,
+  .graph-pro-card .module-panel-header {
+    align-items: flex-start !important;
+    gap: 10px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .periodicity-card .module-panel-header h3,
+  .client-pro-card .module-panel-header h3,
+  .graph-pro-card .module-panel-header h3 {
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+  }
+
+  .volume-chart,
+  .client-mini-bars {
+    min-height: 260px !important;
+    height: 260px !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    gap: 13px !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    padding: 34px 4px 8px !important;
+    scroll-snap-type: x proximity !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+  }
+
+  .volume-chart::-webkit-scrollbar,
+  .client-mini-bars::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .volume-bar-item,
+  .client-mini-bar-item {
+    min-width: 62px !important;
+    width: 62px !important;
+    height: 238px !important;
+    display: grid !important;
+    grid-template-rows: 1fr auto auto !important;
+    gap: 6px !important;
+    text-align: center !important;
+    scroll-snap-align: start !important;
+  }
+
+  .volume-bar-wrap,
+  .client-mini-bar-wrap {
+    position: relative !important;
+    height: 178px !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    padding: 7px !important;
+    border-radius: 18px !important;
+    background: rgba(255,255,255,.045) !important;
+    overflow: visible !important;
+  }
+
+  .volume-bar,
+  .client-mini-bar {
+    width: 38px !important;
+    min-height: 18px !important;
+    border-radius: 14px 14px 8px 8px !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding-top: 6px !important;
+    font-size: 11px !important;
+    font-weight: 950 !important;
+  }
+
+  .volume-bar span,
+  .client-mini-bar span {
+    font-size: 11px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  .volume-bar span.bar-value-compact,
+  .volume-bar span.bar-value-small {
+    font-size: 9px !important;
+    letter-spacing: -.5px !important;
+  }
+
+  .volume-bar-item strong,
+  .client-mini-bar-item strong {
+    font-size: 13px !important;
+    line-height: 1.05 !important;
+    color: #ffffff !important;
+  }
+
+  .volume-bar-item small,
+  .client-mini-bar-item small,
+  .volume-bar-item em,
+  .client-mini-bar-item em {
+    font-size: 11px !important;
+    line-height: 1.05 !important;
+    color: #94a3b8 !important;
+    font-style: normal !important;
+  }
+
+  .volume-bar-item.current-micro strong,
+  .client-mini-bar-item.current-micro strong {
+    color: #86efac !important;
+    text-shadow: 0 0 9px rgba(34,197,94,.42) !important;
+  }
+
+  .current-micro-badge,
+  .current-badge {
+    position: absolute !important;
+    top: -30px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    display: inline-grid !important;
+    place-items: center !important;
+    min-width: 46px !important;
+    padding: 4px 9px !important;
+    border-radius: 999px !important;
+    font-size: 10px !important;
+    font-weight: 950 !important;
+    color: #022c22 !important;
+    background: linear-gradient(135deg,#86efac,#22c55e) !important;
+    box-shadow:
+      0 0 0 2px rgba(34,197,94,.16),
+      0 8px 18px rgba(34,197,94,.32) !important;
+    z-index: 8 !important;
+    pointer-events: none !important;
+  }
+
+  .current-micro .volume-bar,
+  .current-micro .client-mini-bar {
+    border: 2px solid rgba(134,239,172,.95) !important;
+    filter: brightness(1.08) !important;
+    box-shadow:
+      0 0 15px rgba(34,197,94,.42),
+      0 0 34px rgba(34,197,94,.18) !important;
+  }
+
+  .volume-table-wrap {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    margin-top: 8px !important;
+  }
+
+  .volume-table {
+    min-width: 420px !important;
+    font-size: 12px !important;
+  }
+
+  .volume-table th,
+  .volume-table td {
+    padding: 10px 8px !important;
+    white-space: nowrap !important;
+  }
+
+  .distribution-chart {
+    gap: 12px !important;
+    margin-top: 14px !important;
+  }
+
+  .distribution-row {
+    grid-template-columns: 72px minmax(0,1fr) 44px !important;
+    gap: 8px !important;
+  }
+
+  .distribution-row span {
+    font-size: 12px !important;
+    font-weight: 900 !important;
+  }
+
+  .distribution-track {
+    height: 15px !important;
+  }
+
+  .distribution-row strong {
+    font-size: 12px !important;
+    min-width: 38px !important;
+  }
+
+  .periodicity-patient-card {
+    border-radius: 24px !important;
+    padding: 14px !important;
+  }
+
+  .periodicity-patient-card img,
+  .periodicity-patient-avatar {
+    width: 62px !important;
+    height: 62px !important;
+    border-radius: 18px !important;
+  }
+
+  .periodicity-patient-card strong {
+    font-size: 18px !important;
+  }
+
+  .periodicity-patient-card p {
+    font-size: 12px !important;
+  }
+}
+

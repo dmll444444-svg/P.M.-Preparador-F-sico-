@@ -333,12 +333,11 @@ function getClientWeeklyData() {
   });
 
   const ordered = Object.values(grouped).sort((a, b) => a.micro - b.micro);
-  let cumulativeSessions = 0;
 
   ordered.forEach(item => {
-    cumulativeSessions += item.sessionsInMicro;
-    item.sessions = cumulativeSessions;
+    item.sessions = item.sessionsInMicro;
     item.dateLabel = [...item.dates].join(", ");
+    item.dates = [...item.dates];
   });
 
   return ordered;
@@ -371,28 +370,132 @@ function getClientDistribution() {
   return Object.entries(buckets).map(([label, value]) => ({ label, value }));
 }
 
-function renderClientMiniBars(data, valueKey = "series", emptyMessage = "Sin datos todavía.") {
+function isClientPlyometricExercise(item) {
+  const type = String(item?.tipo || item?.type || "").toLowerCase();
+  return type.includes("plyo") || type.includes("plio") || type.includes("pliometr");
+}
+
+function getClientPlyometricData() {
+  const weeklyBase = getClientWeeklyData();
+  const grouped = {};
+
+  weeklyBase.forEach(item => {
+    grouped[item.label] = {
+      micro: item.micro,
+      label: item.label,
+      series: 0,
+      exercises: 0,
+      sessionsInMicro: item.sessionsInMicro || 0,
+      sessions: item.sessions || 0,
+      tonnage: 0,
+      dates: item.dates || []
+    };
+  });
+
+  sortSessionsOldestFirst(getClientCompletedSessions())
+    .filter(session => session.microciclo)
+    .forEach(session => {
+      const micro = getClientComputedMicro(session);
+      const key = `M${micro}`;
+      if (!grouped[key]) {
+        grouped[key] = { micro: Number(micro), label: key, series: 0, exercises: 0, sessionsInMicro: 0, sessions: 0, tonnage: 0, dates: [] };
+      }
+
+      getClientSessionExercises(session).forEach(item => {
+        if (!isClientPlyometricExercise(item)) return;
+        const series = Number(item.series);
+        if (Number.isNaN(series)) return;
+        grouped[key].series += series;
+        grouped[key].exercises += 1;
+      });
+    });
+
+  return Object.values(grouped).sort((a, b) => a.micro - b.micro);
+}
+
+function getClientPeriodicityStats() {
+  const weekly = getClientWeeklyData();
+  const plyo = getClientPlyometricData();
+  const latest = weekly[weekly.length - 1] || { label: "-" };
+
+  return {
+    sessions: weekly.reduce((sum, item) => sum + Number(item.sessionsInMicro || item.sessions || 0), 0),
+    micro: latest.label,
+    series: weekly.reduce((sum, item) => sum + Number(item.series || 0), 0),
+    exercises: weekly.reduce((sum, item) => sum + Number(item.exercises || 0), 0),
+    plyoSeries: plyo.reduce((sum, item) => sum + Number(item.series || 0), 0),
+    plyoExercises: plyo.reduce((sum, item) => sum + Number(item.exercises || 0), 0),
+    tonnage: Math.round(weekly.reduce((sum, item) => sum + Number(item.tonnage || 0), 0)),
+    history: histories.filter(item => item.patientNickname === currentPatient.nickname).length,
+    files: patientFiles.filter(file => file.patientNickname === currentPatient.nickname).length
+  };
+}
+
+function escapeClientTooltip(value = "") {
+  return String(value || "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[char]));
+}
+
+function renderClientVolumeBarChart(data, tableTitle = "Datos", emptyMessage = "Sin datos todavía.", options = {}) {
   if (data.length === 0) {
-    return `<p>${emptyMessage}</p>`;
+    return `<p class="empty-chart-message">${emptyMessage}</p>`;
   }
 
-  const maxValue = Math.max(...data.map(item => item[valueKey] || 0), 1);
+  const valueKey = options.valueKey || "series";
+  const maxValue = Math.max(...data.map(item => Number(item[valueKey] || 0)), 1);
+  const currentMicroNumber = Math.max(...data.map(item => Number(item.micro) || 0));
+
+  const bars = data.map(item => {
+    const rawValue = Number(item[valueKey] || 0);
+    const shownValue = options.format ? options.format(rawValue) : Math.round(rawValue);
+    const height = Math.max((rawValue / maxValue) * 100, 6);
+    const realSessions = Number(item.sessionsInMicro || item.sessions || 0);
+    const isCurrentMicro = currentMicroNumber > 0 && Number(item.micro) === currentMicroNumber;
+    const dates = Array.isArray(item.dates) ? item.dates.filter(Boolean) : [];
+    const tooltip = [
+      item.label,
+      `Sesiones: ${realSessions}`,
+      `Series: ${item.series || 0}`,
+      `Ejercicios: ${item.exercises || 0}`,
+      Number(item.tonnage || 0) ? `Tonelaje: ${Math.round(item.tonnage)} kg` : "",
+      dates.length ? `Fechas: ${dates.join(" · ")}` : "",
+      isCurrentMicro ? "🟢 Micro actual" : ""
+    ].filter(Boolean).join("\n");
+    const valueClass = String(shownValue).length >= 5 ? "bar-value-compact" : "";
+
+    return `
+      <div class="volume-bar-item periodicity-tooltip-source ${isCurrentMicro ? "current-micro" : ""}" title="${escapeClientTooltip(tooltip)}">
+        <div class="volume-bar-wrap">
+          ${isCurrentMicro ? `<span class="current-micro-badge">Actual</span>` : ""}
+          <div class="volume-bar" style="height:${height}%"><span class="${valueClass}">${shownValue}</span></div>
+        </div>
+        <strong>${isCurrentMicro ? "● " : ""}${item.label}</strong>
+        <small>${realSessions} sesión${realSessions === 1 ? "" : "es"}</small>
+      </div>
+    `;
+  }).join("");
+
+  const rows = data.map(item => `
+    <tr>
+      <td>${item.label}</td>
+      <td>${item.sessionsInMicro || item.sessions || 0}</td>
+      <td>${item.exercises || 0}</td>
+      <td>${options.format ? options.format(item[valueKey] || 0) : Math.round(item[valueKey] || 0)}</td>
+    </tr>
+  `).join("");
 
   return `
-    <div class="client-mini-bars clean-chart-bars">
-      ${data.map(item => {
-        const value = Math.round(item[valueKey] || 0);
-        const height = Math.max((value / maxValue) * 100, 6);
-        return `
-          <div class="client-mini-bar-item">
-            <div class="client-mini-bar-wrap" title="${item.sessionsInMicro || 0} sesión/es en ${item.label}${item.dateLabel ? " · " + item.dateLabel : ""}">
-              <div class="client-mini-bar" style="height:${height}%"><span>${value}</span></div>
-            </div>
-            <strong>${item.label}</strong>
-            <em>${item.exercises || 0} ej.</em>
-          </div>
-        `;
-      }).join("")}
+    <div class="volume-chart client-periodicity-chart">${bars}</div>
+    <div class="volume-table-wrap client-periodicity-table-wrap">
+      <table class="volume-table">
+        <thead><tr><th>Micro</th><th>Sesiones</th><th>Ejercicios</th><th>${tableTitle}</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>
   `;
 }
@@ -406,7 +509,7 @@ function renderClientDistribution() {
   }
 
   return `
-    <div class="distribution-chart">
+    <div class="distribution-chart" id="clientDistributionChart">
       ${data.map(item => {
         const percent = Math.round((item.value / total) * 100);
         return `
@@ -419,27 +522,6 @@ function renderClientDistribution() {
       }).join("")}
     </div>
   `;
-}
-
-function getClientDashboardStats() {
-  refreshCompletedSessions();
-  const mySessions = getClientCompletedSessions();
-  const weekly = getClientWeeklyData();
-  const latest = weekly[weekly.length - 1];
-
-  const series = mySessions.reduce((sum, session) => sum + getClientSessionSeries(session), 0);
-  const exercises = mySessions.reduce((sum, session) => sum + getClientSessionExercises(session).length, 0);
-  const tonnage = mySessions.reduce((sum, session) => sum + getClientSessionTonnage(session), 0);
-
-  return {
-    sessions: mySessions.length,
-    micro: latest ? latest.label : "-",
-    series,
-    exercises,
-    tonnage: Math.round(tonnage),
-    history: histories.filter(item => item.patientNickname === currentPatient.nickname).length,
-    files: patientFiles.filter(file => file.patientNickname === currentPatient.nickname).length
-  };
 }
 
 function renderClientLatestSessions() {
@@ -463,12 +545,54 @@ function renderClientLatestSessions() {
   `;
 }
 
+function animateClientPeriodicityCharts() {
+  const charts = document.querySelectorAll(".client-periodicity-chart");
+  charts.forEach(chart => {
+    chart.classList.remove("ppf-chart-animated");
+    chart.querySelectorAll(".volume-bar").forEach(bar => {
+      bar.classList.remove("ppf-bar-animate");
+      bar.style.animationDelay = "0ms";
+    });
+  });
+
+  if (window.ppfClientPeriodicityObserver) window.ppfClientPeriodicityObserver.disconnect();
+
+  window.ppfClientPeriodicityObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const chart = entry.target;
+      if (chart.classList.contains("ppf-chart-animated")) return;
+      chart.classList.add("ppf-chart-animated");
+      chart.querySelectorAll(".volume-bar").forEach((bar, index) => {
+        bar.classList.remove("ppf-bar-animate");
+        bar.style.animationDelay = `${index * 45}ms`;
+        void bar.offsetWidth;
+        bar.classList.add("ppf-bar-animate");
+      });
+    });
+  }, { threshold: 0.24 });
+
+  charts.forEach(chart => window.ppfClientPeriodicityObserver.observe(chart));
+
+  document.querySelectorAll("#clientDistributionChart .distribution-fill").forEach((fill, index) => {
+    fill.classList.remove("ppf-distribution-animate");
+    fill.style.animationDelay = `${index * 90}ms`;
+    void fill.offsetWidth;
+    fill.classList.add("ppf-distribution-animate");
+  });
+}
+
+function getClientDashboardStats() {
+  return getClientPeriodicityStats();
+}
+
 function renderClientDashboard() {
   refreshCompletedSessions();
   const stats = getClientDashboardStats();
   const weekly = getClientWeeklyData();
+  const plyo = getClientPlyometricData();
 
-  return `
+  const html = `
     <div class="client-profile-card client-pro-hero">
       ${currentPatient.foto 
         ? `<img class="client-profile-photo" src="${currentPatient.foto}" alt="${currentPatient.nombre}">`
@@ -476,9 +600,9 @@ function renderClientDashboard() {
       }
 
       <div>
-        <p class="eyebrow">Dashboard Cliente PRO</p>
+        <p class="eyebrow">Periodicidad PRO Cliente</p>
         <h2>${currentPatient.nombre}</h2>
-        <p>Resumen individual de sesiones, microciclos, carga y evolución del entrenamiento.</p>
+        <p>Mismo panel visual que usa tu preparador: microciclos, volumen, pliometría, tonelaje y distribución del trabajo.</p>
 
         <div class="patient-tags">
           <span>@${currentPatient.nickname}</span>
@@ -491,38 +615,50 @@ function renderClientDashboard() {
       </div>
     </div>
 
-    <section class="client-pro-kpis">
-      <article><span>Sesiones</span><strong>${stats.sessions}</strong></article>
-      <article><span>Micro actual</span><strong>${stats.micro}</strong></article>
-      <article><span>Series</span><strong>${stats.series}</strong></article>
-      <article><span>Ejercicios</span><strong>${stats.exercises}</strong></article>
-      <article><span>Tonelaje Kg</span><strong>${stats.tonnage}</strong></article>
-      <article><span>Historial</span><strong>${stats.history}</strong></article>
-      <article><span>Archivos</span><strong>${stats.files}</strong></article>
+    <section class="periodicity-kpi-grid client-periodicity-kpis">
+      <article class="periodicity-kpi"><span>Micro actual</span><strong>${stats.micro}</strong></article>
+      <article class="periodicity-kpi"><span>Sesiones acumuladas</span><strong>${stats.sessions}</strong></article>
+      <article class="periodicity-kpi"><span>Series acumuladas</span><strong>${stats.series}</strong></article>
+      <article class="periodicity-kpi"><span>Ejercicios programados</span><strong>${stats.exercises}</strong></article>
+      <article class="periodicity-kpi plyo"><span>Series pliometría</span><strong>${stats.plyoSeries}</strong></article>
+      <article class="periodicity-kpi plyo"><span>Ejercicios pliometría</span><strong>${stats.plyoExercises}</strong></article>
+      <article class="periodicity-kpi"><span>Tonelaje Kg</span><strong>${stats.tonnage}</strong></article>
     </section>
 
-    <section class="client-pro-grid">
-      <article class="client-pro-card">
+    <section class="periodicity-dashboard client-periodicity-dashboard">
+      <article class="periodicity-card client-periodicity-card">
         <div class="module-panel-header">
           <div>
             <p class="eyebrow">Volumen</p>
             <h3>Series por microciclo</h3>
           </div>
         </div>
-        ${renderClientMiniBars(weekly, "series", "Sin series registradas todavía.")}
+        ${renderClientVolumeBarChart(weekly, "Series", "Sin series registradas todavía.")}
       </article>
 
-      <article class="client-pro-card">
+      <article class="periodicity-card client-periodicity-card">
+        <div class="module-panel-header">
+          <div>
+            <p class="eyebrow">Pliometría</p>
+            <h3>Volumen pliometría</h3>
+          </div>
+        </div>
+        ${renderClientVolumeBarChart(plyo, "Series", "Sin volumen de pliometría registrado todavía.")}
+      </article>
+    </section>
+
+    <section class="periodicity-dashboard client-periodicity-dashboard client-periodicity-bottom">
+      <article class="periodicity-card client-periodicity-card client-tonnage-card">
         <div class="module-panel-header">
           <div>
             <p class="eyebrow">Carga externa</p>
-            <h3>Tonelaje por microciclo</h3>
+            <h3>Kg totales por microciclo</h3>
           </div>
         </div>
-        ${renderClientMiniBars(weekly, "tonnage", "Sin tonelaje registrado todavía.")}
+        ${renderClientVolumeBarChart(weekly, "Tonelaje Kg", "Sin tonelaje registrado todavía.", { valueKey: "tonnage", format: value => Math.round(value) })}
       </article>
 
-      <article class="client-pro-card">
+      <article class="periodicity-card client-periodicity-card client-distribution-card">
         <div class="module-panel-header">
           <div>
             <p class="eyebrow">Distribución</p>
@@ -531,7 +667,9 @@ function renderClientDashboard() {
         </div>
         ${renderClientDistribution()}
       </article>
+    </section>
 
+    <section class="client-pro-grid client-latest-grid">
       <article class="client-pro-card">
         <div class="module-panel-header">
           <div>
@@ -543,6 +681,9 @@ function renderClientDashboard() {
       </article>
     </section>
   `;
+
+  setTimeout(animateClientPeriodicityCharts, 80);
+  return html;
 }
 
 
@@ -560,7 +701,9 @@ function getClientSortedSessionDates() {
 }
 
 function getClientComputedMicro(session) {
-  if (!session?.fecha) return session?.microciclo || "-";
+  const savedMicro = Number(session?.microciclo);
+  if (Number.isFinite(savedMicro) && savedMicro > 0) return savedMicro;
+  if (!session?.fecha) return "-";
   const dates = getClientSortedSessionDates();
   return dates.indexOf(session.fecha) + 1;
 }
@@ -952,8 +1095,8 @@ const clientSections = {
     html: () => `<h2>Mis sesiones</h2><p>Sesiones terminadas y acumuladas en tus gráficas.</p>${renderClientSessions()}`
   },
   historial: {
-    title: "Valoraciones",
-    html: () => `<h2>Valoraciones</h2><p>Gráficas de evolución y tendencia con los mismos datos que ve tu preparador.</p>${clientValuationChartsHTML()}${renderClientHistory()}`
+    title: "Mis Valoraciones",
+    html: () => `${clientValuationChartsHTML()}`
   },
   archivos: {
     title: "Mis archivos",
@@ -1032,96 +1175,236 @@ function pmClientCleanFakeValuations(pushCloud = false) {
 
 pmClientCleanFakeValuations(false);
 
+
 function clientValuationGroups() {
   let all = [];
   try { all = JSON.parse(localStorage.getItem("valoraciones") || "[]"); } catch (_) {}
+
   const nickname = currentPatient?.nickname || currentUser?.nickname || currentUser?.user || currentUser?.username || "";
-  const nickSet = new Set([nickname, currentUser?.nickname, currentPatient?.nickname, currentPatient?.nombre, currentUser?.username, currentUser?.user, currentUser?.name, currentUser?.nombre].map(clientNormalize).filter(Boolean));
+  const nickSet = new Set([
+    nickname,
+    currentUser?.nickname,
+    currentPatient?.nickname,
+    currentPatient?.nombre,
+    currentUser?.username,
+    currentUser?.user,
+    currentUser?.name,
+    currentUser?.nombre
+  ].map(clientNormalize).filter(Boolean));
+
   const groups = {};
 
-  all.filter(v => nickSet.has(clientNormalize(v.patientNickname)) || nickSet.has(clientNormalize(v.patientName)) || nickSet.has(clientNormalize(v.nombrePaciente))).forEach(v => {
-    (v.tests || []).forEach(test => {
-      const name = String(test.nombre || "").trim();
-      const unit = String(test.unidad || "").trim();
-      const attempts = [test.intento1, test.intento2, test.intento3].map(parseClientValuationNumber).filter(v => v !== null);
-      if (!name || !attempts.length) return;
-      const key = `${name.toLowerCase()}__${unit}`;
-      if (!groups[key]) groups[key] = { name, unit, days: {} };
-      const fecha = v.fecha || "-";
-      if (!groups[key].days[fecha]) groups[key].days[fecha] = { fecha, attempts: [] };
-      groups[key].days[fecha].attempts.push(...attempts);
-    });
-  });
+  (Array.isArray(all) ? all : [])
+    .filter(v =>
+      nickSet.has(clientNormalize(v.patientNickname)) ||
+      nickSet.has(clientNormalize(v.patientName)) ||
+      nickSet.has(clientNormalize(v.nombrePaciente))
+    )
+    .slice()
+    .sort((a, b) => clientValuationDateOrder(a.fecha) - clientValuationDateOrder(b.fecha) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .forEach(v => {
+      (v.tests || []).forEach(test => {
+        const testName = String(test.nombre || "").trim();
+        const unit = String(test.unidad || test.unidad1 || test.unidad2 || test.unidad3 || "").trim();
+        const attempts = [test.intento1, test.intento2, test.intento3]
+          .map(parseClientValuationNumber)
+          .filter(value => value !== null);
 
-  return Object.values(groups).map(g => ({
-    ...g,
-    days: Object.values(g.days).sort((a,b)=>clientValuationDateOrder(a.fecha) - clientValuationDateOrder(b.fecha) || String(a.fecha).localeCompare(String(b.fecha))).map(d => ({
-      ...d,
-      mean: Number((d.attempts.reduce((a,v)=>a+v,0)/d.attempts.length).toFixed(2))
+        if (!testName || !attempts.length) return;
+
+        const key = `${testName.toLowerCase()}__${unit}`;
+        if (!groups[key]) {
+          groups[key] = { testName, name: testName, unit, patientName: currentPatient?.nombre || currentUser?.nombre || "Paciente", days: {} };
+        }
+
+        const fecha = v.fecha || "-";
+        if (!groups[key].days[fecha]) groups[key].days[fecha] = { fecha, attempts: [] };
+        groups[key].days[fecha].attempts.push(...attempts);
+      });
+    });
+
+  return Object.values(groups)
+    .map(group => ({
+      ...group,
+      days: Object.values(group.days)
+        .sort((a, b) => clientValuationDateOrder(a.fecha) - clientValuationDateOrder(b.fecha) || String(a.fecha).localeCompare(String(b.fecha)))
+        .map(day => {
+          const mean = day.attempts.reduce((acc, value) => acc + value, 0) / day.attempts.length;
+          return { ...day, mean: Number(mean.toFixed(2)) };
+        })
     }))
-  })).filter(g => g.days.length);
+    .filter(group => group.days.length)
+    .sort((a, b) => a.testName.localeCompare(b.testName, "es"));
+}
+
+function formatClientValuationChartNumber(value, decimals = 2) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return Number.isInteger(number) ? String(number) : number.toFixed(decimals).replace(/\.00$/, "");
 }
 
 function clientValuationChartSVG(group) {
   const days = group.days;
-  const values = days.flatMap(d => [...d.attempts, d.mean]);
-  const minRaw = Math.min(...values), maxRaw = Math.max(...values);
-  const scaleMin = minRaw >= 0 ? 0 : minRaw;
-  const rangeRaw = maxRaw - scaleMin || Math.max(Math.abs(maxRaw), 1);
-  const min = scaleMin, max = maxRaw + rangeRaw * .18, range = max - min || 1;
-  const width = 760, height = 360, padX = 58, padY = 46;
-  const chartW = width - padX*2, chartH = height - padY*2;
-  const xFor = i => days.length === 1 ? width/2 : padX + i*(chartW/(days.length-1));
-  const yFor = v => height - padY - (((v-min)/range)*chartH);
-  const maxAttempts = Math.max(...days.map(d=>d.attempts.length),1);
-  const daySlot = days.length === 1 ? chartW * 0.44 : Math.min(84, chartW / Math.max(days.length,1));
+  const allValues = days.flatMap(day => [...day.attempts, day.mean]);
+  const minRaw = Math.min(...allValues);
+  const maxRaw = Math.max(...allValues);
+  const rangeRaw = maxRaw - minRaw || 1;
+  const min = minRaw - rangeRaw * 0.10;
+  const max = maxRaw + rangeRaw * 0.16;
+  const range = max - min || 1;
+
+  const width = 760;
+  const height = 360;
+  const padX = 68;
+  const padY = 46;
+  const chartW = width - padX * 2;
+  const chartH = height - padY * 2;
+
+  const xForDay = index => days.length === 1 ? width / 2 : padX + (index * (chartW / (days.length - 1)));
+  const yForValue = value => height - padY - (((value - min) / range) * chartH);
+
+  const maxAttempts = Math.max(...days.map(day => day.attempts.length), 1);
+  const daySlot = days.length === 1 ? chartW * 0.44 : Math.min(84, chartW / Math.max(days.length, 1));
   const barGap = 6;
-  const barW = Math.max(9, Math.min(18, (daySlot - (maxAttempts-1)*barGap)/maxAttempts));
-  const mean = days.map((d,i)=>({...d,x:xFor(i),y:yFor(d.mean)}));
-  const first = mean[0];
-  const last = mean[mean.length - 1];
+  const barWidth = Math.max(8, Math.min(15, (daySlot - (maxAttempts - 1) * barGap) / maxAttempts));
+
+  const meanPoints = days.map((day, index) => ({ ...day, x: xForDay(index), y: yForValue(day.mean) }));
+  const meanPolyline = meanPoints.map(point => `${point.x},${point.y}`).join(" ");
+  const first = meanPoints[0];
+  const last = meanPoints[meanPoints.length - 1];
   const trend = Number((last.mean - first.mean).toFixed(2));
-  const trendLabel = trend > 0 ? `+${trend}` : String(trend);
   const trendPct = first.mean ? Number(((trend / first.mean) * 100).toFixed(2)) : 0;
   const trendPctLabel = trendPct > 0 ? `+${trendPct}%` : `${trendPct}%`;
-  const directionLabel = trend > 0 ? "↗ Ascendente" : trend < 0 ? "↘ Descendente" : "→ Estable";
-  const directionText = trend > 0 ? "Progresión positiva" : trend < 0 ? "Revisar evolución" : "Sin cambios relevantes";
+  const yTicks = [(maxRaw + minRaw) / 2].map(value => Number(value.toFixed(2)));
+  const trendText = formatClientValuationChartNumber(trend, 2).replace(/^([^\-])/, trend > 0 ? "+$1" : "$1");
+
   return `
-    <article class="client-valuation-chart-card valuation-chart-card valuation-chart-pro-card">
-      <div class="client-valuation-chart-head pro-chart-head">
+    <article class="valuation-chart-card valuation-chart-pro-card client-valuation-chart-card">
+      <div class="valuation-chart-head pro-chart-head">
         <div>
-          <h3>${escapeHTML(group.name)}${group.unit ? ` (${escapeHTML(group.unit)})` : ""}</h3>
+          <span>${escapeHTML(group.patientName || currentPatient?.nombre || "Paciente")}</span>
+          <h4>${escapeHTML(group.testName || group.name)}${group.unit ? ` (${escapeHTML(group.unit)})` : ""}</h4>
           <p>Barras verdes = datos individuales · Línea azul = media diaria</p>
         </div>
         <strong>${escapeHTML(String(last.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong>
       </div>
-      <svg viewBox="0 0 ${width} ${height}" class="client-valuation-chart-svg valuation-line-chart valuation-pro-chart" role="img">
-        <line x1="${padX}" y1="${height-padY}" x2="${width-padX}" y2="${height-padY}" class="client-chart-axis valuation-chart-axis"/>
-        ${days.map((day,di)=>{
-          const cx=xFor(di); const total=day.attempts.length*barW+(day.attempts.length-1)*barGap; const start=cx-total/2;
-          return day.attempts.map((v,ai)=>{
-            const x=start+ai*(barW+barGap), y=yFor(v), h=Math.max(2,height-padY-y);
-            return `<g><rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" class="client-chart-bar"><title>${escapeHTML(day.fecha)} · Intento ${ai+1}: ${escapeHTML(String(v))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></rect><text x="${x + barW/2}" y="${height-padY-10}" text-anchor="middle" class="client-chart-bar-value valuation-bar-value-bottom">${escapeHTML(String(v))}</text></g>`;
+
+      <svg class="valuation-line-chart valuation-pro-chart client-valuation-chart-svg" viewBox="0 0 ${width} ${height}" role="img">
+        ${yTicks.map(tick => {
+          const y = yForValue(tick);
+          return `<line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="valuation-grid-line" />`;
+        }).join("")}
+
+        <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="valuation-chart-axis" />
+
+        ${days.map((day, dayIndex) => {
+          const centerX = xForDay(dayIndex);
+          const totalBarsW = day.attempts.length * barWidth + (day.attempts.length - 1) * barGap;
+          const startX = centerX - totalBarsW / 2;
+
+          return day.attempts.map((value, attemptIndex) => {
+            const x = startX + attemptIndex * (barWidth + barGap);
+            const y = yForValue(value);
+            const h = Math.max(2, height - padY - y);
+            return `
+              <g class="valuation-bar-group valuation-tooltip-source"
+                 data-date="${escapeHTML(day.fecha)}"
+                 data-label="Intento ${attemptIndex + 1}"
+                 data-value="${escapeHTML(String(value))}"
+                 data-unit="${escapeHTML(group.unit || "")}">
+                <rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="6"></rect>
+              </g>`;
           }).join("");
         }).join("")}
-        <polyline points="${mean.map(p=>`${p.x},${p.y}`).join(" ")}" class="client-chart-line valuation-chart-line valuation-mean-line" fill="none"/>
-        ${mean.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="6.5" class="client-chart-point"><title>${escapeHTML(p.fecha)} · Media: ${escapeHTML(String(p.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</title></circle>`).join("")}
-        ${mean.map((p,i)=> days.length>8 && i!==0 && i!==days.length-1 ? "" : `<text x="${p.x}" y="${height-10}" text-anchor="middle" class="client-chart-date valuation-chart-date">${escapeHTML(p.fecha)}</text>`).join("")}
+
+        <polyline points="${meanPolyline}" class="valuation-chart-line valuation-mean-line" fill="none" />
+
+        ${meanPoints.map(point => `
+          <g class="valuation-chart-point valuation-mean-point valuation-tooltip-source"
+             data-date="${escapeHTML(point.fecha)}"
+             data-label="Media diaria"
+             data-value="${escapeHTML(String(point.mean))}"
+             data-unit="${escapeHTML(group.unit || "") }"
+             data-attempts="${escapeHTML(point.attempts.join(" · "))}">
+            <circle cx="${point.x}" cy="${point.y}" r="6.5"></circle>
+          </g>`).join("")}
+
+        ${meanPoints.map((point, index) => {
+          if (days.length > 8 && index !== 0 && index !== days.length - 1) return "";
+          return `<text x="${point.x}" y="${height - 10}" text-anchor="middle" class="valuation-chart-date">${escapeHTML(point.fecha)}</text>`;
+        }).join("")}
       </svg>
+
       <div class="valuation-chart-summary client-valuation-summary">
         <div><span>Inicial</span><strong>${escapeHTML(String(first.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(first.fecha)}</small></div>
         <div><span>Actual</span><strong>${escapeHTML(String(last.mean))}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(last.fecha)}</small></div>
-        <div><span>Mejora</span><strong>${escapeHTML(trendLabel)}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong><small>${escapeHTML(trendPctLabel)}</small></div>
-        <div><span>Tendencia</span><strong>${escapeHTML(directionLabel)}</strong><small>${escapeHTML(directionText)}</small></div>
+        <div class="valuation-trend-kpi ${trend > 0 ? "trend-up" : trend < 0 ? "trend-down" : "trend-flat"}">
+          <span>Tendencia</span>
+          <b class="valuation-trend-arrow" title="${trend > 0 ? "Ascendente" : trend < 0 ? "Descendente" : "Estable"}">${trend > 0 ? "↑" : trend < 0 ? "↓" : "→"}</b>
+          <strong>${escapeHTML(trendText)}${group.unit ? ` ${escapeHTML(group.unit)}` : ""}</strong>
+          <small>${escapeHTML(trendPctLabel)}</small>
+        </div>
       </div>
-      <p class="valuation-chart-note">Las gráficas usan el mismo motor de valoraciones que el panel admin para evitar diferencias de sincronización.</p>
+
+      <p class="valuation-chart-note">Las barras verdes representan los intentos individuales de cada día. La línea azul representa la media diaria.</p>
     </article>`;
 }
 
 function clientValuationChartsHTML() {
   const groups = clientValuationGroups();
-  if (!groups.length) return `<section class="content-card"><h2>Valoraciones</h2><p>No hay tests numéricos registrados todavía.</p></section>`;
-  return `<section class="content-card client-valuations-pro"><p class="eyebrow">Valoraciones</p><h2>Gráficas de evolución</h2><div class="client-valuation-grid">${groups.map(clientValuationChartSVG).join("")}</div></section>`;
+  if (!groups.length) {
+    return `<section class="content-card client-valuations-pro"><p class="eyebrow">Mis Valoraciones</p><h2>Gráficas de evolución</h2><p>No hay tests numéricos registrados todavía.</p></section>`;
+  }
+
+  return `
+    <section class="content-card client-valuations-pro">
+      <p class="eyebrow">Mis Valoraciones</p>
+      <h2>Gráficas de evolución</h2>
+      <p>Formato PRO sincronizado con el panel Admin.</p>
+      <div class="valuation-charts-grid valuation-charts-grid-pro client-valuation-grid">
+        ${groups.map(clientValuationChartSVG).join("")}
+      </div>
+    </section>`;
+}
+
+function ensureClientValuationTooltip() {
+  if (document.getElementById("valuationChartTooltip")) return;
+
+  const tooltip = document.createElement("div");
+  tooltip.id = "valuationChartTooltip";
+  tooltip.className = "valuation-chart-tooltip";
+  tooltip.innerHTML = `<strong></strong><div class="tooltip-line tooltip-main"></div><div class="tooltip-line tooltip-extra"></div>`;
+  document.body.appendChild(tooltip);
+
+  document.addEventListener("pointermove", event => {
+    const target = event.target.closest(".valuation-tooltip-source");
+    if (!target) return;
+
+    const date = target.dataset.date || "";
+    const label = target.dataset.label || "";
+    const value = target.dataset.value || "";
+    const unit = target.dataset.unit || "";
+    const attempts = target.dataset.attempts || "";
+
+    tooltip.querySelector("strong").textContent = date;
+    tooltip.querySelector(".tooltip-main").textContent = `${label}: ${value}${unit ? ` ${unit}` : ""}`;
+    tooltip.querySelector(".tooltip-extra").textContent = attempts ? `Intentos: ${attempts}${unit ? ` ${unit}` : ""}` : "";
+    tooltip.classList.add("show");
+
+    const offset = 18;
+    let left = event.pageX + offset;
+    let top = event.pageY + offset;
+    const rect = tooltip.getBoundingClientRect();
+    if (left + rect.width > window.scrollX + window.innerWidth - 12) left = event.pageX - rect.width - offset;
+    if (top + rect.height > window.scrollY + window.innerHeight - 12) top = event.pageY - rect.height - offset;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  });
+
+  document.addEventListener("pointerout", event => {
+    if (!event.target.closest(".valuation-tooltip-source")) return;
+    tooltip.classList.remove("show");
+  });
 }
 
 function renderClientSection(key) {
@@ -1130,7 +1413,7 @@ function renderClientSection(key) {
   if (!section || !clientSectionTitle || !clientContentArea) return;
   clientSectionTitle.textContent = section.title;
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-  if (sectionKey === "historial") { pmClientCleanFakeValuations(true); }
+  if (sectionKey === "historial") { pmClientCleanFakeValuations(true); if (typeof ensureClientValuationTooltip === "function") ensureClientValuationTooltip(); }
 
   document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.clientSection === sectionKey || (sectionKey === "dashboard" && tab.dataset.clientSection === "inicio"));
