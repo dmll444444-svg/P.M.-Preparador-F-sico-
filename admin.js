@@ -2579,7 +2579,8 @@ function pmGetMergedUserStat(stats = {}, patient = {}) {
     lastActivity: null,
     lastSync: null,
     lastLogout: null,
-    device: ""
+    device: "",
+    sessions: {}
   };
 
   Object.entries(stats || {}).forEach(([rawKey, item]) => {
@@ -2638,6 +2639,16 @@ function pmGetMergedUserStat(stats = {}, patient = {}) {
       item.last_logout
     );
 
+    if (item.sessions && typeof item.sessions === "object") {
+      Object.entries(item.sessions).forEach(([sessionId, incoming]) => {
+        if (!incoming || typeof incoming !== "object") return;
+        const current = merged.sessions[sessionId];
+        const currentTime = pmParseDateMs(pmLatestIso(current?.lastActivity, current?.lastHeartbeat, current?.lastSeen, current?.lastLogout));
+        const incomingTime = pmParseDateMs(pmLatestIso(incoming.lastActivity, incoming.lastHeartbeat, incoming.lastSeen, incoming.lastLogout));
+        if (!current || incomingTime >= currentTime) merged.sessions[sessionId] = incoming;
+      });
+    }
+
     if (item.device && !merged.device) merged.device = item.device;
   });
 
@@ -2652,6 +2663,13 @@ function pmGetMergedUserStat(stats = {}, patient = {}) {
       );
 
   merged.lastActivity = latestActivity;
+
+  const freshestSession = Object.values(merged.sessions || {}).sort((a, b) => {
+    const aMs = pmParseDateMs(pmLatestIso(a?.lastActivity, a?.lastHeartbeat, a?.lastSeen, a?.lastLogout));
+    const bMs = pmParseDateMs(pmLatestIso(b?.lastActivity, b?.lastHeartbeat, b?.lastSeen, b?.lastLogout));
+    return bMs - aMs;
+  })[0];
+  if (freshestSession?.device) merged.device = freshestSession.device;
 
   merged.online = window.PPF_PRESENCE?.isOnline
     ? window.PPF_PRESENCE.isOnline(merged)
@@ -6339,18 +6357,12 @@ window.addEventListener("storage", event => {
     if (!usersSectionIsVisible()) return;
 
     try {
-      if (typeof renderSection === "function") {
-        renderSection("usuarios");
-        return;
-      }
-
       const currentList = document.querySelector(".users-access-list");
       if (!currentList || typeof renderUsersPage !== "function") return;
 
       const temporary = document.createElement("div");
       temporary.innerHTML = renderUsersPage();
       const freshList = temporary.querySelector(".users-access-list");
-
       if (freshList) currentList.replaceWith(freshList);
     } catch (error) {
       console.warn("No se pudo refrescar la presencia de usuarios:", error);
@@ -6379,5 +6391,27 @@ window.addEventListener("storage", event => {
   });
 
   window.PPF_PRESENCE?.startAutoSync?.({ intervalMs: 10000 });
-  // El panel se refresca por los eventos del motor; no se crea otro intervalo.
+
+  // Reloj visual local: actualiza "Hace X s" y permite que el estado caduque
+  // exactamente a los 90 s, sin hacer peticiones de red ni recargar la sección.
+  let visualClock = null;
+  const syncVisualClock = () => {
+    clearInterval(visualClock);
+    visualClock = null;
+    if (!usersSectionIsVisible()) return;
+    visualClock = setInterval(refreshUsersPresence, 1000);
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      scheduleRefresh();
+      syncVisualClock();
+    } else {
+      clearInterval(visualClock);
+      visualClock = null;
+    }
+  });
+  document.addEventListener("click", event => {
+    if (event.target.closest('[data-section="usuarios"]')) setTimeout(syncVisualClock, 0);
+  });
+  syncVisualClock();
 })();

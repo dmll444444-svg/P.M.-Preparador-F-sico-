@@ -394,6 +394,30 @@ function ppfPatchLocalStorageForSync() {
   };
 }
 
+
+function ppfSubscribeKey(key, callback) {
+  const client = ppfCreateClient();
+  if (!client || !key || typeof callback !== "function" || typeof client.channel !== "function") return null;
+
+  const channelName = `ppf-app-state-${String(key).replace(/[^a-z0-9_-]/gi, "-")}-${Math.random().toString(36).slice(2, 8)}`;
+  const channel = client
+    .channel(channelName)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "app_state",
+      filter: `key=eq.${key}`
+    }, payload => callback(payload))
+    .subscribe();
+
+  return {
+    channel,
+    unsubscribe() {
+      try { client.removeChannel(channel); } catch (_) {}
+    }
+  };
+}
+
 async function ppfSupabaseBootstrap() {
   ppfClearHeavyLocalKeys();
   ppfPatchLocalStorageForSync();
@@ -418,6 +442,7 @@ window.PPF_SUPABASE = {
   push: ppfPushAllToCloud,
   pushKey: ppfPushKeyToCloud,
   pushValue: ppfPushValueToCloud,
+  subscribeKey: ppfSubscribeKey,
   status: () => window.PPF_SUPABASE_STATUS || "disabled",
   keys: PPF_SYNC_KEYS
 };

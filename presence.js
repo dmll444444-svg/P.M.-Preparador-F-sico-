@@ -18,6 +18,7 @@
   let heartbeatTimer = null;
   let hiddenTimer = null;
   let autoSyncTimer = null;
+  let realtimeSubscription = null;
   let autoSyncBusy = false;
   let activeUser = null;
   let listenersBound = false;
@@ -317,13 +318,24 @@
   }
 
   function startAutoSync(options = {}) {
-    if (autoSyncTimer) return autoSyncTimer;
+    if (autoSyncTimer || realtimeSubscription) return realtimeSubscription || autoSyncTimer;
     const intervalMs = Math.max(5000, Number(options.intervalMs || AUTO_SYNC_MS));
+
     pullCloud();
+    realtimeSubscription = window.PPF_SUPABASE?.subscribeKey?.(STORAGE_KEY, () => {
+      pullCloud();
+    }) || null;
+
+    // Respaldo para instalaciones donde Realtime no esté publicado o pierda conexión.
     autoSyncTimer = setInterval(pullCloud, intervalMs);
-    return autoSyncTimer;
+    return realtimeSubscription || autoSyncTimer;
   }
-  function stopAutoSync() { clearInterval(autoSyncTimer); autoSyncTimer = null; }
+  function stopAutoSync() {
+    clearInterval(autoSyncTimer);
+    autoSyncTimer = null;
+    realtimeSubscription?.unsubscribe?.();
+    realtimeSubscription = null;
+  }
 
   window.PPF_PRESENCE = Object.freeze({
     version: "3.0.0", STORAGE_KEY, HEARTBEAT_MS, ONLINE_TIMEOUT_MS, HIDDEN_GRACE_MS,
