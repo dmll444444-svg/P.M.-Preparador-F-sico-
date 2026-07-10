@@ -5489,3 +5489,60 @@ Animación Dashboard Distribución
 .ppf-notification-toast small { margin-top: 3px; color: #cbd5e1; }
 @keyframes ppfNotificationIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 700px) { .ppf-notification-panel { position: fixed; top: 72px; right: 12px; left: 12px; width: auto; } .ppf-notification-toast { bottom: 84px; right: 12px; width: calc(100vw - 24px); } }
+
+/* =========================================================
+   PPF PRO · DASHBOARD ADMIN COMERCIAL
+   ========================================================= */
+body.admin-home-active .dashboard-grid { display:none; }
+body.admin-home-active #contentArea { background:transparent; border:0; padding:0; box-shadow:none; }
+.admin-home-dashboard { display:grid; gap:22px; }
+.admin-home-hero { position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; gap:24px; padding:30px; border:1px solid rgba(45,212,191,.25); border-radius:26px; background:linear-gradient(135deg,rgba(6,78,59,.72),rgba(15,23,42,.96) 58%,rgba(13,148,136,.25)); box-shadow:0 22px 55px rgba(0,0,0,.22); }
+.admin-home-hero:after { content:""; position:absolute; width:240px; height:240px; right:-70px; top:-100px; border-radius:50%; background:rgba(34,197,94,.11); filter:blur(2px); }
+.admin-home-kicker,.admin-home-panel-head small { color:#34d399; font-weight:800; letter-spacing:.12em; font-size:.72rem; }
+.admin-home-hero h2 { margin:7px 0 8px; font-size:clamp(1.65rem,3vw,2.45rem); }
+.admin-home-hero p:last-child { color:#a9b8cc; margin:0; }
+.admin-home-primary { position:relative; z-index:1; display:flex; align-items:center; gap:9px; border:0; border-radius:16px; padding:15px 20px; background:linear-gradient(135deg,#22c55e,#14b8a6); color:#03120c; font-weight:900; box-shadow:0 12px 30px rgba(20,184,166,.24); cursor:pointer; white-space:nowrap; }
+.admin-home-primary span { font-size:1.35rem; }
+.admin-home-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+.admin-home-stat { text-align:left; border:1px solid #22314a; border-radius:21px; background:linear-gradient(145deg,#101b2d,#0b1424); padding:19px; color:#fff; cursor:pointer; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
+.admin-home-stat:hover { transform:translateY(-3px); border-color:#2dd4bf; box-shadow:0 14px 28px rgba(0,0,0,.22); }
+.admin-home-stat-icon { display:grid; place-items:center; width:43px; height:43px; border-radius:14px; background:rgba(45,212,191,.12); font-size:1.25rem; margin-bottom:17px; }
+.admin-home-stat small { display:block; color:#9fb0c6; }
+.admin-home-stat strong { display:block; font-size:2rem; line-height:1; margin:8px 0; }
+.admin-home-stat em { color:#43e6a3; font-style:normal; font-size:.78rem; }
+.admin-home-layout { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(320px,.85fr); gap:18px; }
+.admin-home-panel { border:1px solid #22314a; border-radius:24px; background:#0d1829; padding:22px; box-shadow:0 16px 38px rgba(0,0,0,.17); }
+.admin-home-panel-head { display:flex; align-items:center; justify-content:space-between; gap:15px; margin-bottom:18px; }
+.admin-home-panel-head h3 { margin:5px 0 0; font-size:1.2rem; }
+.admin-home-panel-head > button { border:0; background:transparent; color:#42e6a3; font-weight:800; cursor:pointer; }
+.admin-home-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.admin-home-actions button { min-height:130px; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:6px; border:1px solid #26364f; border-radius:18px; background:#111d31; color:#fff; padding:17px; text-align:left; cursor:pointer; transition:.18s ease; }
+.admin-home-actions button:hover { border-color:#34d399; transform:translateY(-2px); background:#12253a; }
+.admin-home-actions button > span { font-size:1.65rem; }
+.admin-home-actions button b { font-size:.95rem; }
+.admin-home-actions button small { color:#91a3ba; line-height:1.3; }
+.admin-home-session-list { display:grid; gap:10px; }
+.admin-home-session-list > button { display:grid; grid-template-columns:45px 1fr auto; align-items:center; gap:12px; border:1px solid #24344d; border-radius:16px; background:#111d31; color:#fff; padding:12px; text-align:left; cursor:pointer; }
+.admin-home-session-list > button:hover { border-color:#2dd4bf; }
+.admin-home-session-list b,.admin-home-session-list small { display:block; }
+.admin-home-session-list small { color:#92a5bc; margin-top:3px; }
+.admin-home-session-list i { color:#42e6a3; font-size:1.6rem; font-style:normal; }
+.admin-home-avatar { width:43px; height:43px; border-radius:14px; display:grid; place-items:center; background:linear-gradient(135deg,#22c55e,#14b8a6); color:#032017; font-weight:900; }
+.admin-home-empty { min-height:210px; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; color:#9eb0c7; }
+.admin-home-empty span { font-size:2rem; margin-bottom:8px; }
+.admin-home-empty b { color:#fff; margin-bottom:4px; }
+@media (max-width:1100px){ .admin-home-stats{grid-template-columns:repeat(2,1fr)} .admin-home-layout{grid-template-columns:1fr} }
+@media (max-width:700px){
+  body.admin-home-active .admin-header { padding-bottom:8px; }
+  .admin-home-dashboard { gap:14px; }
+  .admin-home-hero { padding:22px 18px; border-radius:22px; align-items:flex-start; flex-direction:column; }
+  .admin-home-primary { width:100%; justify-content:center; }
+  .admin-home-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .admin-home-stat { padding:15px; border-radius:17px; }
+  .admin-home-stat-icon { width:38px;height:38px;margin-bottom:12px; }
+  .admin-home-stat strong { font-size:1.7rem; }
+  .admin-home-stat em { display:none; }
+  .admin-home-panel { padding:17px; border-radius:20px; }
+  .admin-home-actions { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+  .admin-home-actions button { min-height:112px; padding:14px; border-radius:16px; }
+}

@@ -2535,6 +2535,13 @@ function pmReadJson(key, fallback) {
   }
 }
 
+function pmNormalizeNickname(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase();
+}
+
 function pmSessionPatientKey(session = {}) {
   return String(session.patientNickname || session.nickname || session.patient || session.patientId || session.cliente || session.clientNickname || "").trim();
 }
@@ -2543,35 +2550,60 @@ function pmSessionNumber(session = {}) {
   return Number(session.numero || session.numeroSesion || session.sessionNumber || 0);
 }
 
-function pmIsSessionCompleted(session = {}, completed = []) {
-  const sid = String(session.id || session.sessionId || "");
-  const snum = pmSessionNumber(session);
-  const spatient = pmSessionPatientKey(session).toLowerCase();
-  const notifications = pmReadJson("notifications", []);
+function pmSessionStableKey(session = {}, index = 0) {
+  const id = String(session.id || session.sessionId || "").trim();
+  if (id) return `id:${id}`;
+  return [
+    "legacy",
+    pmNormalizeNickname(pmSessionPatientKey(session)),
+    pmSessionNumber(session),
+    String(session.fecha || ""),
+    String(session.createdAt || session.updatedAt || ""),
+    index
+  ].join(":");
+}
 
-  const latestPreparedAt = notifications
-    .filter(item => item?.type === "prepared_session" && String(item?.sessionId || "") === sid)
+function pmLatestPreparedAt(session = {}, notifications = []) {
+  const sid = String(session.id || session.sessionId || "").trim();
+  const createdAt = Date.parse(session.createdAt || session.updatedAt || "") || 0;
+  const notificationAt = (Array.isArray(notifications) ? notifications : [])
+    .filter(item => item?.type === "prepared_session" && sid && String(item?.sessionId || "") === sid)
     .reduce((latest, item) => Math.max(latest, Date.parse(item?.createdAt || "") || 0), 0);
+  return Math.max(createdAt, notificationAt);
+}
 
-  return completed.some(item => {
-    const cid = String(item.sessionId || item.id || "");
-    const cpatient = String(item.patientNickname || item.nickname || item.patient || "").trim().toLowerCase();
-    const cnum = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
-    const completedAt = Date.parse(item.completedAt || item.fechaCompletada || "") || 0;
+function pmCompletionForSession(session = {}, completed = [], notifications = []) {
+  const sid = String(session.id || session.sessionId || "").trim();
+  const snum = pmSessionNumber(session);
+  const spatient = pmNormalizeNickname(pmSessionPatientKey(session));
+  const preparedAt = pmLatestPreparedAt(session, notifications);
 
-    // Si existe una nueva notificación preparada posterior a la finalización,
-    // la sesión fue reutilizada por el bug anterior y debe volver a pendiente.
-    if (sid && cid && sid === cid) {
-      return !(latestPreparedAt && latestPreparedAt > completedAt);
-    }
-
-    // Compatibilidad legacy: solo usar paciente+número cuando falta algún ID.
+  const matches = (Array.isArray(completed) ? completed : []).filter(item => {
+    const cid = String(item.sessionId || item.id || "").trim();
+    if (sid && cid) return sid === cid;
     if (!sid || !cid) {
-      return spatient && cpatient && spatient === cpatient && snum && cnum && snum === cnum;
+      return spatient &&
+        spatient === pmNormalizeNickname(item.patientNickname || item.nickname || item.patient || "") &&
+        snum && snum === Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
     }
-
     return false;
   });
+
+  if (!matches.length) return null;
+  const latest = matches.slice().sort((a, b) =>
+    (Date.parse(b.completedAt || b.fechaCompletada || "") || 0) -
+    (Date.parse(a.completedAt || a.fechaCompletada || "") || 0)
+  )[0];
+  const completedAt = Date.parse(latest.completedAt || latest.fechaCompletada || "") || 0;
+
+  // Una preparación posterior vuelve a dejar esa sesión pendiente. Esto repara
+  // los IDs reutilizados por versiones antiguas sin ocultar sesiones nuevas.
+  if (preparedAt && completedAt && preparedAt > completedAt) return null;
+  return latest;
+}
+
+function pmIsSessionCompleted(session = {}, completed = [], notifications = []) {
+  return Boolean(pmCompletionForSession(session, completed, notifications));
 }
 
 function pmSortSessionsLatest(list = []) {
@@ -2591,17 +2623,30 @@ function pmSessionMicroLabel(session = {}) {
 function pmSessionAgenda() {
   const allSessions = pmReadJson("sessions", []);
   const completed = pmReadJson("completedSessions", []);
+  const notifications = pmReadJson("notifications", []);
   const patientByNickname = new Map(
-    patients.map(patient => [String(patient.nickname || "").trim().toLowerCase(), patient])
+    patients.map(patient => [pmNormalizeNickname(patient.nickname), patient])
   );
 
-  const rows = allSessions
-    .map(session => {
-      const key = pmSessionPatientKey(session).toLowerCase();
-      const patient = patientByNickname.get(key);
-      return patient ? { patient, session } : null;
+  // Cada sesión es una unidad independiente. Nunca se agrupa por paciente ni
+  // se conserva únicamente la última: un cliente puede tener varias pendientes.
+  const seen = new Set();
+  const rows = (Array.isArray(allSessions) ? allSessions : [])
+    .map((session, index) => ({ session, index }))
+    .filter(({ session, index }) => {
+      const key = pmSessionStableKey(session, index);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     })
-    .filter(Boolean);
+    .map(({ session }) => {
+      const nickname = pmSessionPatientKey(session);
+      const patient = patientByNickname.get(pmNormalizeNickname(nickname));
+      return {
+        patient: patient || { nombre: session.patientName || session.nombrePaciente || nickname || "Paciente", nickname },
+        session
+      };
+    });
 
   const sortRowsLatest = list => list.slice().sort((a, b) => {
     const fa = String(a.session?.fecha || "");
@@ -2610,12 +2655,11 @@ function pmSessionAgenda() {
     return pmSessionNumber(b.session) - pmSessionNumber(a.session);
   });
 
-  // Las tarjetas representan sesiones reales, no pacientes únicos.
   const pending = sortRowsLatest(
-    rows.filter(item => !pmIsSessionCompleted(item.session, completed))
+    rows.filter(item => !pmIsSessionCompleted(item.session, completed, notifications))
   );
   const done = sortRowsLatest(
-    rows.filter(item => pmIsSessionCompleted(item.session, completed))
+    rows.filter(item => pmIsSessionCompleted(item.session, completed, notifications))
   );
 
   return { pending, done };
@@ -5774,7 +5818,105 @@ function deleteValuation(id) {
   renderValuationCharts(document.getElementById("valuationsFilter")?.value || "");
 }
 
+
+
+/* =========================================================
+   PPF PRO · DASHBOARD ADMIN COMERCIAL
+   ========================================================= */
+function pmDashboardOnlineUsers() {
+  let stats = {};
+  try { stats = JSON.parse(localStorage.getItem("userStats") || "{}"); } catch (_) {}
+  return patients.filter(patient => {
+    const stat = typeof pmGetMergedUserStat === "function" ? pmGetMergedUserStat(stats, patient) : stats[patient.nickname];
+    return window.PPF_PRESENCE?.isOnline ? window.PPF_PRESENCE.isOnline(stat || {}) : Boolean(stat?.online);
+  }).length;
+}
+
+function pmDashboardGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 13) return "Buenos días";
+  if (hour < 20) return "Buenas tardes";
+  return "Buenas noches";
+}
+
+function pmAdminDashboardHTML() {
+  const agenda = typeof pmSessionAgenda === "function" ? pmSessionAgenda() : { pending: [], done: [] };
+  const online = pmDashboardOnlineUsers();
+  const latestPending = agenda.pending.slice(0, 4);
+  const adminLabel = currentUser?.nombre || currentUser?.name || currentUser?.nickname || "Preparador";
+  return `
+    <div class="admin-home-dashboard">
+      <section class="admin-home-hero">
+        <div>
+          <p class="admin-home-kicker">CENTRO DE CONTROL</p>
+          <h2>${pmDashboardGreeting()}, ${adminLabel}</h2>
+          <p>Todo lo importante de PPF PRO, preparado para actuar en segundos.</p>
+        </div>
+        <button type="button" class="admin-home-primary" data-home-section="sesiones">
+          <span>＋</span> Nueva sesión
+        </button>
+      </section>
+
+      <section class="admin-home-stats" aria-label="Resumen del preparador">
+        <button type="button" class="admin-home-stat" data-home-section="paciente">
+          <span class="admin-home-stat-icon">👥</span><small>Pacientes activos</small><strong>${patients.length}</strong><em>Gestionar pacientes</em>
+        </button>
+        <button type="button" class="admin-home-stat" data-home-section="sesiones">
+          <span class="admin-home-stat-icon">🏋️</span><small>Sesiones pendientes</small><strong>${agenda.pending.length}</strong><em>Ver y preparar</em>
+        </button>
+        <button type="button" class="admin-home-stat" data-home-section="valoraciones">
+          <span class="admin-home-stat-icon">📊</span><small>Valoraciones</small><strong>${valoraciones.length}</strong><em>Revisar evolución</em>
+        </button>
+        <button type="button" class="admin-home-stat" data-home-section="usuarios">
+          <span class="admin-home-stat-icon">🟢</span><small>Conectados ahora</small><strong>${online}</strong><em>Ver presencia</em>
+        </button>
+      </section>
+
+      <section class="admin-home-layout">
+        <article class="admin-home-panel">
+          <div class="admin-home-panel-head"><div><small>ACCESOS DIRECTOS</small><h3>¿Qué quieres hacer?</h3></div></div>
+          <div class="admin-home-actions">
+            <button type="button" data-home-section="sesiones"><span>🏋️</span><b>Crear sesión</b><small>Preparar entrenamiento</small></button>
+            <button type="button" data-home-section="paciente"><span>👤</span><b>Nuevo paciente</b><small>Alta y ficha personal</small></button>
+            <button type="button" data-home-section="valoraciones"><span>📈</span><b>Nueva valoración</b><small>Registrar pruebas</small></button>
+            <button type="button" data-home-section="biblioteca"><span>📚</span><b>Biblioteca</b><small>Ejercicios y recursos</small></button>
+            <button type="button" data-home-section="graficaPro"><span>🕸️</span><b>Gráfica PRO</b><small>Analizar distribución</small></button>
+            <button type="button" data-home-section="periodicidad"><span>📅</span><b>Periodicidad</b><small>Planificación anual</small></button>
+          </div>
+        </article>
+
+        <article class="admin-home-panel admin-home-pending">
+          <div class="admin-home-panel-head">
+            <div><small>AGENDA ACTIVA</small><h3>Próximas sesiones</h3></div>
+            <button type="button" data-home-section="sesiones">Ver todas</button>
+          </div>
+          <div class="admin-home-session-list">
+            ${latestPending.length ? latestPending.map(item => `
+              <button type="button" data-home-section="sesiones">
+                <span class="admin-home-avatar">${String(item.patient?.nombre || "P").charAt(0).toUpperCase()}</span>
+                <span><b>${item.patient?.nombre || item.session?.patientNickname || "Paciente"}</b><small>${pmSessionMicroLabel(item.session)} · ${item.session?.fecha || item.session?.date || "Sin fecha"}</small></span>
+                <i>›</i>
+              </button>`).join("") : `<div class="admin-home-empty"><span>✅</span><b>Agenda al día</b><small>No hay sesiones pendientes.</small></div>`}
+          </div>
+        </article>
+      </section>
+    </div>`;
+}
+
+function pmBindAdminDashboard() {
+  contentArea.querySelectorAll("[data-home-section]").forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.homeSection;
+      navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === key));
+      renderSection(key);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (navigator.vibrate) navigator.vibrate(12);
+    });
+  });
+}
+
 const sections = {
+  inicio: { title: "Inicio", html: () => pmAdminDashboardHTML(), afterRender: pmBindAdminDashboard },
   paciente: { title: "Paciente", html: patientHTML, afterRender: bindPatientForm },
   biblioteca: {
     title: "Biblioteca",
@@ -6174,12 +6316,14 @@ const sections = {
 };
 
 function renderSection(key) {
-  const section = sections[key];
+  const section = sections[key] || sections.inicio;
+  const isHome = key === "inicio";
+  document.body.classList.toggle("admin-home-active", isHome);
   sectionTitle.textContent = section.title;
-  contentArea.innerHTML = section.html;
-  pmSetDashboardKpis(key);
+  contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
+  if (!isHome) pmSetDashboardKpis(key);
   if (section.afterRender) section.afterRender();
-  pmSetDashboardKpis(key);
+  if (!isHome) pmSetDashboardKpis(key);
 }
 
 navItems.forEach(item => {
@@ -6198,8 +6342,8 @@ if (sidebarLogoutBtn) {
 }
 
 updateCounters();
-navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === "paciente"));
-renderSection("paciente");
+navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === "inicio"));
+renderSection("inicio");
 
 
 
@@ -6400,8 +6544,8 @@ async function pmRefreshPatientsKpiAndPage() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === "paciente"));
-  if (typeof renderSection === "function") renderSection("paciente");
+  navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === "inicio"));
+  if (typeof renderSection === "function") renderSection("inicio");
   pmRefreshPatientsKpiAndPage();
 });
 
@@ -6429,6 +6573,14 @@ function pmRefreshUsersPresencePanelSafe() {
 // Presencia PRO v3: refresco gestionado por eventos y auto-sync único.
 window.addEventListener("storage", event => {
   if (event.key === "userStats") pmRefreshUsersPresencePanelSafe();
+  if (["patients", "sessions", "valoraciones", "userStats"].includes(event.key) && document.querySelector('.nav-item.active')?.dataset.section === "inicio") {
+    try {
+      patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      sessions = JSON.parse(localStorage.getItem("sessions") || "[]");
+      valoraciones = JSON.parse(localStorage.getItem("valoraciones") || "[]");
+      renderSection("inicio");
+    } catch (_) {}
+  }
 });
 
 })();
