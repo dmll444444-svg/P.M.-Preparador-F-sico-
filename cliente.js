@@ -9,67 +9,26 @@
 
 const currentUser = JSON.parse(localStorage.getItem("currentUser"));
 
-function pmClientUserStatKey(value = "") {
-  return String(value || "").trim().toLowerCase();
-}
-
-function pmClientUpdateOnlineState(online, options = {}) {
-  const pushCloud = options.pushCloud !== false;
-  try {
-    const user = JSON.parse(localStorage.getItem("currentUser") || "null") || currentUser;
-    if (!user) return;
-
-    const stats = JSON.parse(localStorage.getItem("userStats") || "{}");
-    const key = pmClientUserStatKey(user.nickname || user.username);
-    if (!key) return;
-
-    stats[key] = stats[key] || { count: 0, online: false, lastLogin: null, lastSeen: null };
-    const now = new Date().toISOString();
-    stats[key].online = Boolean(online);
-    if (online) {
-      if (!Number(stats[key].count || 0) && !stats[key].lastLogin) {
-        stats[key].count = 1;
-        stats[key].lastLogin = now;
-      }
-      stats[key].lastSeen = now;
-      delete stats[key].lastLogout;
-    } else {
-      stats[key].lastLogout = now;
-      stats[key].online = false;
-      // Hacemos que el último logout domine sobre lastSeen para que admin lo pinte offline al instante.
-      stats[key].lastSeen = now;
-    }
-
-    localStorage.setItem("userStats", JSON.stringify(stats));
-
-    if (pushCloud && window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-      window.PPF_SUPABASE.pushKey("userStats").catch(() => {});
-    }
-  } catch (error) {
-    console.warn("No se pudo actualizar estado online:", error);
-  }
-}
-
+/* PPF PRO · cliente conectado al motor único de presencia */
 window.PPF_LOGOUT_AND_SYNC = async function PPF_LOGOUT_AND_SYNC() {
-  pmClientUpdateOnlineState(false, { pushCloud: false });
-  try {
-    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-      await window.PPF_SUPABASE.pushKey("userStats");
-    }
-  } catch (_) {}
-
-  // Pequeño margen para que el navegador termine la subida antes de cambiar de página.
-  await new Promise(resolve => setTimeout(resolve, 120));
-  localStorage.removeItem("currentUser");
-  window.location.href = "index.html";
+  if (window.__ppfLogoutInProgress) return window.__ppfLogoutInProgress;
+  window.__ppfLogoutInProgress = (async () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("currentUser") || "null") || currentUser;
+      await window.PPF_PRESENCE?.logout?.(user);
+    } catch (_) {}
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
+  })();
+  return window.__ppfLogoutInProgress;
 };
 
-if (currentUser && currentUser.role === "client") {
-  pmClientUpdateOnlineState(true);
-  setInterval(() => pmClientUpdateOnlineState(true), 60000);
-  window.addEventListener("pagehide", () => {
-    pmClientUpdateOnlineState(false);
-  });
+try {
+  if (currentUser?.role === "client") {
+    window.PPF_PRESENCE?.start?.(currentUser);
+  }
+} catch (error) {
+  console.warn("No se pudo iniciar la presencia del cliente:", error);
 }
 
 if (!currentUser || currentUser.role !== "client") {
@@ -1429,24 +1388,6 @@ clientNavItems.forEach(item => {
   });
 });
 
-const logoutBtn = document.getElementById("clientLogoutBtn");
-if (logoutBtn) {
-  logoutBtn.addEventListener("click", () => {
-    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
-    localStorage.removeItem("currentUser");
-    window.location.href = "index.html";
-  });
-}
-
-const clientHeaderLogoutBtn = document.getElementById("clientHeaderLogoutBtn");
-if (clientHeaderLogoutBtn) {
-  clientHeaderLogoutBtn.addEventListener("click", () => {
-    if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
-    localStorage.removeItem("currentUser");
-    window.location.href = "index.html";
-  });
-}
-
 window.PM_MOBILE_NAV = function PM_MOBILE_NAV(sectionKey, clickedTab) {
   const key = sectionKey || "inicio";
 
@@ -1552,20 +1493,6 @@ window.completeClientSession = completeClientSession;
     tooltip.classList.remove("show");
   });
 
-
-// PM FIX: cerrar sesión cliente cabecera
-function pmClientLogout() {
-  if (window.PPF_LOGOUT_AND_SYNC) { window.PPF_LOGOUT_AND_SYNC(); return; }
-  localStorage.removeItem("currentUser");
-  window.location.href = "index.html";
-}
-
-document.addEventListener("click", function(event) {
-  const btn = event.target.closest("#clientHeaderLogoutBtn");
-  if (!btn) return;
-  event.preventDefault();
-  pmClientLogout();
-});
 
 
 
@@ -1708,3 +1635,23 @@ setTimeout(function(){ if (window.PPF_SYNC_ON_OPEN) window.PPF_SYNC_ON_OPEN("cli
 
 })();
 
+
+
+/* PPF PRO · FASE 2 · sincronización automática Cliente/PWA */
+try {
+  window.PPF_PRESENCE?.startAutoSync?.({ intervalMs: 10000 });
+
+  window.addEventListener("ppf:presence-cloud-change", () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("currentUser") || "null") || currentUser;
+      if (user?.role === "client") {
+        window.PPF_PRESENCE?.update?.(user, true, {
+          sync: true,
+          pushCloud: false
+        });
+      }
+    } catch (_) {}
+  });
+} catch (error) {
+  console.warn("No se pudo iniciar la sincronización de presencia del cliente:", error);
+}

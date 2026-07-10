@@ -5463,3 +5463,7 @@ Animación Dashboard Distribución
   }
 }
 
+
+/* PPF PRO · presencia inteligente safe */
+.status-dot.online{animation:ppfPresencePulse 1.8s ease-in-out infinite;}
+@keyframes ppfPresencePulse{0%,100%{box-shadow:0 0 0 3px rgba(34,197,94,.12),0 0 8px rgba(34,197,94,.22);}50%{box-shadow:0 0 0 7px rgba(34,197,94,.04),0 0 18px rgba(34,197,94,.42);}}

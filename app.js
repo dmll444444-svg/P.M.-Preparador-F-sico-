@@ -8,10 +8,6 @@ const form = document.getElementById("loginForm");
 const message = document.getElementById("message");
 const submitButton = form ? form.querySelector('button[type="submit"]') : null;
 
-function ppfUserStatKey(value = "") {
-  return String(value || "").trim().toLowerCase();
-}
-
 function normalizeLoginValue(value) {
   return String(value || "").trim();
 }
@@ -103,21 +99,10 @@ if (form) {
 
     localStorage.setItem("currentUser", JSON.stringify(user));
     try {
-      const stats = JSON.parse(localStorage.getItem("userStats") || "{}");
-      const key = ppfUserStatKey(user.nickname || user.username);
-      if (key) {
-        stats[key] = stats[key] || {count:0,online:false,lastLogin:null,lastSeen:null};
-        stats[key].count = Number(stats[key].count || stats[key].accessCount || 0) + 1;
-        stats[key].online = true;
-        stats[key].lastLogin = new Date().toISOString();
-        stats[key].lastSeen = stats[key].lastLogin;
-        delete stats[key].lastLogout;
-      }
-      localStorage.setItem("userStats", JSON.stringify(stats));
-      if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-        window.PPF_SUPABASE.pushKey("userStats").catch(() => {});
-      }
-    } catch(e){}
+      window.PPF_PRESENCE?.login?.(user);
+    } catch (error) {
+      console.warn("No se pudo registrar el acceso en Presencia PRO:", error);
+    }
 
     if (message) {
       message.textContent = `Acceso correcto. Bienvenido, ${user.nickname}`;
@@ -133,3 +118,9 @@ if (form) {
     }, 350);
   });
 }
+
+
+/* PPF PRO · FASE 2 · sincronización del acceso */
+try {
+  window.PPF_PRESENCE?.startAutoSync?.({ intervalMs: 15000 });
+} catch (_) {}

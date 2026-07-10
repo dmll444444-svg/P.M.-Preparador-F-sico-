@@ -15,6 +15,18 @@ if (!currentUser || currentUser.role !== "admin") {
 
 document.getElementById("adminName").textContent = currentUser.nickname;
 
+try { window.PPF_PRESENCE?.start?.(currentUser); } catch (error) { console.warn("No se pudo iniciar Presencia PRO en Admin:", error); }
+
+window.PM_ADMIN_LOGOUT = async function PM_ADMIN_LOGOUT() {
+  if (window.__ppfAdminLogoutInProgress) return window.__ppfAdminLogoutInProgress;
+  window.__ppfAdminLogoutInProgress = (async () => {
+    try { await window.PPF_PRESENCE?.logout?.(currentUser); } catch (_) {}
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
+  })();
+  return window.__ppfAdminLogoutInProgress;
+};
+
 const sectionTitle = document.getElementById("sectionTitle");
 const contentArea = document.getElementById("contentArea");
 const navItems = document.querySelectorAll(".nav-item");
@@ -2536,33 +2548,121 @@ function pmLatestIso(...values) {
 }
 
 function pmGetMergedUserStat(stats = {}, patient = {}) {
-  const candidates = [
-    patient.nickname,
-    pmUserStatKey(patient.nickname),
-    patient.id,
-    pmUserStatKey(patient.id),
-    patient.nombre,
-    pmUserStatKey(patient.nombre)
-  ].filter(Boolean);
+  const normalizePresenceKey = value => {
+    if (window.PPF_PRESENCE?.normalizeKey) {
+      return window.PPF_PRESENCE.normalizeKey(value);
+    }
 
-  const merged = { count: 0, online: false, lastLogin: null, lastSeen: null, lastLogout: null };
-  candidates.forEach(key => {
-    const item = stats[key];
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/^@+/, "")
+      .replace(/\s+/g, "");
+  };
+
+  const candidateKeys = new Set([
+    patient.nickname,
+    patient.id,
+    patient.nombre,
+    patient.name,
+    patient.username
+  ].filter(Boolean).map(normalizePresenceKey));
+
+  const merged = {
+    count: 0,
+    online: false,
+    lastLogin: null,
+    lastSeen: null,
+    lastHeartbeat: null,
+    lastActivity: null,
+    lastSync: null,
+    lastLogout: null,
+    device: ""
+  };
+
+  Object.entries(stats || {}).forEach(([rawKey, item]) => {
     if (!item || typeof item !== "object") return;
+
+    const itemKeys = [
+      rawKey,
+      item.nickname,
+      item.username,
+      item.patientNickname,
+      item.patientId,
+      item.nombre,
+      item.name
+    ].filter(Boolean).map(normalizePresenceKey);
+
+    if (!itemKeys.some(key => candidateKeys.has(key))) return;
+
     const count = Number(item.count ?? item.accessCount ?? item.accesos ?? 0);
-    if (count > merged.count) merged.count = count;
-    merged.lastLogin = pmLatestIso(merged.lastLogin, item.lastLogin, item.lastConnection, item.ultimaConexion);
-    merged.lastSeen = pmLatestIso(merged.lastSeen, item.lastSeen);
-    merged.lastLogout = pmLatestIso(merged.lastLogout, item.lastLogout);
-    if (item.online) merged.online = true;
+    merged.count = Math.max(merged.count, count);
+
+    merged.lastLogin = pmLatestIso(
+      merged.lastLogin,
+      item.lastLogin,
+      item.last_login,
+      item.lastConnection,
+      item.ultimaConexion
+    );
+
+    merged.lastSeen = pmLatestIso(
+      merged.lastSeen,
+      item.lastSeen,
+      item.last_seen
+    );
+
+    merged.lastHeartbeat = pmLatestIso(
+      merged.lastHeartbeat,
+      item.lastHeartbeat,
+      item.last_heartbeat
+    );
+
+    merged.lastActivity = pmLatestIso(
+      merged.lastActivity,
+      item.lastActivity,
+      item.last_activity
+    );
+
+    merged.lastSync = pmLatestIso(
+      merged.lastSync,
+      item.lastSync,
+      item.last_sync
+    );
+
+    merged.lastLogout = pmLatestIso(
+      merged.lastLogout,
+      item.lastLogout,
+      item.last_logout
+    );
+
+    if (item.device && !merged.device) merged.device = item.device;
   });
 
-  const now = Date.now();
-  const seenMs = pmParseDateMs(merged.lastSeen);
-  const logoutMs = pmParseDateMs(merged.lastLogout);
-  const fresh = seenMs && (now - seenMs) < 120000;
-  const logoutDominates = logoutMs && (!seenMs || logoutMs >= seenMs);
-  merged.online = Boolean(merged.online && fresh && !logoutDominates);
+  const latestActivity = window.PPF_PRESENCE?.activityIso
+    ? window.PPF_PRESENCE.activityIso(merged)
+    : pmLatestIso(
+        merged.lastActivity,
+        merged.lastHeartbeat,
+        merged.lastSeen,
+        merged.lastSync,
+        merged.lastLogin
+      );
+
+  merged.lastActivity = latestActivity;
+
+  merged.online = window.PPF_PRESENCE?.isOnline
+    ? window.PPF_PRESENCE.isOnline(merged)
+    : (() => {
+        const activityMs = pmParseDateMs(latestActivity);
+        const logoutMs = pmParseDateMs(merged.lastLogout);
+        const fresh = activityMs && (Date.now() - activityMs) < 95000;
+        const logoutDominates = logoutMs && (!activityMs || logoutMs >= activityMs);
+        return Boolean(fresh && !logoutDominates);
+      })();
+
   return merged;
 }
 
@@ -2571,6 +2671,23 @@ function pmFormatLastLogin(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Nunca";
   return date.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+}
+
+
+function pmFormatRelativeActivity(value) {
+  if (!value) return "Sin actividad";
+  const ms = pmParseDateMs(value);
+  if (!ms) return "Sin actividad";
+  const diff = Math.max(0, Date.now() - ms);
+  const sec = Math.round(diff / 1000);
+  if (sec < 10) return "Ahora";
+  if (sec < 60) return `Hace ${sec} s`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `Hace ${min} min`;
+  const hours = Math.round(min / 60);
+  if (hours < 24) return `Hace ${hours} h`;
+  const days = Math.round(hours / 24);
+  return `Hace ${days} d`;
 }
 
 function pmSetDashboardKpis(mode = "paciente") {
@@ -2664,16 +2781,19 @@ function renderUsersPage() {
       ${patients.map(patient => {
         const st = pmGetMergedUserStat(stats, patient);
         const online = Boolean(st.online);
-        const lastLogin = pmFormatLastLogin(st.lastLogin);
+        const activitySource = st.lastActivity || st.lastHeartbeat || st.lastSeen || st.lastSync || st.lastLogin;
+        const lastLogin = pmFormatLastLogin(activitySource);
+        const activityLabel = pmFormatRelativeActivity(activitySource);
+        const deviceLabel = st.device ? ` · ${st.device}` : "";
         return `
           <div class="user-test-card user-access-card">
             ${(getPatientPhotoSafe(patient) ? `<img class="patient-thumb" src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="patient-thumb">${patient.nombre.charAt(0).toUpperCase()}</div>`)}
             <div class="user-access-main">
               <strong>${patient.nombre}</strong>
-              <p>Accesos: ${st.count || 0} · <span class="status-dot ${online ? "online" : "offline"}"></span> ${online ? "En línea" : "Desconectado"}</p>
+              <p>Accesos: ${st.count || 0} · <span class="status-dot ${online ? "online" : "offline"}"></span> ${online ? "En línea" : "Desconectado"} · ${activityLabel}${deviceLabel}</p>
             </div>
             <div class="user-last-login">
-              <span>Última conexión</span>
+              <span>Última actividad</span>
               <strong>${lastLogin}</strong>
             </div>
           </div>
@@ -5957,8 +6077,7 @@ navItems.forEach(item => {
 const sidebarLogoutBtn = document.getElementById("logoutBtn");
 if (sidebarLogoutBtn) {
   sidebarLogoutBtn.addEventListener("click", () => {
-    localStorage.removeItem("currentUser");
-    window.location.href = "index.html";
+    window.PM_ADMIN_LOGOUT();
   });
 }
 
@@ -6074,15 +6193,10 @@ function ensureAdminHeaderLogoutButton() {
   }
 
   btn.onclick = function () {
-    localStorage.removeItem("currentUser");
-    window.location.href = "index.html";
+    window.PM_ADMIN_LOGOUT();
   };
 }
 
-window.PM_ADMIN_LOGOUT = function PM_ADMIN_LOGOUT() {
-  localStorage.removeItem("currentUser");
-  window.location.href = "index.html";
-};
 
 document.addEventListener("DOMContentLoaded", ensureAdminHeaderLogoutButton);
 setTimeout(ensureAdminHeaderLogoutButton, 0);
@@ -6115,8 +6229,7 @@ function pmBindAdminHeaderLogout() {
   const btn = document.getElementById("adminHeaderLogoutBtn");
   if (btn) {
     btn.onclick = function () {
-      localStorage.removeItem("currentUser");
-      window.location.href = "index.html";
+      window.PM_ADMIN_LOGOUT();
     };
   }
 }
@@ -6184,17 +6297,87 @@ if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "func
   window.PPF_SUPABASE_READY.then(pmRefreshPatientsKpiAndPage).catch(() => {});
 }
 
+
+function pmRefreshUsersPresencePanelSafe() {
+  try {
+    const active = document.querySelector(".nav-item.active");
+    if (!active || active.dataset.section !== "usuarios") return;
+    const current = document.querySelector(".users-access-list");
+    if (!current) return;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = renderUsersPage();
+    const fresh = wrap.querySelector(".users-access-list");
+    if (fresh) current.replaceWith(fresh);
+  } catch (_) {}
+}
+// Presencia PRO v3: refresco gestionado por eventos y auto-sync único.
+window.addEventListener("storage", event => {
+  if (event.key === "userStats") pmRefreshUsersPresencePanelSafe();
+});
+
 })();
 
 
-setInterval(() => {
-  try {
-    if (document.querySelector('.nav-item.active')?.dataset.section === "usuarios") {
-      patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      sessions = JSON.parse(localStorage.getItem("sessions") || "[]");
-      histories = JSON.parse(localStorage.getItem("histories") || "[]");
-      patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]");
-      renderSection("usuarios");
+// Presencia PRO v3 elimina el pull paralelo de 30 s del panel Usuarios.
+
+
+/* =========================================================
+   PPF PRO · FASE 2 · SINCRONIZACIÓN AUTOMÁTICA DE PRESENCIA
+   ========================================================= */
+(function initAdminPresenceAutoSync() {
+  if (window.__ppfAdminPresencePhase2) return;
+  window.__ppfAdminPresencePhase2 = true;
+
+  function usersSectionIsVisible() {
+    const active = document.querySelector(".nav-item.active");
+    return active?.dataset?.section === "usuarios" ||
+           active?.getAttribute("data-section") === "usuarios" ||
+           Boolean(document.querySelector(".users-access-list"));
+  }
+
+  function refreshUsersPresence() {
+    if (!usersSectionIsVisible()) return;
+
+    try {
+      if (typeof renderSection === "function") {
+        renderSection("usuarios");
+        return;
+      }
+
+      const currentList = document.querySelector(".users-access-list");
+      if (!currentList || typeof renderUsersPage !== "function") return;
+
+      const temporary = document.createElement("div");
+      temporary.innerHTML = renderUsersPage();
+      const freshList = temporary.querySelector(".users-access-list");
+
+      if (freshList) currentList.replaceWith(freshList);
+    } catch (error) {
+      console.warn("No se pudo refrescar la presencia de usuarios:", error);
     }
-  } catch (_) {}
-}, 30000);
+  }
+
+  const scheduleRefresh = (() => {
+    let timer = null;
+
+    return () => {
+      clearTimeout(timer);
+      timer = setTimeout(refreshUsersPresence, 120);
+    };
+  })();
+
+  [
+    "ppf:presence-local-change",
+    "ppf:presence-cloud-change",
+    "ppf:presence-storage-change"
+  ].forEach(eventName => {
+    window.addEventListener(eventName, scheduleRefresh);
+  });
+
+  window.addEventListener("storage", event => {
+    if (event.key === "userStats") scheduleRefresh();
+  });
+
+  window.PPF_PRESENCE?.startAutoSync?.({ intervalMs: 10000 });
+  // El panel se refresca por los eventos del motor; no se crea otro intervalo.
+})();

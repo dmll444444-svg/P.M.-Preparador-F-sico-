@@ -155,6 +155,109 @@ function ppfShouldBlockDangerousOverwrite(key, localValue, cloudValue) {
   return false;
 }
 
+
+function ppfNormalizePresenceKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/^@+/, "")
+    .replace(/\s+/g, "");
+}
+
+function ppfPresenceLatestIso(...values) {
+  let best = "";
+  let bestMs = 0;
+
+  values.forEach(value => {
+    if (!value) return;
+    const ms = new Date(value).getTime();
+    if (Number.isFinite(ms) && ms > bestMs) {
+      bestMs = ms;
+      best = value;
+    }
+  });
+
+  return best;
+}
+
+function ppfMergePresenceRecord(target = {}, source = {}) {
+  if (window.PPF_PRESENCE?.mergeRecord) {
+    return window.PPF_PRESENCE.mergeRecord(target, source);
+  }
+
+  const targetEvents = target.loginEvents && typeof target.loginEvents === "object"
+    ? target.loginEvents
+    : {};
+
+  const sourceEvents = source.loginEvents && typeof source.loginEvents === "object"
+    ? source.loginEvents
+    : {};
+
+  const loginEvents = { ...targetEvents, ...sourceEvents };
+  const sessions = { ...(target.sessions && typeof target.sessions === "object" ? target.sessions : {}) };
+  Object.entries(source.sessions && typeof source.sessions === "object" ? source.sessions : {}).forEach(([id, incoming]) => {
+    const current = sessions[id];
+    const currentIso = ppfPresenceLatestIso(current?.lastActivity, current?.lastHeartbeat, current?.lastSeen, current?.lastLogout);
+    const incomingIso = ppfPresenceLatestIso(incoming?.lastActivity, incoming?.lastHeartbeat, incoming?.lastSeen, incoming?.lastLogout);
+    if (!current || new Date(incomingIso || 0).getTime() >= new Date(currentIso || 0).getTime()) sessions[id] = incoming;
+  });
+
+  const legacyCount = Math.max(
+    Number(target.count ?? target.accessCount ?? target.accesos ?? 0),
+    Number(source.count ?? source.accessCount ?? source.accesos ?? 0)
+  );
+
+  const baseCount = Math.max(
+    Number(target.baseCount ?? 0),
+    Number(source.baseCount ?? 0),
+    legacyCount - Object.keys(loginEvents).length,
+    0
+  );
+
+  return {
+    ...target,
+    ...source,
+    baseCount,
+    loginEvents,
+    sessions,
+    count: Math.max(legacyCount, baseCount + Object.keys(loginEvents).length),
+    online: Boolean(target.online || source.online),
+    lastLogin: ppfPresenceLatestIso(target.lastLogin, source.lastLogin),
+    lastSeen: ppfPresenceLatestIso(target.lastSeen, source.lastSeen),
+    lastHeartbeat: ppfPresenceLatestIso(target.lastHeartbeat, source.lastHeartbeat),
+    lastActivity: ppfPresenceLatestIso(target.lastActivity, source.lastActivity),
+    lastSync: ppfPresenceLatestIso(target.lastSync, source.lastSync),
+    lastLogout: ppfPresenceLatestIso(target.lastLogout, source.lastLogout),
+    device: source.device || target.device || "",
+    version: 3,
+    presenceVersion: "PPF-PRO-3"
+  };
+}
+
+function ppfMergeUserStats(left = {}, right = {}) {
+  const merged = {};
+
+  [left, right].forEach(source => {
+    Object.entries(source || {}).forEach(([rawKey, record]) => {
+      if (!record || typeof record !== "object") return;
+
+      const key = ppfNormalizePresenceKey(
+        record.nickname ||
+        record.username ||
+        record.patientNickname ||
+        rawKey
+      );
+
+      if (!key) return;
+      merged[key] = ppfMergePresenceRecord(merged[key] || {}, record);
+    });
+  });
+
+  return merged;
+}
+
 async function ppfPullCloudToLocal() {
   const client = ppfCreateClient();
   if (!client) return false;
@@ -170,9 +273,17 @@ async function ppfPullCloudToLocal() {
   }
 
   (data || []).forEach(row => {
-    if (PPF_SYNC_KEYS.includes(row.key)) {
-      ppfWriteLocalJson(row.key, row.value || []);
+    if (!PPF_SYNC_KEYS.includes(row.key)) return;
+
+    if (row.key === "userStats") {
+      const localStats = ppfReadLocalJson("userStats") || {};
+      const cloudStats = row.value || {};
+      const mergedStats = ppfMergeUserStats(localStats, cloudStats);
+      ppfWriteLocalJson("userStats", mergedStats);
+      return;
     }
+
+    ppfWriteLocalJson(row.key, row.value || []);
   });
 
   ppfSafeSetItem("ppfSupabaseLastPull", new Date().toISOString());
@@ -212,6 +323,11 @@ async function ppfPushValueToCloud(key, value) {
 
   const cloud = await ppfGetCloudKey(key);
   const cloudValue = cloud?.value || [];
+
+  if (key === "userStats") {
+    value = ppfMergeUserStats(cloudValue || {}, value || {});
+    ppfWriteLocalJson("userStats", value);
+  }
 
   if (ppfShouldBlockDangerousOverwrite(key, value, cloudValue)) {
     console.warn("Subida bloqueada para evitar sobrescritura peligrosa:", key, {
