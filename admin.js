@@ -2310,22 +2310,14 @@ function bindSessionsForm() {
   }
 
 
-  function commitSessionToStorageStable(payload) {
+  async function commitSessionToStorageStable(payload) {
     const storedPayload = JSON.parse(JSON.stringify(payload));
-    storedPayload.updatedAt = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    storedPayload.updatedAt = nowIso;
 
-    /*
-      FIX PPF PRO:
-      Si por cualquier motivo se pierde editingSessionId al editar, no creamos una sesión duplicada.
-      Primero buscamos por ID y, como segunda defensa, por paciente + número de sesión.
-    */
     let index = sessions.findIndex(item => String(item.id) === String(storedPayload.id));
 
-    if (
-      index === -1 &&
-      storedPayload.patientNickname &&
-      storedPayload.numero
-    ) {
+    if (index === -1 && storedPayload.patientNickname && storedPayload.numero) {
       index = sessions.findIndex(item =>
         String(item.patientNickname) === String(storedPayload.patientNickname) &&
         String(item.numero) === String(storedPayload.numero)
@@ -2333,9 +2325,11 @@ function bindSessionsForm() {
     }
 
     const created = index === -1;
+    if (created) storedPayload.createdAt = storedPayload.createdAt || nowIso;
 
     if (!created) {
       storedPayload.id = sessions[index].id || storedPayload.id;
+      storedPayload.createdAt = sessions[index].createdAt || storedPayload.createdAt || nowIso;
       sessions.splice(index, 1, storedPayload);
     } else {
       sessions.push(storedPayload);
@@ -2344,19 +2338,19 @@ function bindSessionsForm() {
     window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
 
-    if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
-      window.PPF_SUPABASE.pushKey("sessions").catch(error =>
-        console.warn("No se pudo sincronizar sessions:", error)
-      );
+    let cloudConfirmed = false;
+    if (window.PPF_SUPABASE?.pushValue) {
+      cloudConfirmed = await window.PPF_SUPABASE.pushValue("sessions", sessions);
+    } else if (window.PPF_SUPABASE?.pushKey) {
+      cloudConfirmed = await window.PPF_SUPABASE.pushKey("sessions");
     }
 
     if (typeof syncRuntimeToDB === "function") {
-      syncRuntimeToDB().catch(error =>
-        console.warn("No se pudo sincronizar IndexedDB:", error)
-      );
+      try { await syncRuntimeToDB(); }
+      catch (error) { console.warn("No se pudo sincronizar IndexedDB:", error); }
     }
 
-    return { created, payload: storedPayload };
+    return { created, payload: storedPayload, cloudConfirmed };
   }
 
   async function createPreparedSessionNotification(session) {
@@ -2441,7 +2435,15 @@ function bindSessionsForm() {
       principal: modulesForSave.principal
     };
 
-    const commitResult = commitSessionToStorageStable(payload);
+    let commitResult;
+    try {
+      commitResult = await commitSessionToStorageStable(payload);
+    } catch (error) {
+      console.error("No se pudo guardar la sesión:", error);
+      alert("No se pudo guardar la sesión. Revisa la conexión con Supabase y vuelve a intentarlo.");
+      return;
+    }
+
     let notificationConfirmed = true;
     if (commitResult?.created) {
       try {
@@ -2452,12 +2454,18 @@ function bindSessionsForm() {
       }
     }
 
+    if (!commitResult.cloudConfirmed) {
+      alert("La sesión quedó guardada en este dispositivo, pero Supabase no confirmó la sincronización. No se limpiará el formulario para evitar perder el trabajo.");
+      renderSessionList(patientNickname);
+      return;
+    }
+
     if (editingSessionId) {
-      alert("Sesión actualizada correctamente.");
+      alert("Sesión actualizada y sincronizada correctamente.");
     } else if (notificationConfirmed) {
-      alert("Sesión guardada y notificación enviada correctamente.");
+      alert("Sesión guardada, sincronizada y notificación enviada correctamente.");
     } else {
-      alert("La sesión se guardó, pero no se pudo confirmar la notificación. Revisa la conexión con Supabase.");
+      alert("La sesión se guardó y sincronizó, pero no se pudo confirmar la notificación.");
     }
 
     const savedPatientNickname = patientNickname;

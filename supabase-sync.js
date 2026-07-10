@@ -284,6 +284,16 @@ async function ppfPullCloudToLocal() {
       return;
     }
 
+    if (row.key === "sessions") {
+      const mergedSessions = ppfMergeSessions(
+        ppfReadLocalJson("sessions"),
+        row.value || []
+      );
+      ppfWriteLocalJson("sessions", mergedSessions);
+      window.sessions = mergedSessions;
+      return;
+    }
+
     if (row.key === "notifications") {
       const mergedNotifications = ppfMergeNotifications(
         ppfReadLocalJson("notifications"),
@@ -301,6 +311,35 @@ async function ppfPullCloudToLocal() {
 }
 
 
+
+
+function ppfMergeSessions(left = [], right = []) {
+  const byId = new Map();
+
+  [...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])].forEach(item => {
+    if (!item || typeof item !== "object") return;
+
+    const fallbackId = `${item.patientNickname || item.nickname || ""}:${item.numero || item.sessionNumber || ""}`;
+    const id = String(item.id || item.sessionId || fallbackId).trim();
+    if (!id) return;
+
+    const previous = byId.get(id);
+    if (!previous) {
+      byId.set(id, { ...item, id: item.id || id });
+      return;
+    }
+
+    const previousTime = new Date(previous.updatedAt || previous.createdAt || previous.fecha || 0).getTime() || 0;
+    const incomingTime = new Date(item.updatedAt || item.createdAt || item.fecha || 0).getTime() || 0;
+    byId.set(id, incomingTime >= previousTime ? { ...previous, ...item, id: item.id || previous.id || id } : previous);
+  });
+
+  return Array.from(byId.values()).sort((a, b) => {
+    const patientCompare = String(a.patientNickname || "").localeCompare(String(b.patientNickname || ""));
+    if (patientCompare !== 0) return patientCompare;
+    return Number(a.numero || 0) - Number(b.numero || 0);
+  });
+}
 
 function ppfMergeNotifications(left = [], right = []) {
   const byId = new Map();
@@ -364,6 +403,12 @@ async function ppfPushValueToCloud(key, value) {
   if (key === "userStats") {
     value = ppfMergeUserStats(cloudValue || {}, value || {});
     ppfWriteLocalJson("userStats", value);
+  }
+
+  if (key === "sessions") {
+    value = ppfMergeSessions(cloudValue || [], value || []);
+    ppfWriteLocalJson("sessions", value);
+    window.sessions = value;
   }
 
   if (key === "notifications") {
