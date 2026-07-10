@@ -33,6 +33,49 @@
     } catch (_) {}
   }
 
+  function readSessions() {
+    try {
+      const value = JSON.parse(localStorage.getItem("sessions") || "[]");
+      return Array.isArray(value) ? value : [];
+    } catch (_) { return []; }
+  }
+
+  function repairRecentMissingNotifications() {
+    const items = readNotifications();
+    const existing = new Set(items
+      .filter(item => item?.type === "prepared_session")
+      .map(item => String(item.sessionId || "")));
+    const now = Date.now();
+    let changed = false;
+
+    readSessions().forEach(session => {
+      if (normalize(session?.patientNickname) !== currentNickname || !session?.id) return;
+      if (existing.has(String(session.id))) return;
+      const updatedMs = new Date(session.updatedAt || session.createdAt || 0).getTime();
+      if (!Number.isFinite(updatedMs) || now - updatedMs > 30 * 60 * 1000) return;
+
+      items.push({
+        id: `recovered-${session.id}`,
+        type: "prepared_session",
+        recipient: currentNickname,
+        title: "Nueva sesión preparada",
+        body: `Tu sesión nº ${session.numero || "-"} ya está disponible.`,
+        sessionId: session.id,
+        sessionNumber: session.numero || null,
+        sessionDate: session.fecha || "",
+        createdAt: session.updatedAt || session.createdAt || new Date().toISOString(),
+        createdBy: "admin",
+        recovered: true,
+        readBy: []
+      });
+      existing.add(String(session.id));
+      changed = true;
+    });
+
+    if (changed) writeLocalOnly(items);
+    return items;
+  }
+
   function mine(items = readNotifications()) {
     return items
       .filter(item => normalize(item?.recipient) === currentNickname)
@@ -212,7 +255,7 @@
   async function pullAndProcess() {
     const before = new Set(mine().map(item => String(item.id)));
     try { await window.PPF_SUPABASE?.pull?.(); } catch (_) {}
-    const items = readNotifications();
+    const items = repairRecentMissingNotifications();
     const hasNew = mine(items).some(item => !before.has(String(item.id)));
     process(items, hasNew);
   }
@@ -239,9 +282,9 @@
     mine(initial).forEach(item => knownIds.add(String(item.id)));
     renderUI();
     try { if (window.PPF_SUPABASE_READY) await window.PPF_SUPABASE_READY; } catch (_) {}
-    const cloudReadyItems = readNotifications();
-    mine(cloudReadyItems).forEach(item => knownIds.add(String(item.id)));
+    const cloudReadyItems = repairRecentMissingNotifications();
     renderUI();
+    process(cloudReadyItems, true);
     subscribe();
     clearInterval(pollTimer);
     pollTimer = setInterval(pullAndProcess, POLL_MS);

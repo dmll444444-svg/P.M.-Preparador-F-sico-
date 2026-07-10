@@ -2359,7 +2359,7 @@ function bindSessionsForm() {
     return { created, payload: storedPayload };
   }
 
-  function createPreparedSessionNotification(session) {
+  async function createPreparedSessionNotification(session) {
     if (!session?.patientNickname || !session?.id) return;
 
     let notifications = [];
@@ -2391,14 +2391,18 @@ function bindSessionsForm() {
     if (notifications.length > 500) notifications = notifications.slice(-500);
     localStorage.setItem("notifications", JSON.stringify(notifications));
 
-    if (window.PPF_SUPABASE?.pushKey) {
-      window.PPF_SUPABASE.pushKey("notifications").catch(error =>
-        console.warn("No se pudo sincronizar la notificación:", error)
-      );
+    if (window.PPF_SUPABASE?.pushValue) {
+      const synced = await window.PPF_SUPABASE.pushValue("notifications", notifications);
+      if (!synced) throw new Error("Supabase no confirmó la notificación");
+    } else if (window.PPF_SUPABASE?.pushKey) {
+      const synced = await window.PPF_SUPABASE.pushKey("notifications");
+      if (!synced) throw new Error("Supabase no confirmó la notificación");
     }
+
+    return notification;
   }
 
-  form.addEventListener("submit", event => {
+  form.addEventListener("submit", async event => {
     event.preventDefault();
 
     saveActiveModuleToMemory();
@@ -2438,9 +2442,23 @@ function bindSessionsForm() {
     };
 
     const commitResult = commitSessionToStorageStable(payload);
-    if (commitResult?.created) createPreparedSessionNotification(commitResult.payload);
+    let notificationConfirmed = true;
+    if (commitResult?.created) {
+      try {
+        await createPreparedSessionNotification(commitResult.payload);
+      } catch (error) {
+        notificationConfirmed = false;
+        console.error("La sesión se guardó, pero la notificación no pudo confirmarse:", error);
+      }
+    }
 
-    alert(editingSessionId ? "Sesión actualizada correctamente." : "Sesión guardada correctamente.");
+    if (editingSessionId) {
+      alert("Sesión actualizada correctamente.");
+    } else if (notificationConfirmed) {
+      alert("Sesión guardada y notificación enviada correctamente.");
+    } else {
+      alert("La sesión se guardó, pero no se pudo confirmar la notificación. Revisa la conexión con Supabase.");
+    }
 
     const savedPatientNickname = patientNickname;
 

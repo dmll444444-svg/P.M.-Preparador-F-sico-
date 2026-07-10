@@ -284,6 +284,15 @@ async function ppfPullCloudToLocal() {
       return;
     }
 
+    if (row.key === "notifications") {
+      const mergedNotifications = ppfMergeNotifications(
+        ppfReadLocalJson("notifications"),
+        row.value || []
+      );
+      ppfWriteLocalJson("notifications", mergedNotifications);
+      return;
+    }
+
     ppfWriteLocalJson(row.key, row.value || []);
   });
 
@@ -291,6 +300,33 @@ async function ppfPullCloudToLocal() {
   return true;
 }
 
+
+
+function ppfMergeNotifications(left = [], right = []) {
+  const byId = new Map();
+
+  [...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])].forEach(item => {
+    if (!item || typeof item !== "object") return;
+    const id = String(item.id || `${item.type || "notification"}:${item.sessionId || ""}:${item.recipient || ""}`).trim();
+    if (!id) return;
+
+    const previous = byId.get(id) || {};
+    const readBy = Array.from(new Set([
+      ...(Array.isArray(previous.readBy) ? previous.readBy : []),
+      ...(Array.isArray(item.readBy) ? item.readBy : [])
+    ].map(value => String(value || "").trim()).filter(Boolean)));
+
+    const previousTime = new Date(previous.updatedAt || previous.createdAt || 0).getTime() || 0;
+    const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime() || 0;
+    const newest = incomingTime >= previousTime ? item : previous;
+
+    byId.set(id, { ...previous, ...newest, id, readBy });
+  });
+
+  return Array.from(byId.values())
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+    .slice(-1000);
+}
 
 function ppfSanitizePatientsForCloud(value) {
   if (!Array.isArray(value)) return value || [];
@@ -328,6 +364,11 @@ async function ppfPushValueToCloud(key, value) {
   if (key === "userStats") {
     value = ppfMergeUserStats(cloudValue || {}, value || {});
     ppfWriteLocalJson("userStats", value);
+  }
+
+  if (key === "notifications") {
+    value = ppfMergeNotifications(cloudValue || [], value || []);
+    ppfWriteLocalJson("notifications", value);
   }
 
   if (ppfShouldBlockDangerousOverwrite(key, value, cloudValue)) {
