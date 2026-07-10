@@ -1,7 +1,7 @@
-const PM_CACHE = "pm-online-v1.5.0-presence-pro-v3";
+const PM_CACHE = "pm-online-v1.6.0-notifications";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
-  "./app.js", "./admin.js", "./cliente.js", "./supabase-config.js", "./supabase-sync.js",
+  "./app.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",
   "./manifest.webmanifest", "./favicon.ico", "./favicon.svg", "./apple-touch-icon.png",
   "./icons/icon-192.png", "./icons/icon-512.png"
 ];
@@ -23,4 +23,16 @@ self.addEventListener("fetch", event => {
       return response;
     }).catch(() => caches.match(event.request).then(cached => cached || caches.match("./index.html")))
   );
+});
+
+
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || "./cliente.html", self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = windows.find(client => client.url.includes("cliente.html"));
+    if (existing) { await existing.focus(); existing.postMessage({ type: "PPF_OPEN_SESSION", section: "proxima" }); return; }
+    await self.clients.openWindow(targetUrl);
+  })());
 });

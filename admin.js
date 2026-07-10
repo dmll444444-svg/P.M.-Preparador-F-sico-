@@ -2332,7 +2332,9 @@ function bindSessionsForm() {
       );
     }
 
-    if (index !== -1) {
+    const created = index === -1;
+
+    if (!created) {
       storedPayload.id = sessions[index].id || storedPayload.id;
       sessions.splice(index, 1, storedPayload);
     } else {
@@ -2351,6 +2353,47 @@ function bindSessionsForm() {
     if (typeof syncRuntimeToDB === "function") {
       syncRuntimeToDB().catch(error =>
         console.warn("No se pudo sincronizar IndexedDB:", error)
+      );
+    }
+
+    return { created, payload: storedPayload };
+  }
+
+  function createPreparedSessionNotification(session) {
+    if (!session?.patientNickname || !session?.id) return;
+
+    let notifications = [];
+    try { notifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
+    if (!Array.isArray(notifications)) notifications = [];
+
+    const duplicate = notifications.some(item =>
+      item?.type === "prepared_session" && String(item?.sessionId) === String(session.id)
+    );
+    if (duplicate) return;
+
+    const patient = patients.find(item => item.nickname === session.patientNickname);
+    const notification = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "prepared_session",
+      recipient: String(session.patientNickname || "").trim().toLowerCase(),
+      recipientName: patient?.nombre || session.patientNickname,
+      title: "Nueva sesión preparada",
+      body: `Tu sesión nº ${session.numero || "-"} ya está disponible.`,
+      sessionId: session.id,
+      sessionNumber: session.numero || null,
+      sessionDate: session.fecha || "",
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser?.nickname || "admin",
+      readBy: []
+    };
+
+    notifications.push(notification);
+    if (notifications.length > 500) notifications = notifications.slice(-500);
+    localStorage.setItem("notifications", JSON.stringify(notifications));
+
+    if (window.PPF_SUPABASE?.pushKey) {
+      window.PPF_SUPABASE.pushKey("notifications").catch(error =>
+        console.warn("No se pudo sincronizar la notificación:", error)
       );
     }
   }
@@ -2394,7 +2437,8 @@ function bindSessionsForm() {
       principal: modulesForSave.principal
     };
 
-    commitSessionToStorageStable(payload);
+    const commitResult = commitSessionToStorageStable(payload);
+    if (commitResult?.created) createPreparedSessionNotification(commitResult.payload);
 
     alert(editingSessionId ? "Sesión actualizada correctamente." : "Sesión guardada correctamente.");
 

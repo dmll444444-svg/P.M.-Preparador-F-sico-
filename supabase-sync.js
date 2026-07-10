@@ -16,6 +16,7 @@ const PPF_SYNC_KEYS = [
   "exerciseLibrary",
   "completedSessions",
   "valoraciones",
+  "notifications",
   "userStats"
 ];
 
