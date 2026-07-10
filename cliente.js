@@ -654,7 +654,7 @@ function refreshCompletedSessions() {
 function getClientSortedSessionDates() {
   return [...new Set(
     sessions
-      .filter(session => session.patientNickname === currentPatient.nickname && session.fecha)
+      .filter(session => sessionBelongsToCurrentClient(session) && session.fecha)
       .map(session => session.fecha)
   )].sort();
 }
@@ -673,11 +673,39 @@ function getClientMicroLabel(session) {
 }
 
 
+function normalizeClientIdentity(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/^@+/, "")
+    .replace(/\s+/g, "");
+}
+
+function sessionBelongsToCurrentClient(session = {}) {
+  const owner = session.patientNickname || session.nickname || session.patient || session.patientId || session.cliente || session.clientNickname || "";
+  const identities = [currentPatient?.nickname, currentUser?.nickname, currentUser?.username, currentUser?.user]
+    .map(normalizeClientIdentity)
+    .filter(Boolean);
+  return identities.includes(normalizeClientIdentity(owner));
+}
+
 function isSessionCompleted(sessionId) {
-  return completedSessions.some(item =>
-    item.sessionId === sessionId &&
-    item.patientNickname === currentPatient.nickname
-  );
+  const sid = String(sessionId || "");
+  let notifications = [];
+  try { notifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
+
+  const latestPreparedAt = (Array.isArray(notifications) ? notifications : [])
+    .filter(item => item?.type === "prepared_session" && String(item?.sessionId || "") === sid)
+    .reduce((latest, item) => Math.max(latest, Date.parse(item?.createdAt || "") || 0), 0);
+
+  return completedSessions.some(item => {
+    if (String(item.sessionId || item.id || "") !== sid) return false;
+    if (normalizeClientIdentity(item.patientNickname || item.nickname || item.patient || "") !== normalizeClientIdentity(currentPatient?.nickname || "")) return false;
+    const completedAt = Date.parse(item.completedAt || item.fechaCompletada || "") || 0;
+    return !(latestPreparedAt && latestPreparedAt > completedAt);
+  });
 }
 
 function sortSessionsNewestFirst(list = []) {
@@ -702,7 +730,7 @@ function getClientCompletedSessions() {
   refreshCompletedSessions();
   return sortSessionsNewestFirst(
     sessions.filter(session =>
-      session.patientNickname === currentPatient.nickname &&
+      sessionBelongsToCurrentClient(session) &&
       isSessionCompleted(session.id)
     )
   );
@@ -712,7 +740,7 @@ function getClientPendingSessions() {
   refreshCompletedSessions();
   return sessions
     .filter(session =>
-      session.patientNickname === currentPatient.nickname &&
+      sessionBelongsToCurrentClient(session) &&
       !isSessionCompleted(session.id)
     )
     .sort((a, b) => {

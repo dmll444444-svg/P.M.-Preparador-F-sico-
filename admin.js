@@ -2315,14 +2315,9 @@ function bindSessionsForm() {
     const nowIso = new Date().toISOString();
     storedPayload.updatedAt = nowIso;
 
-    let index = sessions.findIndex(item => String(item.id) === String(storedPayload.id));
-
-    if (index === -1 && storedPayload.patientNickname && storedPayload.numero) {
-      index = sessions.findIndex(item =>
-        String(item.patientNickname) === String(storedPayload.patientNickname) &&
-        String(item.numero) === String(storedPayload.numero)
-      );
-    }
+    // Una sesión solo se actualiza por su ID real. Nunca por paciente+número:
+    // ese fallback podía reutilizar el ID de una sesión ya terminada.
+    const index = sessions.findIndex(item => String(item.id) === String(storedPayload.id));
 
     const created = index === -1;
     if (created) storedPayload.createdAt = storedPayload.createdAt || nowIso;
@@ -2552,11 +2547,30 @@ function pmIsSessionCompleted(session = {}, completed = []) {
   const sid = String(session.id || session.sessionId || "");
   const snum = pmSessionNumber(session);
   const spatient = pmSessionPatientKey(session).toLowerCase();
+  const notifications = pmReadJson("notifications", []);
+
+  const latestPreparedAt = notifications
+    .filter(item => item?.type === "prepared_session" && String(item?.sessionId || "") === sid)
+    .reduce((latest, item) => Math.max(latest, Date.parse(item?.createdAt || "") || 0), 0);
+
   return completed.some(item => {
     const cid = String(item.sessionId || item.id || "");
     const cpatient = String(item.patientNickname || item.nickname || item.patient || "").trim().toLowerCase();
     const cnum = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
-    return (sid && cid && sid === cid) || (spatient && cpatient && spatient === cpatient && snum && cnum && snum === cnum);
+    const completedAt = Date.parse(item.completedAt || item.fechaCompletada || "") || 0;
+
+    // Si existe una nueva notificación preparada posterior a la finalización,
+    // la sesión fue reutilizada por el bug anterior y debe volver a pendiente.
+    if (sid && cid && sid === cid) {
+      return !(latestPreparedAt && latestPreparedAt > completedAt);
+    }
+
+    // Compatibilidad legacy: solo usar paciente+número cuando falta algún ID.
+    if (!sid || !cid) {
+      return spatient && cpatient && spatient === cpatient && snum && cnum && snum === cnum;
+    }
+
+    return false;
   });
 }
 
@@ -2577,18 +2591,32 @@ function pmSessionMicroLabel(session = {}) {
 function pmSessionAgenda() {
   const allSessions = pmReadJson("sessions", []);
   const completed = pmReadJson("completedSessions", []);
-  const pending = [];
-  const done = [];
+  const patientByNickname = new Map(
+    patients.map(patient => [String(patient.nickname || "").trim().toLowerCase(), patient])
+  );
 
-  patients.forEach(patient => {
-    const nick = String(patient.nickname || "").trim().toLowerCase();
-    const patientSessions = allSessions.filter(s => pmSessionPatientKey(s).toLowerCase() === nick);
-    const patientPending = pmSortSessionsLatest(patientSessions.filter(s => !pmIsSessionCompleted(s, completed)))[0];
-    if (patientPending) pending.push({ patient, session: patientPending });
+  const rows = allSessions
+    .map(session => {
+      const key = pmSessionPatientKey(session).toLowerCase();
+      const patient = patientByNickname.get(key);
+      return patient ? { patient, session } : null;
+    })
+    .filter(Boolean);
 
-    const patientDone = pmSortSessionsLatest(patientSessions.filter(s => pmIsSessionCompleted(s, completed)))[0];
-    if (patientDone) done.push({ patient, session: patientDone });
+  const sortRowsLatest = list => list.slice().sort((a, b) => {
+    const fa = String(a.session?.fecha || "");
+    const fb = String(b.session?.fecha || "");
+    if (fa !== fb) return fb.localeCompare(fa);
+    return pmSessionNumber(b.session) - pmSessionNumber(a.session);
   });
+
+  // Las tarjetas representan sesiones reales, no pacientes únicos.
+  const pending = sortRowsLatest(
+    rows.filter(item => !pmIsSessionCompleted(item.session, completed))
+  );
+  const done = sortRowsLatest(
+    rows.filter(item => pmIsSessionCompleted(item.session, completed))
+  );
 
   return { pending, done };
 }
