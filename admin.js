@@ -6316,9 +6316,13 @@ const sections = {
 
 function pmApplyAdminMobileMode() {
   const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
-  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches;
-  const compactViewport = Math.min(window.innerWidth || 9999, document.documentElement.clientWidth || 9999) <= 1024;
-  document.body.classList.toggle("admin-mobile-ui", Boolean(standalone || coarsePointer || compactViewport));
+  const viewportWidth = Math.min(window.innerWidth || 9999, document.documentElement.clientWidth || 9999);
+  const compactViewport = viewportWidth <= 1024;
+  const compactStandalone = standalone && viewportWidth <= 1180;
+
+  // La navegación móvil solo debe activarse en teléfono/tablet.
+  // Un PC táctil no debe recibir la barra inferior móvil por tener pointer:coarse.
+  document.body.classList.toggle("admin-mobile-ui", Boolean(compactViewport || compactStandalone));
 }
 
 pmApplyAdminMobileMode();

@@ -5749,3 +5749,98 @@ body.admin-mobile-ui .admin-mobile-more-grid > button {
     padding: 11px !important;
   }
 }
+
+
+/* =========================================================
+   PPF PRO · BARRA ADMIN MÓVIL · CORRECCIÓN v4
+   - No activa interfaz móvil en PC táctil ancho.
+   - Hoja Más siempre por encima de la barra.
+   - Sistema y Cerrar sesión visibles con scroll real.
+   - Badge Actual visible dentro de la gráfica móvil.
+   ========================================================= */
+body.admin-mobile-ui {
+  --admin-mobile-nav-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  --admin-mobile-nav-height: 82px;
+}
+
+body.admin-mobile-ui .admin-mobile-bottom-nav {
+  bottom: var(--admin-mobile-nav-bottom) !important;
+  height: var(--admin-mobile-nav-height) !important;
+  min-height: var(--admin-mobile-nav-height) !important;
+  padding: 8px 7px !important;
+}
+
+body.admin-mobile-ui .admin-mobile-nav-primary .admin-mobile-nav-icon {
+  transform: none !important;
+  margin: 0 auto 3px !important;
+}
+
+body.admin-mobile-ui .admin-mobile-nav-primary small {
+  transform: none !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-sheet {
+  box-sizing: border-box !important;
+  left: 10px !important;
+  right: 10px !important;
+  bottom: calc(var(--admin-mobile-nav-bottom) + var(--admin-mobile-nav-height) + 10px) !important;
+  width: auto !important;
+  max-height: calc(100dvh - var(--admin-mobile-nav-height) - var(--admin-mobile-nav-bottom) - env(safe-area-inset-top, 0px) - 34px) !important;
+  padding: 8px 16px 24px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scroll-padding-bottom: 28px !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-sheet.open {
+  transform: translate3d(0,0,0) !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  gap: 10px !important;
+  padding-bottom: 8px !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-grid > button {
+  min-height: 92px !important;
+  padding: 13px !important;
+}
+
+@media (max-height: 740px) {
+  body.admin-mobile-ui .admin-mobile-more-sheet {
+    max-height: calc(100dvh - var(--admin-mobile-nav-height) - var(--admin-mobile-nav-bottom) - 20px) !important;
+  }
+  body.admin-mobile-ui .admin-mobile-more-grid > button {
+    min-height: 78px !important;
+    padding: 10px !important;
+  }
+  body.admin-mobile-ui .admin-mobile-more-grid > button > span {
+    margin-bottom: 2px !important;
+  }
+}
+
+@media (max-width: 800px), (pointer: coarse) and (max-width: 1024px) {
+  .periodicity-card .volume-chart,
+  .periodicity-card .client-mini-bars {
+    padding-top: 46px !important;
+  }
+
+  .periodicity-card .current-micro-badge,
+  .periodicity-card .current-badge {
+    top: 7px !important;
+    z-index: 40 !important;
+  }
+}
+
+/* En escritorio real no debe aparecer ni la barra ni la hoja móvil. */
+@media (min-width:1025px) {
+  body:not(.admin-mobile-ui) .admin-mobile-bottom-nav,
+  body:not(.admin-mobile-ui) .admin-mobile-more-sheet,
+  body:not(.admin-mobile-ui) .admin-mobile-more-backdrop {
+    display:none !important;
+  }
+}
