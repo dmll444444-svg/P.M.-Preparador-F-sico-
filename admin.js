@@ -5844,62 +5844,107 @@ function pmDashboardGreeting() {
 function pmAdminDashboardHTML() {
   const agenda = typeof pmSessionAgenda === "function" ? pmSessionAgenda() : { pending: [], done: [] };
   const online = pmDashboardOnlineUsers();
-  const latestPending = agenda.pending.slice(0, 4);
+  const latestPending = agenda.pending.slice(0, 5);
   const adminLabel = currentUser?.nombre || currentUser?.name || currentUser?.nickname || "Preparador";
+  const todayLabel = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  const completedToday = agenda.done.filter(item => {
+    const stamp = item.session?.completedAt || item.session?.finishedAt || item.session?.updatedAt;
+    if (!stamp) return false;
+    const date = new Date(stamp);
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  }).length;
+  const safeDate = raw => {
+    if (!raw) return "Sin fecha";
+    const d = new Date(`${raw}T12:00:00`);
+    return Number.isNaN(d.getTime()) ? raw : new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short" }).format(d);
+  };
+  const initials = name => String(name || "P").trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase();
   return `
-    <div class="admin-home-dashboard">
-      <section class="admin-home-hero">
-        <div>
-          <p class="admin-home-kicker">CENTRO DE CONTROL</p>
-          <h2>${pmDashboardGreeting()}, ${adminLabel}</h2>
-          <p>Todo lo importante de PPF PRO, preparado para actuar en segundos.</p>
+    <div class="admin-home-dashboard admin-home-pro">
+      <section class="admin-home-hero admin-home-hero-pro">
+        <div class="admin-home-hero-copy">
+          <div class="admin-home-kicker-row">
+            <span class="admin-home-live-dot"></span>
+            <p class="admin-home-kicker">CENTRO DE CONTROL</p>
+          </div>
+          <h2>${pmDashboardGreeting()}, <span>${adminLabel}</span></h2>
+          <p class="admin-home-date">${todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)}</p>
+          <p class="admin-home-subtitle">Tu equipo, tus sesiones y la actividad de hoy, en un solo vistazo.</p>
         </div>
-        <button type="button" class="admin-home-primary" data-home-section="sesiones">
-          <span>＋</span> Nueva sesión
-        </button>
+        <div class="admin-home-hero-side">
+          <div class="admin-home-today-summary">
+            <span>HOY</span>
+            <strong>${completedToday}</strong>
+            <small>sesiones terminadas</small>
+          </div>
+          <button type="button" class="admin-home-primary" data-home-section="sesiones">
+            <span>＋</span><b>Nueva sesión</b>
+          </button>
+        </div>
       </section>
 
       <section class="admin-home-stats" aria-label="Resumen del preparador">
-        <button type="button" class="admin-home-stat" data-home-section="paciente">
-          <span class="admin-home-stat-icon">👥</span><small>Pacientes activos</small><strong>${patients.length}</strong><em>Gestionar pacientes</em>
+        <button type="button" class="admin-home-stat admin-home-stat-patients" data-home-section="paciente">
+          <span class="admin-home-stat-icon">👥</span>
+          <span class="admin-home-stat-copy"><small>Pacientes activos</small><strong>${patients.length}</strong><em>Gestionar pacientes</em></span>
+          <span class="admin-home-stat-arrow">↗</span>
         </button>
-        <button type="button" class="admin-home-stat" data-home-section="sesiones">
-          <span class="admin-home-stat-icon">🏋️</span><small>Sesiones pendientes</small><strong>${agenda.pending.length}</strong><em>Ver y preparar</em>
+        <button type="button" class="admin-home-stat admin-home-stat-sessions" data-home-section="sesiones">
+          <span class="admin-home-stat-icon">🏋️</span>
+          <span class="admin-home-stat-copy"><small>Sesiones pendientes</small><strong>${agenda.pending.length}</strong><em>Ver agenda activa</em></span>
+          <span class="admin-home-stat-arrow">↗</span>
         </button>
-        <button type="button" class="admin-home-stat" data-home-section="valoraciones">
-          <span class="admin-home-stat-icon">📊</span><small>Valoraciones</small><strong>${valoraciones.length}</strong><em>Revisar evolución</em>
+        <button type="button" class="admin-home-stat admin-home-stat-valuations" data-home-section="valoraciones">
+          <span class="admin-home-stat-icon">📊</span>
+          <span class="admin-home-stat-copy"><small>Valoraciones</small><strong>${valoraciones.length}</strong><em>Revisar evolución</em></span>
+          <span class="admin-home-stat-arrow">↗</span>
         </button>
-        <button type="button" class="admin-home-stat" data-home-section="usuarios">
-          <span class="admin-home-stat-icon">🟢</span><small>Conectados ahora</small><strong>${online}</strong><em>Ver presencia</em>
+        <button type="button" class="admin-home-stat admin-home-stat-online" data-home-section="usuarios">
+          <span class="admin-home-stat-icon">●</span>
+          <span class="admin-home-stat-copy"><small>Conectados ahora</small><strong>${online}</strong><em>Presencia en tiempo real</em></span>
+          <span class="admin-home-stat-arrow">↗</span>
         </button>
       </section>
 
       <section class="admin-home-layout">
-        <article class="admin-home-panel">
-          <div class="admin-home-panel-head"><div><small>ACCESOS DIRECTOS</small><h3>¿Qué quieres hacer?</h3></div></div>
+        <article class="admin-home-panel admin-home-actions-panel">
+          <div class="admin-home-panel-head">
+            <div><small>ACCIONES RÁPIDAS</small><h3>¿Qué quieres hacer?</h3></div>
+            <span class="admin-home-panel-badge">6 accesos</span>
+          </div>
           <div class="admin-home-actions">
-            <button type="button" data-home-section="sesiones"><span>🏋️</span><b>Crear sesión</b><small>Preparar entrenamiento</small></button>
-            <button type="button" data-home-section="paciente"><span>👤</span><b>Nuevo paciente</b><small>Alta y ficha personal</small></button>
-            <button type="button" data-home-section="valoraciones"><span>📈</span><b>Nueva valoración</b><small>Registrar pruebas</small></button>
-            <button type="button" data-home-section="biblioteca"><span>📚</span><b>Biblioteca</b><small>Ejercicios y recursos</small></button>
-            <button type="button" data-home-section="graficaPro"><span>🕸️</span><b>Gráfica PRO</b><small>Analizar distribución</small></button>
-            <button type="button" data-home-section="periodicidad"><span>📅</span><b>Periodicidad</b><small>Planificación anual</small></button>
+            <button type="button" data-home-section="sesiones"><span>🏋️</span><b>Crear sesión</b><small>Preparar entrenamiento</small><i>›</i></button>
+            <button type="button" data-home-section="paciente"><span>👤</span><b>Nuevo paciente</b><small>Alta y ficha personal</small><i>›</i></button>
+            <button type="button" data-home-section="valoraciones"><span>📈</span><b>Nueva valoración</b><small>Registrar pruebas</small><i>›</i></button>
+            <button type="button" data-home-section="biblioteca"><span>📚</span><b>Biblioteca</b><small>Ejercicios y recursos</small><i>›</i></button>
+            <button type="button" data-home-section="graficaPro"><span>🕸️</span><b>Gráfica PRO</b><small>Analizar distribución</small><i>›</i></button>
+            <button type="button" data-home-section="periodicidad"><span>📅</span><b>Periodicidad</b><small>Planificación anual</small><i>›</i></button>
           </div>
         </article>
 
         <article class="admin-home-panel admin-home-pending">
           <div class="admin-home-panel-head">
             <div><small>AGENDA ACTIVA</small><h3>Próximas sesiones</h3></div>
-            <button type="button" data-home-section="sesiones">Ver todas</button>
+            <button type="button" data-home-section="sesiones">Ver todas <span>→</span></button>
           </div>
           <div class="admin-home-session-list">
-            ${latestPending.length ? latestPending.map(item => `
-              <button type="button" data-home-section="sesiones">
-                <span class="admin-home-avatar">${String(item.patient?.nombre || "P").charAt(0).toUpperCase()}</span>
-                <span><b>${item.patient?.nombre || item.session?.patientNickname || "Paciente"}</b><small>${pmSessionMicroLabel(item.session)} · ${item.session?.fecha || item.session?.date || "Sin fecha"}</small></span>
+            ${latestPending.length ? latestPending.map((item, index) => {
+              const name = item.patient?.nombre || item.session?.patientName || item.session?.patientNickname || "Paciente";
+              const sessionNumber = item.session?.numero || item.session?.number || item.session?.sessionNumber;
+              return `
+              <button type="button" data-home-section="sesiones" class="admin-home-session-item">
+                <span class="admin-home-avatar">${initials(name)}</span>
+                <span class="admin-home-session-copy">
+                  <b>${name}</b>
+                  <small>${sessionNumber ? `Sesión ${sessionNumber} · ` : ""}${pmSessionMicroLabel(item.session)}</small>
+                </span>
+                <span class="admin-home-session-date"><b>${safeDate(item.session?.fecha || item.session?.date)}</b><small>${index === 0 ? "Próxima" : "Pendiente"}</small></span>
                 <i>›</i>
-              </button>`).join("") : `<div class="admin-home-empty"><span>✅</span><b>Agenda al día</b><small>No hay sesiones pendientes.</small></div>`}
+              </button>`;
+            }).join("") : `<div class="admin-home-empty"><span>✓</span><b>Agenda al día</b><small>No hay sesiones pendientes.</small></div>`}
           </div>
+          ${agenda.pending.length > latestPending.length ? `<button type="button" class="admin-home-more-sessions" data-home-section="sesiones">+${agenda.pending.length - latestPending.length} sesiones pendientes</button>` : ""}
         </article>
       </section>
     </div>`;
