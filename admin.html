@@ -60,6 +60,43 @@
     </main>
   </div>
 
+
+
+  <nav class="admin-mobile-bottom-nav" aria-label="Navegación principal del administrador">
+    <button class="admin-mobile-nav-item active" type="button" data-mobile-section="inicio" aria-label="Inicio">
+      <span class="admin-mobile-nav-icon">🏠</span><small>Inicio</small>
+    </button>
+    <button class="admin-mobile-nav-item" type="button" data-mobile-section="paciente" aria-label="Pacientes">
+      <span class="admin-mobile-nav-icon">👤</span><small>Pacientes</small>
+    </button>
+    <button class="admin-mobile-nav-item admin-mobile-nav-primary" type="button" data-mobile-section="sesiones" aria-label="Crear sesiones">
+      <span class="admin-mobile-nav-icon">🏋️</span><small>Sesiones</small>
+    </button>
+    <button class="admin-mobile-nav-item" type="button" data-mobile-section="usuarios" aria-label="Usuarios">
+      <span class="admin-mobile-nav-icon">👥</span><small>Usuarios</small>
+    </button>
+    <button class="admin-mobile-nav-item" type="button" id="adminMobileMoreBtn" aria-label="Más opciones" aria-expanded="false">
+      <span class="admin-mobile-nav-icon">•••</span><small>Más</small>
+    </button>
+  </nav>
+
+  <div class="admin-mobile-more-backdrop" id="adminMobileMoreBackdrop" hidden></div>
+  <section class="admin-mobile-more-sheet" id="adminMobileMoreSheet" aria-hidden="true" aria-label="Más opciones">
+    <div class="admin-mobile-sheet-handle"></div>
+    <div class="admin-mobile-sheet-head">
+      <div><small>PPF PRO</small><h2>Más opciones</h2></div>
+      <button type="button" id="adminMobileMoreClose" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="admin-mobile-more-grid">
+      <button type="button" data-mobile-section="biblioteca"><span>📚</span><b>Biblioteca</b><small>Ejercicios y recursos</small></button>
+      <button type="button" data-mobile-section="periodicidad"><span>📆</span><b>Periodicidad</b><small>Planificación temporal</small></button>
+      <button type="button" data-mobile-section="graficaPro"><span>🕸️</span><b>Gráfica PRO</b><small>Análisis del rendimiento</small></button>
+      <button type="button" data-mobile-section="valoraciones"><span>📊</span><b>Valoraciones</b><small>Tests e informes</small></button>
+      <button type="button" data-mobile-section="sistema"><span>⚙️</span><b>Sistema</b><small>Configuración y datos</small></button>
+      <button type="button" class="admin-mobile-sheet-logout" id="adminMobileLogout"><span>🚪</span><b>Cerrar sesión</b><small>Salir del panel</small></button>
+    </div>
+  </section>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
   <script src="supabase-sync.js"></script>

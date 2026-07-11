@@ -1,4 +1,4 @@
-const PM_CACHE = "pm-online-v1.6.1-session-agenda";
+const PM_CACHE = "pm-online-v1.7.0-admin-bottom-nav";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
   "./app.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",

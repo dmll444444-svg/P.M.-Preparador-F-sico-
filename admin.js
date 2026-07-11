@@ -2865,7 +2865,9 @@ function pmSetDashboardKpis(mode = "paciente") {
     if (items.length) {
       const list = document.createElement("div");
       list.className = "kpi-mini-list";
-      list.innerHTML = items.slice(0, 4).map(item => `<div>${item}</div>`).join("");
+      // La lista usa exactamente el mismo array que alimenta el contador.
+      // No limitar a cuatro elementos: el contenedor ya dispone de scroll.
+      list.innerHTML = items.map(item => `<div title="${String(item).replace(/"/g, '&quot;')}">${item}</div>`).join("");
       card.appendChild(list);
     }
   };
@@ -5907,10 +5909,7 @@ function pmBindAdminDashboard() {
   contentArea.querySelectorAll("[data-home-section]").forEach(button => {
     button.addEventListener("click", () => {
       const key = button.dataset.homeSection;
-      navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === key));
-      renderSection(key);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      if (navigator.vibrate) navigator.vibrate(12);
+      pmNavigateAdmin(key);
     });
   });
 }
@@ -6315,6 +6314,43 @@ const sections = {
   }
 };
 
+function pmSyncAdminNavigation(key) {
+  navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === key));
+  document.querySelectorAll("[data-mobile-section]").forEach(nav => {
+    nav.classList.toggle("active", nav.dataset.mobileSection === key);
+  });
+}
+
+function pmCloseAdminMoreSheet() {
+  const sheet = document.getElementById("adminMobileMoreSheet");
+  const backdrop = document.getElementById("adminMobileMoreBackdrop");
+  const moreBtn = document.getElementById("adminMobileMoreBtn");
+  if (sheet) { sheet.classList.remove("open"); sheet.setAttribute("aria-hidden", "true"); }
+  if (backdrop) { backdrop.classList.remove("open"); setTimeout(() => { if (!backdrop.classList.contains("open")) backdrop.hidden = true; }, 220); }
+  if (moreBtn) moreBtn.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("admin-more-open");
+}
+
+function pmOpenAdminMoreSheet() {
+  const sheet = document.getElementById("adminMobileMoreSheet");
+  const backdrop = document.getElementById("adminMobileMoreBackdrop");
+  const moreBtn = document.getElementById("adminMobileMoreBtn");
+  if (backdrop) { backdrop.hidden = false; requestAnimationFrame(() => backdrop.classList.add("open")); }
+  if (sheet) { requestAnimationFrame(() => sheet.classList.add("open")); sheet.setAttribute("aria-hidden", "false"); }
+  if (moreBtn) moreBtn.setAttribute("aria-expanded", "true");
+  document.body.classList.add("admin-more-open");
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+
+function pmNavigateAdmin(key, options = {}) {
+  const target = sections[key] ? key : "inicio";
+  pmSyncAdminNavigation(target);
+  renderSection(target);
+  pmCloseAdminMoreSheet();
+  if (options.scroll !== false) window.scrollTo({ top: 0, behavior: options.smooth === false ? "auto" : "smooth" });
+  if (options.vibrate !== false && navigator.vibrate) navigator.vibrate(10);
+}
+
 function renderSection(key) {
   const section = sections[key] || sections.inicio;
   const isHome = key === "inicio";
@@ -6327,12 +6363,22 @@ function renderSection(key) {
 }
 
 navItems.forEach(item => {
-  item.addEventListener("click", () => {
-    navItems.forEach(nav => nav.classList.remove("active"));
-    item.classList.add("active");
-    renderSection(item.dataset.section);
-  });
+  item.addEventListener("click", () => pmNavigateAdmin(item.dataset.section));
 });
+
+document.querySelectorAll("[data-mobile-section]").forEach(item => {
+  item.addEventListener("click", () => pmNavigateAdmin(item.dataset.mobileSection));
+});
+
+document.getElementById("adminMobileMoreBtn")?.addEventListener("click", () => {
+  const sheet = document.getElementById("adminMobileMoreSheet");
+  if (sheet?.classList.contains("open")) pmCloseAdminMoreSheet();
+  else pmOpenAdminMoreSheet();
+});
+document.getElementById("adminMobileMoreClose")?.addEventListener("click", pmCloseAdminMoreSheet);
+document.getElementById("adminMobileMoreBackdrop")?.addEventListener("click", pmCloseAdminMoreSheet);
+document.getElementById("adminMobileLogout")?.addEventListener("click", () => window.PM_ADMIN_LOGOUT());
+document.addEventListener("keydown", event => { if (event.key === "Escape") pmCloseAdminMoreSheet(); });
 
 const sidebarLogoutBtn = document.getElementById("logoutBtn");
 if (sidebarLogoutBtn) {
@@ -6342,7 +6388,7 @@ if (sidebarLogoutBtn) {
 }
 
 updateCounters();
-navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === "inicio"));
+pmSyncAdminNavigation("inicio");
 renderSection("inicio");
 
 
