@@ -6314,6 +6314,18 @@ const sections = {
   }
 };
 
+function pmApplyAdminMobileMode() {
+  const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches;
+  const compactViewport = Math.min(window.innerWidth || 9999, document.documentElement.clientWidth || 9999) <= 1024;
+  document.body.classList.toggle("admin-mobile-ui", Boolean(standalone || coarsePointer || compactViewport));
+}
+
+pmApplyAdminMobileMode();
+window.addEventListener("resize", pmApplyAdminMobileMode, { passive: true });
+window.addEventListener("orientationchange", () => setTimeout(pmApplyAdminMobileMode, 80), { passive: true });
+document.addEventListener("DOMContentLoaded", pmApplyAdminMobileMode);
+
 function pmSyncAdminNavigation(key) {
   navItems.forEach(nav => nav.classList.toggle("active", nav.dataset.section === key));
   document.querySelectorAll("[data-mobile-section]").forEach(nav => {

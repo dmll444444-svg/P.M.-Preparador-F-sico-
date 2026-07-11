@@ -5598,3 +5598,50 @@ body.admin-home-active #contentArea { background:transparent; border:0; padding:
   .admin-mobile-bottom-nav{padding-left:3px;padding-right:3px}
   .admin-mobile-more-grid{gap:8px}
 }
+
+
+/* PPF PRO · FIX VISIBILIDAD BARRA ADMIN EN PWA/TÁCTIL */
+body.admin-mobile-ui .admin-mobile-bottom-nav{
+  position:fixed!important;
+  z-index:2147483000!important;
+  left:8px!important;
+  right:8px!important;
+  bottom:max(8px, env(safe-area-inset-bottom, 0px))!important;
+  height:auto!important;
+  min-height:72px!important;
+  display:grid!important;
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  align-items:center!important;
+  padding:8px!important;
+  border:1px solid rgba(52,211,153,.28)!important;
+  border-radius:24px!important;
+  background:rgba(8,17,31,.97)!important;
+  box-shadow:0 18px 55px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.06)!important;
+  backdrop-filter:blur(22px)!important;
+  -webkit-backdrop-filter:blur(22px)!important;
+}
+body.admin-mobile-ui .admin-layout>.sidebar{display:none!important}
+body.admin-mobile-ui .admin-main{
+  width:100%!important;
+  margin:0!important;
+  padding-bottom:calc(112px + env(safe-area-inset-bottom,0px))!important;
+}
+body.admin-mobile-ui .admin-mobile-nav-item{display:flex!important}
+body.admin-mobile-ui .admin-mobile-more-sheet{display:block}
+body.admin-mobile-ui .admin-mobile-more-backdrop{display:block}
+@media (min-width:1025px) and (pointer:fine){
+  body:not(.admin-mobile-ui) .admin-mobile-bottom-nav,
+  body:not(.admin-mobile-ui) .admin-mobile-more-sheet,
+  body:not(.admin-mobile-ui) .admin-mobile-more-backdrop{display:none!important}
+}
+
+/* =========================================================
+   PPF PRO · FIX INTERACCIÓN BARRA ADMIN MÓVIL
+   La capa de fondo cerrada no debe capturar pulsaciones.
+   ========================================================= */
+.admin-mobile-more-backdrop[hidden]{display:none!important}
+.admin-mobile-more-backdrop{pointer-events:none!important}
+.admin-mobile-more-backdrop.open{pointer-events:auto!important}
+.admin-mobile-more-sheet{pointer-events:none!important;visibility:hidden}
+.admin-mobile-more-sheet.open{pointer-events:auto!important;visibility:visible}
+.admin-mobile-bottom-nav,.admin-mobile-bottom-nav *{pointer-events:auto}
