@@ -6337,18 +6337,41 @@ function pmCloseAdminMoreSheet() {
   const sheet = document.getElementById("adminMobileMoreSheet");
   const backdrop = document.getElementById("adminMobileMoreBackdrop");
   const moreBtn = document.getElementById("adminMobileMoreBtn");
-  if (sheet) { sheet.classList.remove("open"); sheet.setAttribute("aria-hidden", "true"); }
-  if (backdrop) { backdrop.classList.remove("open"); setTimeout(() => { if (!backdrop.classList.contains("open")) backdrop.hidden = true; }, 220); }
+
+  if (sheet) {
+    sheet.classList.remove("open");
+    sheet.setAttribute("aria-hidden", "true");
+    sheet.setAttribute("inert", "");
+  }
+  if (backdrop) backdrop.classList.remove("open");
   if (moreBtn) moreBtn.setAttribute("aria-expanded", "false");
   document.body.classList.remove("admin-more-open");
+
+  window.setTimeout(() => {
+    if (sheet && !sheet.classList.contains("open")) sheet.hidden = true;
+    if (backdrop && !backdrop.classList.contains("open")) backdrop.hidden = true;
+  }, 260);
 }
 
 function pmOpenAdminMoreSheet() {
   const sheet = document.getElementById("adminMobileMoreSheet");
   const backdrop = document.getElementById("adminMobileMoreBackdrop");
   const moreBtn = document.getElementById("adminMobileMoreBtn");
-  if (backdrop) { backdrop.hidden = false; requestAnimationFrame(() => backdrop.classList.add("open")); }
-  if (sheet) { requestAnimationFrame(() => sheet.classList.add("open")); sheet.setAttribute("aria-hidden", "false"); }
+
+  if (backdrop) backdrop.hidden = false;
+  if (sheet) {
+    sheet.hidden = false;
+    sheet.removeAttribute("inert");
+    sheet.setAttribute("aria-hidden", "false");
+  }
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      backdrop?.classList.add("open");
+      sheet?.classList.add("open");
+    });
+  });
+
   if (moreBtn) moreBtn.setAttribute("aria-expanded", "true");
   document.body.classList.add("admin-more-open");
   if (navigator.vibrate) navigator.vibrate(10);

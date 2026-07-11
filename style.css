@@ -5645,3 +5645,107 @@ body.admin-mobile-ui .admin-mobile-more-backdrop{display:block}
 .admin-mobile-more-sheet{pointer-events:none!important;visibility:hidden}
 .admin-mobile-more-sheet.open{pointer-events:auto!important;visibility:visible}
 .admin-mobile-bottom-nav,.admin-mobile-bottom-nav *{pointer-events:auto}
+
+/* =========================================================
+   PPF PRO · BARRA ADMIN MÓVIL · AJUSTE REAL v3
+   Aplicado sobre P.P.F(1).zip
+   ========================================================= */
+body.admin-mobile-ui {
+  --admin-nav-gap: max(10px, env(safe-area-inset-bottom, 0px));
+  --admin-nav-box-height: 78px;
+}
+
+body.admin-mobile-ui .admin-mobile-bottom-nav {
+  box-sizing: border-box !important;
+  height: var(--admin-nav-box-height) !important;
+  min-height: var(--admin-nav-box-height) !important;
+  align-items: stretch !important;
+  overflow: visible !important;
+}
+
+body.admin-mobile-ui .admin-mobile-nav-item {
+  box-sizing: border-box !important;
+  height: 60px !important;
+  min-height: 60px !important;
+  padding: 5px 2px 4px !important;
+  justify-content: center !important;
+  overflow: visible !important;
+  line-height: 1 !important;
+}
+
+body.admin-mobile-ui .admin-mobile-nav-item small {
+  display: block !important;
+  min-height: 13px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  color: currentColor !important;
+  font-size: clamp(.58rem, 2.7vw, .68rem) !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+  opacity: 1 !important;
+}
+
+body.admin-mobile-ui .admin-mobile-nav-primary {
+  padding-top: 2px !important;
+}
+
+body.admin-mobile-ui .admin-mobile-nav-primary .admin-mobile-nav-icon {
+  width: 38px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  margin: 0 auto 3px !important;
+  transform: translateY(-8px) !important;
+}
+
+body.admin-mobile-ui .admin-mobile-nav-primary small {
+  transform: translateY(-7px) !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-backdrop[hidden],
+body.admin-mobile-ui .admin-mobile-more-sheet[hidden] {
+  display: none !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-backdrop {
+  z-index: 2147483001 !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-sheet {
+  z-index: 2147483002 !important;
+  left: 8px !important;
+  right: 8px !important;
+  bottom: calc(var(--admin-nav-box-height) + var(--admin-nav-gap) + 8px) !important;
+  max-height: calc(100dvh - var(--admin-nav-box-height) - 42px - env(safe-area-inset-top, 0px)) !important;
+  padding: 8px 14px 18px !important;
+  border-radius: 24px !important;
+  border-bottom: 1px solid rgba(148,163,184,.22) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  transform: translateY(calc(100% + var(--admin-nav-box-height) + 28px)) !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-sheet.open {
+  display: block !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  transform: translateY(0) !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-grid {
+  padding-bottom: 6px !important;
+}
+
+body.admin-mobile-ui .admin-mobile-more-grid > button {
+  min-height: 96px !important;
+}
+
+@media (max-height: 700px) {
+  body.admin-mobile-ui .admin-mobile-more-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  body.admin-mobile-ui .admin-mobile-more-grid > button {
+    min-height: 82px !important;
+    padding: 11px !important;
+  }
+}
