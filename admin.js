@@ -3158,102 +3158,193 @@ function findLibraryExercise(name, category = "") {
 }
 
 const bibliotecaHTML = `
-  <h2>Biblioteca de ejercicios</h2>
-  <p>Guarda ejercicios con categoría, tipo, descripción y URL. Luego se conectan con Movilidad, Activación y Sesión Principal.</p>
+  <section class="library-pro-hero">
+    <div>
+      <p class="eyebrow">BIBLIOTECA INTELIGENTE</p>
+      <h2>Biblioteca PRO</h2>
+      <p>Organiza, consulta y mantiene todos tus ejercicios sin alterar sus categorías, vídeos ni conexión con Sesiones PRO.</p>
+    </div>
+    <div class="library-pro-hero-stats" aria-label="Resumen de biblioteca">
+      <div><span id="libraryTotalStat">0</span><small>Ejercicios</small></div>
+      <div><span id="libraryVideoStat">0</span><small>Con vídeo</small></div>
+      <div><span id="libraryCategoryStat">0</span><small>Categorías</small></div>
+    </div>
+  </section>
 
-  <form class="patient-form" id="libraryForm">
-    <input id="libraryEditingId" type="hidden" />
+  <section class="library-pro-workspace">
+    <aside class="library-pro-editor">
+      <div class="library-pro-section-head">
+        <div>
+          <p class="eyebrow">EDITOR</p>
+          <h3 id="libraryEditorTitle">Nuevo ejercicio</h3>
+          <p>Crea o edita ejercicios manteniendo intactos sus datos y asignaciones.</p>
+        </div>
+        <span class="library-pro-editor-icon">＋</span>
+      </div>
 
-    <div class="form-grid-2">
-      <div>
+      <form id="libraryForm">
+        <input id="libraryEditingId" type="hidden" />
+
         <label for="libraryName">Nombre del ejercicio</label>
         <input id="libraryName" type="text" placeholder="Ej: Cat Camel, Sentadilla, Drop Jump..." required />
-      </div>
 
-      <div class="field-full">
         <label>Categorías del ejercicio</label>
-        <div class="library-category-checks" id="libraryCategoryChecks">
-          <label><input type="checkbox" name="libraryCategories" value="Movilidad" /> <span>Movilidad</span></label>
-          <label><input type="checkbox" name="libraryCategories" value="Activación" /> <span>Activación</span></label>
-          <label><input type="checkbox" name="libraryCategories" value="Sesión Principal" /> <span>Sesión Principal</span></label>
+        <div class="library-pro-category-grid" id="libraryCategoryChecks">
+          <label><input type="checkbox" name="libraryCategories" value="Movilidad" /><span>🤸 Movilidad</span></label>
+          <label><input type="checkbox" name="libraryCategories" value="Activación" /><span>🔥 Activación</span></label>
+          <label><input type="checkbox" name="libraryCategories" value="Sesión Principal" /><span>🏋️ Sesión Principal</span></label>
         </div>
-        <small class="form-hint">Puedes marcar varias. El ejercicio aparecerá en creación de sesiones en todas las categorías marcadas.</small>
-      </div>
+        <small class="form-hint">Puedes marcar varias. El ejercicio seguirá apareciendo en todas las categorías seleccionadas.</small>
 
-      <div>
-        <label for="libraryType">Tipo</label>
-        <input id="libraryType" type="text" placeholder="Ej: Core, F. ppal. TI, Fascias..." />
-      </div>
+        <div class="library-pro-fields-2">
+          <div>
+            <label for="libraryType">Tipo</label>
+            <input id="libraryType" type="text" placeholder="Core, fuerza, fascias..." />
+          </div>
+          <div>
+            <label for="libraryUrl">URL vídeo/enlace</label>
+            <input id="libraryUrl" type="url" placeholder="https://..." />
+          </div>
+        </div>
 
-      <div>
-        <label for="libraryUrl">URL vídeo/enlace</label>
-        <input id="libraryUrl" type="url" placeholder="https://..." />
-      </div>
-
-      <div class="field-full">
         <label for="libraryDescription">Descripción técnica</label>
-        <textarea id="libraryDescription" placeholder="Indicaciones, errores comunes, objetivo del ejercicio..."></textarea>
+        <textarea id="libraryDescription" rows="5" placeholder="Indicaciones, errores comunes, objetivo del ejercicio..."></textarea>
+
+        <div class="library-pro-form-actions">
+          <button class="primary-btn" id="librarySubmitBtn" type="submit">Guardar ejercicio</button>
+          <button class="secondary-btn" type="button" id="libraryResetBtn">Limpiar</button>
+          <button class="secondary-btn" type="button" id="seedLibraryBtn">Biblioteca inicial</button>
+        </div>
+      </form>
+    </aside>
+
+    <div class="library-pro-catalogue">
+      <div class="library-pro-catalogue-head">
+        <div>
+          <p class="eyebrow">CATÁLOGO</p>
+          <h3>Ejercicios guardados</h3>
+          <p><span id="libraryVisibleCount">0</span> resultados visibles</p>
+        </div>
+        <div class="library-pro-search">
+          <span>⌕</span>
+          <input id="librarySearch" type="search" placeholder="Buscar por nombre, tipo o descripción..." autocomplete="off" />
+        </div>
       </div>
+
+      <div class="library-pro-filter-pills" role="group" aria-label="Filtrar biblioteca">
+        <button class="is-active" type="button" data-library-filter="">Todos</button>
+        <button type="button" data-library-filter="Movilidad">Movilidad</button>
+        <button type="button" data-library-filter="Activación">Activación</button>
+        <button type="button" data-library-filter="Sesión Principal">Principal</button>
+        <button type="button" data-library-video="true">Con vídeo</button>
+      </div>
+      <input id="libraryFilter" type="hidden" value="" />
+      <div class="library-list library-pro-grid" id="libraryList"></div>
     </div>
-
-    <div class="form-actions">
-      <button class="primary-btn" id="librarySubmitBtn" type="submit">Guardar ejercicio</button>
-      <button class="secondary-btn" type="button" id="seedLibraryBtn">Cargar biblioteca inicial</button>
-    </div>
-  </form>
-
-  <div class="patient-form" style="margin-top:26px;">
-    <label for="libraryFilter">Filtrar biblioteca</label>
-    <select id="libraryFilter">
-      <option value="">Todas las categorías</option>
-      <option value="Movilidad">Movilidad</option>
-      <option value="Activación">Activación</option>
-      <option value="Sesión Principal">Sesión Principal</option>
-    </select>
-  </div>
-
-  <div class="library-list" id="libraryList"></div>
+  </section>
 `;
 
 function renderLibraryList() {
   const list = document.getElementById("libraryList");
   const filter = document.getElementById("libraryFilter");
+  const search = document.getElementById("librarySearch");
   if (!list) return;
 
-  const visible = exerciseLibrary.filter(item => libraryHasCategory(item, filter?.value || ""));
+  const category = filter?.value || "";
+  const query = String(search?.value || "").trim().toLowerCase();
+  const videoOnly = filter?.dataset.videoOnly === "true";
+
+  const visible = exerciseLibrary
+    .filter(item => libraryHasCategory(item, category))
+    .filter(item => !videoOnly || Boolean(String(item.url || "").trim()))
+    .filter(item => {
+      if (!query) return true;
+      const haystack = [item.name, item.type, item.description, ...getLibraryCategories(item)]
+        .filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(query);
+    })
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es", { sensitivity: "base" }));
+
+  const videoCount = exerciseLibrary.filter(item => Boolean(String(item.url || "").trim())).length;
+  const categories = new Set(exerciseLibrary.flatMap(item => getLibraryCategories(item)).filter(Boolean));
+  const statTotal = document.getElementById("libraryTotalStat");
+  const statVideo = document.getElementById("libraryVideoStat");
+  const statCategories = document.getElementById("libraryCategoryStat");
+  const visibleCount = document.getElementById("libraryVisibleCount");
+  if (statTotal) statTotal.textContent = exerciseLibrary.length;
+  if (statVideo) statVideo.textContent = videoCount;
+  if (statCategories) statCategories.textContent = categories.size;
+  if (visibleCount) visibleCount.textContent = visible.length;
 
   if (visible.length === 0) {
-    list.innerHTML = `<p>No hay ejercicios en la biblioteca todavía.</p>`;
+    list.innerHTML = `<div class="library-pro-empty"><span>⌕</span><strong>No hay ejercicios que coincidan</strong><small>Prueba con otra búsqueda o cambia el filtro.</small></div>`;
     return;
   }
 
-  list.innerHTML = visible.map(item => `
-    <article class="library-card">
-      <div class="library-card-header">
-        <span class="file-type">${getLibraryCategories(item).join(" · ") || "Sin categoría"}</span>
-        <span class="history-date">${item.type || "-"}</span>
-      </div>
-      <h3>${item.name}</h3>
-      <p>${item.description || "Sin descripción."}</p>
-      <div class="patient-tags">
-        ${renderLibraryCategoryBadges(item)}
-        ${item.url ? `<span>URL guardada</span>` : `<span>Sin URL</span>`}
-      </div>
-      <div class="file-actions">
-        ${item.url ? `<a class="secondary-btn" href="${item.url}" target="_blank">▶ Ver</a>` : ""}
-        <button class="edit-btn" type="button" onclick="editLibraryExercise('${item.id}')">Editar</button>
-        <button class="danger-btn" type="button" onclick="deleteLibraryExercise('${item.id}')">Eliminar</button>
-      </div>
-    </article>
-  `).join("");
+  list.innerHTML = visible.map(item => {
+    const categories = getLibraryCategories(item);
+    const primaryCategory = categories[0] || "Sin categoría";
+    const icon = primaryCategory === "Movilidad" ? "🤸" : primaryCategory === "Activación" ? "🔥" : primaryCategory === "Sesión Principal" ? "🏋️" : "📌";
+    return `
+      <article class="library-card library-pro-card">
+        <div class="library-pro-card-top">
+          <div class="library-pro-card-icon">${icon}</div>
+          <div class="library-pro-card-title">
+            <h3>${escapeHtml(item.name || "Ejercicio")}</h3>
+            <p>${escapeHtml(item.type || "Tipo sin especificar")}</p>
+          </div>
+          <span class="library-pro-video-state ${item.url ? "has-video" : ""}">${item.url ? "▶ Vídeo" : "Sin vídeo"}</span>
+        </div>
+        <p class="library-pro-description">${escapeHtml(item.description || "Sin descripción técnica.")}</p>
+        <div class="library-pro-badges">${categories.length ? categories.map(category => `<span>${escapeHtml(category)}</span>`).join("") : `<span>Sin categoría</span>`}</div>
+        <div class="library-pro-card-actions">
+          ${item.url ? `<a class="secondary-btn" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">▶ Ver vídeo</a>` : `<button class="secondary-btn" type="button" disabled>Sin enlace</button>`}
+          <button class="edit-btn" type="button" onclick="editLibraryExercise('${item.id}')">✎ Editar</button>
+          <button class="danger-btn" type="button" onclick="deleteLibraryExercise('${item.id}')">Eliminar</button>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 function bindLibraryForm() {
   const form = document.getElementById("libraryForm");
   const filter = document.getElementById("libraryFilter");
+  const search = document.getElementById("librarySearch");
   if (!form) return;
 
-  filter.addEventListener("change", renderLibraryList);
+  if (search) search.addEventListener("input", renderLibraryList);
+  document.querySelectorAll("[data-library-filter]").forEach(button => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".library-pro-filter-pills button").forEach(item => item.classList.remove("is-active"));
+      button.classList.add("is-active");
+      if (filter) {
+        filter.value = button.dataset.libraryFilter || "";
+        filter.dataset.videoOnly = "false";
+      }
+      renderLibraryList();
+    });
+  });
+  const videoFilter = document.querySelector("[data-library-video]");
+  if (videoFilter) videoFilter.addEventListener("click", () => {
+    document.querySelectorAll(".library-pro-filter-pills button").forEach(item => item.classList.remove("is-active"));
+    videoFilter.classList.add("is-active");
+    if (filter) {
+      filter.value = "";
+      filter.dataset.videoOnly = "true";
+    }
+    renderLibraryList();
+  });
+
+  const resetForm = () => {
+    form.reset();
+    document.querySelectorAll('input[name="libraryCategories"]').forEach(input => input.checked = false);
+    document.getElementById("libraryEditingId").value = "";
+    document.getElementById("librarySubmitBtn").textContent = "Guardar ejercicio";
+    const title = document.getElementById("libraryEditorTitle");
+    if (title) title.textContent = "Nuevo ejercicio";
+  };
+  document.getElementById("libraryResetBtn")?.addEventListener("click", resetForm);
 
   const seedBtn = document.getElementById("seedLibraryBtn");
   if (seedBtn) {
@@ -3303,11 +3394,9 @@ function bindLibraryForm() {
     }
 
     localStorage.setItem("exerciseLibrary", JSON.stringify(exerciseLibrary));
-    form.reset();
-    document.querySelectorAll('input[name="libraryCategories"]').forEach(input => input.checked = false);
-    document.getElementById("libraryEditingId").value = "";
-    document.getElementById("librarySubmitBtn").textContent = "Guardar ejercicio";
+    resetForm();
     renderLibraryList();
+    updateKpis("biblioteca");
   });
 
   renderLibraryList();
@@ -3329,7 +3418,9 @@ function editLibraryExercise(id) {
     document.getElementById("libraryUrl").value = item.url || "";
     document.getElementById("libraryDescription").value = item.description || "";
     document.getElementById("librarySubmitBtn").textContent = "Actualizar ejercicio";
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const title = document.getElementById("libraryEditorTitle");
+    if (title) title.textContent = "Editar ejercicio";
+    document.querySelector(".library-pro-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, 0);
 }
 
