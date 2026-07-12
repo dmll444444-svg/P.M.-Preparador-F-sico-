@@ -2098,7 +2098,7 @@ function bindSessionsForm() {
         <div>
           <label>URL</label>
           <div class="url-field">
-            <input id="${prefix}_url_${number}" type="url" placeholder="https://..." value="${escapeHtml(item.url)}" />
+            <input id="${prefix}_url_${number}" type="url" placeholder="https://..." value="${libraryEscapeHtml(item.url)}" />
             <button class="url-search-btn" type="button" data-url-search="${prefix}_nombre_${number}">Buscar</button>
             <button class="url-play-btn" type="button" data-url-play="${prefix}_url_${number}">▶</button>
           </div>
@@ -3118,6 +3118,10 @@ function editSession(sessionId) {
 
 
 
+function libraryEscapeHtml(value = "") {
+  return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+}
+
 function getLibraryCategories(item = {}) {
   if (Array.isArray(item.categories) && item.categories.length) {
     return item.categories;
@@ -3290,15 +3294,15 @@ function renderLibraryList() {
         <div class="library-pro-card-top">
           <div class="library-pro-card-icon">${icon}</div>
           <div class="library-pro-card-title">
-            <h3>${escapeHtml(item.name || "Ejercicio")}</h3>
-            <p>${escapeHtml(item.type || "Tipo sin especificar")}</p>
+            <h3>${libraryEscapeHtml(item.name || "Ejercicio")}</h3>
+            <p>${libraryEscapeHtml(item.type || "Tipo sin especificar")}</p>
           </div>
           <span class="library-pro-video-state ${item.url ? "has-video" : ""}">${item.url ? "▶ Vídeo" : "Sin vídeo"}</span>
         </div>
-        <p class="library-pro-description">${escapeHtml(item.description || "Sin descripción técnica.")}</p>
-        <div class="library-pro-badges">${categories.length ? categories.map(category => `<span>${escapeHtml(category)}</span>`).join("") : `<span>Sin categoría</span>`}</div>
+        <p class="library-pro-description">${libraryEscapeHtml(item.description || "Sin descripción técnica.")}</p>
+        <div class="library-pro-badges">${categories.length ? categories.map(category => `<span>${libraryEscapeHtml(category)}</span>`).join("") : `<span>Sin categoría</span>`}</div>
         <div class="library-pro-card-actions">
-          ${item.url ? `<a class="secondary-btn" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">▶ Ver vídeo</a>` : `<button class="secondary-btn" type="button" disabled>Sin enlace</button>`}
+          ${item.url ? `<a class="secondary-btn" href="${libraryEscapeHtml(item.url)}" target="_blank" rel="noopener">▶ Ver vídeo</a>` : `<button class="secondary-btn" type="button" disabled>Sin enlace</button>`}
           <button class="edit-btn" type="button" onclick="editLibraryExercise('${item.id}')">✎ Editar</button>
           <button class="danger-btn" type="button" onclick="deleteLibraryExercise('${item.id}')">Eliminar</button>
         </div>
