@@ -3161,16 +3161,47 @@ function findLibraryExercise(name, category = "") {
   );
 }
 
+
+const LIBRARY_TYPE_OPTIONS = Object.freeze({
+  "Movilidad": ["Movilidad", "Est. Estático", "Fascias"],
+  "Activación": ["T. Superior", "T. Inferior", "Core", "Pliometría", "Tarea de Campo"],
+  "Sesión Principal": ["F. ppal. TS", "F. ppal. TI", "Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos", "Mov. Olímpicos", "Tarea de Campo"]
+});
+
+function getLibraryTypeOptions() {
+  const selected = Array.from(document.querySelectorAll('input[name="libraryCategories"]:checked'))
+    .map(input => input.value);
+  const categories = selected.length ? selected : Object.keys(LIBRARY_TYPE_OPTIONS);
+  return Array.from(new Set(categories.flatMap(category => LIBRARY_TYPE_OPTIONS[category] || [])));
+}
+
+function updateLibraryTypeOptions() {
+  const list = document.getElementById("libraryTypeOptions");
+  if (!list) return;
+  const current = String(document.getElementById("libraryType")?.value || "").trim();
+  const options = getLibraryTypeOptions();
+  if (current && !options.includes(current)) options.push(current);
+  list.innerHTML = options
+    .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }))
+    .map(value => `<option value="${libraryEscapeHtml(value)}"></option>`)
+    .join("");
+}
+
 const bibliotecaHTML = `
   <section class="library-pro-hero">
     <div>
       <p class="eyebrow">BIBLIOTECA INTELIGENTE</p>
       <h2>Biblioteca PRO</h2>
       <p>Organiza, consulta y mantiene todos tus ejercicios sin alterar sus categorías, vídeos ni conexión con Sesiones PRO.</p>
+      <div class="library-pro-distribution" aria-label="Distribución por categoría">
+        <span>🤸 Movilidad <b id="libraryMobilityStat">0</b></span>
+        <span>🔥 Activación <b id="libraryActivationStat">0</b></span>
+        <span>🏋️ Principal <b id="libraryMainStat">0</b></span>
+      </div>
     </div>
     <div class="library-pro-hero-stats" aria-label="Resumen de biblioteca">
       <div><span id="libraryTotalStat">0</span><small>Ejercicios</small></div>
-      <div><span id="libraryVideoStat">0</span><small>Con vídeo</small></div>
+      <div><span id="libraryTypeStat">0</span><small>Tipos registrados</small></div>
       <div><span id="libraryCategoryStat">0</span><small>Categorías</small></div>
     </div>
   </section>
@@ -3203,7 +3234,9 @@ const bibliotecaHTML = `
         <div class="library-pro-fields-2">
           <div>
             <label for="libraryType">Tipo</label>
-            <input id="libraryType" type="text" placeholder="Core, fuerza, fascias..." />
+            <input id="libraryType" type="search" list="libraryTypeOptions" placeholder="Escribe para buscar un tipo..." autocomplete="off" />
+            <datalist id="libraryTypeOptions"></datalist>
+            <small class="form-hint library-type-hint">Las opciones se adaptan a las categorías marcadas.</small>
           </div>
           <div>
             <label for="libraryUrl">URL vídeo/enlace</label>
@@ -3333,15 +3366,22 @@ function renderLibraryList() {
     })
     .sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
 
-  const videoCount = normalizedLibrary.filter(item => Boolean(item.url)).length;
   const categories = new Set(normalizedLibrary.flatMap(item => item.categories).filter(Boolean));
+  const uniqueTypes = new Set(normalizedLibrary.map(item => item.type.trim().toLocaleLowerCase("es")).filter(Boolean));
+  const categoryCount = categoryName => normalizedLibrary.filter(item => item.categories.includes(categoryName)).length;
   const statTotal = document.getElementById("libraryTotalStat");
-  const statVideo = document.getElementById("libraryVideoStat");
+  const statTypes = document.getElementById("libraryTypeStat");
   const statCategories = document.getElementById("libraryCategoryStat");
+  const statMobility = document.getElementById("libraryMobilityStat");
+  const statActivation = document.getElementById("libraryActivationStat");
+  const statMain = document.getElementById("libraryMainStat");
   const visibleCount = document.getElementById("libraryVisibleCount");
   if (statTotal) statTotal.textContent = normalizedLibrary.length;
-  if (statVideo) statVideo.textContent = videoCount;
+  if (statTypes) statTypes.textContent = uniqueTypes.size;
   if (statCategories) statCategories.textContent = categories.size;
+  if (statMobility) statMobility.textContent = categoryCount("Movilidad");
+  if (statActivation) statActivation.textContent = categoryCount("Activación");
+  if (statMain) statMain.textContent = categoryCount("Sesión Principal");
   if (visibleCount) visibleCount.textContent = visible.length;
 
   // El contador y el catálogo se actualizan en la misma operación para evitar estados contradictorios.
@@ -3360,6 +3400,11 @@ function bindLibraryForm() {
   const filter = document.getElementById("libraryFilter");
   const search = document.getElementById("librarySearch");
   if (!form) return;
+
+  document.querySelectorAll('input[name="libraryCategories"]').forEach(input => {
+    input.addEventListener("change", updateLibraryTypeOptions);
+  });
+  updateLibraryTypeOptions();
 
   const list = document.getElementById("libraryList");
   if (list && !list.dataset.actionsBound) {
@@ -3403,6 +3448,7 @@ function bindLibraryForm() {
     document.getElementById("librarySubmitBtn").textContent = "Guardar ejercicio";
     const title = document.getElementById("libraryEditorTitle");
     if (title) title.textContent = "Nuevo ejercicio";
+    updateLibraryTypeOptions();
   };
   document.getElementById("libraryResetBtn")?.addEventListener("click", resetForm);
 
@@ -3474,7 +3520,9 @@ function editLibraryExercise(id) {
     document.querySelectorAll('input[name="libraryCategories"]').forEach(input => {
       input.checked = itemCategories.includes(input.value);
     });
+    updateLibraryTypeOptions();
     document.getElementById("libraryType").value = item.type || "";
+    updateLibraryTypeOptions();
     document.getElementById("libraryUrl").value = item.url || "";
     document.getElementById("libraryDescription").value = item.description || "";
     document.getElementById("librarySubmitBtn").textContent = "Actualizar ejercicio";
