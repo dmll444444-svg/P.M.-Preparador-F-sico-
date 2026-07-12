@@ -3056,7 +3056,20 @@ function pmSetDashboardKpis(mode = "paciente") {
       `Activación: ${activacion}`,
       `Sesión Principal: ${principal}`
     ]);
-    setCard(2, "Archivos guardados", patientFiles.length);
+
+    const withVideo = exerciseLibrary.filter(item => {
+      const normalized = normalizeLibraryItem(item);
+      return Boolean(normalized.url);
+    }).length;
+    const withoutVideo = Math.max(0, exerciseLibrary.length - withVideo);
+    const videoCoverage = exerciseLibrary.length
+      ? Math.round((withVideo / exerciseLibrary.length) * 100)
+      : 0;
+
+    setCard(2, "Cobertura de vídeo", `${videoCoverage}%`, [
+      `Con vídeo: ${withVideo}`,
+      `Sin vídeo: ${withoutVideo}`
+    ]);
   };
 
   if (mode === "usuarios" || mode === "sesiones") {
