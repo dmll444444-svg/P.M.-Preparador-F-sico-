@@ -1,4 +1,4 @@
-const PM_CACHE = "pm-online-v1.9.1-sesiones-pro-v2";
+const PM_CACHE = "pm-online-v1.9.2-biblioteca-render-definitivo";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
   "./app.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",

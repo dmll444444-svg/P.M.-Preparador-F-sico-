@@ -3248,6 +3248,68 @@ const bibliotecaHTML = `
   </section>
 `;
 
+function normalizeLibraryItem(item = {}, index = 0) {
+  const safe = item && typeof item === "object" ? item : {};
+  const categories = getLibraryCategories(safe)
+    .map(value => String(value || "").trim())
+    .filter(Boolean);
+
+  return {
+    raw: safe,
+    id: String(safe.id ?? safe.exerciseId ?? `library-${index}`),
+    name: String(safe.name ?? safe.nombre ?? "Ejercicio").trim() || "Ejercicio",
+    type: String(safe.type ?? safe.tipo ?? "").trim(),
+    description: String(safe.description ?? safe.descripcion ?? "").trim(),
+    url: String(safe.url ?? safe.videoUrl ?? safe.video ?? safe.enlace ?? "").trim(),
+    categories
+  };
+}
+
+function renderLibraryCard(item, index) {
+  try {
+    const exercise = normalizeLibraryItem(item, index);
+    const primaryCategory = exercise.categories[0] || "Sin categoría";
+    const icon = primaryCategory === "Movilidad" ? "🤸" : primaryCategory === "Activación" ? "🔥" : primaryCategory === "Sesión Principal" ? "🏋️" : "📌";
+    const encodedId = encodeURIComponent(exercise.id);
+    const badges = exercise.categories.length
+      ? exercise.categories.map(category => `<span>${libraryEscapeHtml(category)}</span>`).join("")
+      : `<span>Sin categoría</span>`;
+
+    return `
+      <article class="library-card library-pro-card" data-library-card-id="${libraryEscapeHtml(exercise.id)}">
+        <div class="library-pro-card-top">
+          <div class="library-pro-card-icon">${icon}</div>
+          <div class="library-pro-card-title">
+            <h3>${libraryEscapeHtml(exercise.name)}</h3>
+            <p>${libraryEscapeHtml(exercise.type || "Tipo sin especificar")}</p>
+          </div>
+          <span class="library-pro-video-state ${exercise.url ? "has-video" : ""}">${exercise.url ? "▶ Vídeo" : "Sin vídeo"}</span>
+        </div>
+        <p class="library-pro-description">${libraryEscapeHtml(exercise.description || "Sin descripción técnica.")}</p>
+        <div class="library-pro-badges">${badges}</div>
+        <div class="library-pro-card-actions">
+          ${exercise.url ? `<a class="secondary-btn" href="${libraryEscapeHtml(exercise.url)}" target="_blank" rel="noopener">▶ Ver vídeo</a>` : `<button class="secondary-btn" type="button" disabled>Sin enlace</button>`}
+          <button class="edit-btn" type="button" data-library-action="edit" data-library-id="${encodedId}">✎ Editar</button>
+          <button class="danger-btn" type="button" data-library-action="delete" data-library-id="${encodedId}">Eliminar</button>
+        </div>
+      </article>
+    `;
+  } catch (error) {
+    console.error("[Biblioteca PRO] No se pudo renderizar un ejercicio", { index, item, error });
+    return `
+      <article class="library-card library-pro-card library-pro-card-error">
+        <div class="library-pro-card-top">
+          <div class="library-pro-card-icon">⚠️</div>
+          <div class="library-pro-card-title">
+            <h3>Ejercicio con datos incompatibles</h3>
+            <p>El resto del catálogo continúa disponible.</p>
+          </div>
+        </div>
+      </article>
+    `;
+  }
+}
+
 function renderLibraryList() {
   const list = document.getElementById("libraryList");
   const filter = document.getElementById("libraryFilter");
@@ -3257,58 +3319,40 @@ function renderLibraryList() {
   const category = filter?.value || "";
   const query = String(search?.value || "").trim().toLowerCase();
   const videoOnly = filter?.dataset.videoOnly === "true";
+  const normalizedLibrary = (Array.isArray(exerciseLibrary) ? exerciseLibrary : [])
+    .map((item, index) => normalizeLibraryItem(item, index));
 
-  const visible = exerciseLibrary
-    .filter(item => libraryHasCategory(item, category))
-    .filter(item => !videoOnly || Boolean(String(item.url || "").trim()))
+  const visible = normalizedLibrary
+    .filter(item => !category || item.categories.includes(category))
+    .filter(item => !videoOnly || Boolean(item.url))
     .filter(item => {
       if (!query) return true;
-      const haystack = [item.name, item.type, item.description, ...getLibraryCategories(item)]
+      const haystack = [item.name, item.type, item.description, ...item.categories]
         .filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(query);
     })
-    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es", { sensitivity: "base" }));
+    .sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
 
-  const videoCount = exerciseLibrary.filter(item => Boolean(String(item.url || "").trim())).length;
-  const categories = new Set(exerciseLibrary.flatMap(item => getLibraryCategories(item)).filter(Boolean));
+  const videoCount = normalizedLibrary.filter(item => Boolean(item.url)).length;
+  const categories = new Set(normalizedLibrary.flatMap(item => item.categories).filter(Boolean));
   const statTotal = document.getElementById("libraryTotalStat");
   const statVideo = document.getElementById("libraryVideoStat");
   const statCategories = document.getElementById("libraryCategoryStat");
   const visibleCount = document.getElementById("libraryVisibleCount");
-  if (statTotal) statTotal.textContent = exerciseLibrary.length;
+  if (statTotal) statTotal.textContent = normalizedLibrary.length;
   if (statVideo) statVideo.textContent = videoCount;
   if (statCategories) statCategories.textContent = categories.size;
   if (visibleCount) visibleCount.textContent = visible.length;
+
+  // El contador y el catálogo se actualizan en la misma operación para evitar estados contradictorios.
+  list.replaceChildren();
 
   if (visible.length === 0) {
     list.innerHTML = `<div class="library-pro-empty"><span>⌕</span><strong>No hay ejercicios que coincidan</strong><small>Prueba con otra búsqueda o cambia el filtro.</small></div>`;
     return;
   }
 
-  list.innerHTML = visible.map(item => {
-    const categories = getLibraryCategories(item);
-    const primaryCategory = categories[0] || "Sin categoría";
-    const icon = primaryCategory === "Movilidad" ? "🤸" : primaryCategory === "Activación" ? "🔥" : primaryCategory === "Sesión Principal" ? "🏋️" : "📌";
-    return `
-      <article class="library-card library-pro-card">
-        <div class="library-pro-card-top">
-          <div class="library-pro-card-icon">${icon}</div>
-          <div class="library-pro-card-title">
-            <h3>${libraryEscapeHtml(item.name || "Ejercicio")}</h3>
-            <p>${libraryEscapeHtml(item.type || "Tipo sin especificar")}</p>
-          </div>
-          <span class="library-pro-video-state ${item.url ? "has-video" : ""}">${item.url ? "▶ Vídeo" : "Sin vídeo"}</span>
-        </div>
-        <p class="library-pro-description">${libraryEscapeHtml(item.description || "Sin descripción técnica.")}</p>
-        <div class="library-pro-badges">${categories.length ? categories.map(category => `<span>${libraryEscapeHtml(category)}</span>`).join("") : `<span>Sin categoría</span>`}</div>
-        <div class="library-pro-card-actions">
-          ${item.url ? `<a class="secondary-btn" href="${libraryEscapeHtml(item.url)}" target="_blank" rel="noopener">▶ Ver vídeo</a>` : `<button class="secondary-btn" type="button" disabled>Sin enlace</button>`}
-          <button class="edit-btn" type="button" onclick="editLibraryExercise('${item.id}')">✎ Editar</button>
-          <button class="danger-btn" type="button" onclick="deleteLibraryExercise('${item.id}')">Eliminar</button>
-        </div>
-      </article>
-    `;
-  }).join("");
+  list.innerHTML = visible.map((item, index) => renderLibraryCard(item.raw, index)).join("");
 }
 
 function bindLibraryForm() {
@@ -3316,6 +3360,18 @@ function bindLibraryForm() {
   const filter = document.getElementById("libraryFilter");
   const search = document.getElementById("librarySearch");
   if (!form) return;
+
+  const list = document.getElementById("libraryList");
+  if (list && !list.dataset.actionsBound) {
+    list.dataset.actionsBound = "true";
+    list.addEventListener("click", event => {
+      const trigger = event.target.closest("[data-library-action]");
+      if (!trigger) return;
+      const id = decodeURIComponent(trigger.dataset.libraryId || "");
+      if (trigger.dataset.libraryAction === "edit") editLibraryExercise(id);
+      if (trigger.dataset.libraryAction === "delete") deleteLibraryExercise(id);
+    });
+  }
 
   if (search) search.addEventListener("input", renderLibraryList);
   document.querySelectorAll("[data-library-filter]").forEach(button => {
