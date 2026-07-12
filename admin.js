@@ -1842,8 +1842,7 @@ function renderSessionList(filterNickname = "") {
           </label>
           <span class="session-date">Sesión nº ${session.numero} · ${session.microcicloLabel || (`Micro ${session.microciclo} · ${session.fecha}`)}</span>
         </div>
-        <div class="session-pro-person">
-          <span class="session-pro-avatar">${String(patient ? patient.nombre : session.patientNickname).trim().charAt(0).toUpperCase()}</span>
+        <div class="session-pro-person session-pro-person-clean">
           <div><h3>${patient ? patient.nombre : session.patientNickname}</h3><p>@${session.patientNickname}</p></div>
           <span class="session-pro-status">Preparada</span>
         </div>
@@ -6156,13 +6155,17 @@ const sections = {
         <div class="sessions-pro-hero-copy">
           <p class="eyebrow">CENTRO DE PROGRAMACIÓN</p>
           <h2>Sesiones PRO</h2>
-          <p>Prepara, copia y organiza entrenamientos completos desde un único flujo de trabajo.</p>
+          <p class="sessions-pro-lead">Prepara, copia y organiza entrenamientos completos desde un único flujo de trabajo.</p>
           <div class="sessions-pro-flow" aria-label="Flujo de creación">
-            <span><b>1</b> Cliente</span><i>›</i><span><b>2</b> Programación</span><i>›</i><span><b>3</b> Guardar</span>
+            <span><b>1</b> Cliente</span><i aria-hidden="true">→</i><span><b>2</b> Programación</span><i aria-hidden="true">→</i><span><b>3</b> Guardar</span>
           </div>
         </div>
         <div class="sessions-pro-hero-badge">
-          <span>🏋️</span><strong>Planificación activa</strong><small>Movilidad · Activación · Principal</small>
+          <span class="sessions-pro-plan-icon">🏋️</span>
+          <strong>Planificación activa</strong>
+          <div class="sessions-pro-plan-chips" aria-label="Módulos de la sesión">
+            <small>Movilidad</small><small>Activación</small><small>Principal</small>
+          </div>
         </div>
       </section>
 
