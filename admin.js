@@ -1834,7 +1834,7 @@ function renderSessionList(filterNickname = "") {
     const patient = patients.find(p => p.nickname === session.patientNickname);
 
     return `
-      <article class="session-card">
+      <article class="session-card session-pro-card">
         <div class="session-card-header">
           <label class="session-check">
             <input class="session-select" type="checkbox" value="${session.id}" />
@@ -1842,8 +1842,11 @@ function renderSessionList(filterNickname = "") {
           </label>
           <span class="session-date">Sesión nº ${session.numero} · ${session.microcicloLabel || (`Micro ${session.microciclo} · ${session.fecha}`)}</span>
         </div>
-        <h3>${patient ? patient.nombre : session.patientNickname}</h3>
-        <p>@${session.patientNickname}</p>
+        <div class="session-pro-person">
+          <span class="session-pro-avatar">${String(patient ? patient.nombre : session.patientNickname).trim().charAt(0).toUpperCase()}</span>
+          <div><h3>${patient ? patient.nombre : session.patientNickname}</h3><p>@${session.patientNickname}</p></div>
+          <span class="session-pro-status">Preparada</span>
+        </div>
         <div class="session-card-actions">
           <button class="edit-btn" type="button" onclick="editSession('${session.id}')">✏️ Editar sesión</button>
           <button class="secondary-btn copy-session-btn" type="button" onclick="copySessionToClipboard('${session.id}')">📋 Copiar sesión</button>
@@ -6008,7 +6011,13 @@ function pmAdminDashboardHTML() {
             <p class="admin-home-kicker">CENTRO DE CONTROL</p>
           </div>
           <h2>${pmDashboardGreeting()}, <span>${adminLabel}</span></h2>
-          <p class="admin-home-date">${todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)}</p>
+          <p class="admin-home-date" id="pmDashboardDateTime">
+            <span aria-hidden="true">📅</span>
+            <span>${todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)}</span>
+            <span class="admin-home-date-separator" aria-hidden="true">·</span>
+            <span aria-hidden="true">🕒</span>
+            <time id="pmDashboardClock" datetime="">--:--</time>
+          </p>
           <p class="admin-home-subtitle">Tu equipo, tus sesiones y la actividad de hoy, en un solo vistazo.</p>
         </div>
         <div class="admin-home-hero-side">
@@ -6096,6 +6105,30 @@ function pmBindAdminDashboard() {
       pmNavigateAdmin(key);
     });
   });
+
+  const updateDashboardClock = () => {
+    const clock = document.getElementById("pmDashboardClock");
+    if (!clock) return false;
+    const now = new Date();
+    clock.textContent = new Intl.DateTimeFormat("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(now);
+    clock.dateTime = now.toISOString();
+    return true;
+  };
+
+  updateDashboardClock();
+  const delayToNextMinute = 60000 - (Date.now() % 60000) + 80;
+  const minuteTimeout = window.setTimeout(() => {
+    if (!updateDashboardClock()) return;
+    const minuteInterval = window.setInterval(() => {
+      if (!updateDashboardClock()) window.clearInterval(minuteInterval);
+    }, 60000);
+  }, delayToNextMinute);
+
+  window.addEventListener("pagehide", () => window.clearTimeout(minuteTimeout), { once: true });
 }
 
 const sections = {
@@ -6119,10 +6152,21 @@ const sections = {
   sesiones: {
     title: "Creación sesiones",
     html: `
-      <h2>Creación de sesiones</h2>
-      <p>Busca un cliente, crea la sesión automática y trabaja por bloques: Movilidad, Activación y Sesión Principal.</p>
+      <section class="sessions-pro-hero">
+        <div class="sessions-pro-hero-copy">
+          <p class="eyebrow">CENTRO DE PROGRAMACIÓN</p>
+          <h2>Sesiones PRO</h2>
+          <p>Prepara, copia y organiza entrenamientos completos desde un único flujo de trabajo.</p>
+          <div class="sessions-pro-flow" aria-label="Flujo de creación">
+            <span><b>1</b> Cliente</span><i>›</i><span><b>2</b> Programación</span><i>›</i><span><b>3</b> Guardar</span>
+          </div>
+        </div>
+        <div class="sessions-pro-hero-badge">
+          <span>🏋️</span><strong>Planificación activa</strong><small>Movilidad · Activación · Principal</small>
+        </div>
+      </section>
 
-      <form class="patient-form" id="sessionsForm">
+      <form class="patient-form sessions-pro-form" id="sessionsForm">
         <div class="session-search-clean">
           <div>
             <label for="sessionPatientSearch">Selecciona cliente</label>
@@ -6240,15 +6284,23 @@ const sections = {
         <button class="primary-btn" type="submit" id="saveSessionBtn">Guardar sesión</button>
       </form>
 
-      <div class="patient-form" style="margin-top:26px;">
-        <label for="sessionsFilter">Filtrar sesiones por paciente</label>
-        <select id="sessionsFilter">
-          <option value="" selected disabled>Selecciona paciente</option>
-          ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
-        </select>
-      </div>
-
-      <div class="sessions-list" id="sessionsList"></div>
+      <section class="sessions-pro-library">
+        <div class="sessions-pro-library-head">
+          <div>
+            <p class="eyebrow">HISTORIAL DE PROGRAMACIÓN</p>
+            <h2>Sesiones preparadas</h2>
+            <span>Consulta, reutiliza o edita cualquier sesión guardada.</span>
+          </div>
+          <label class="sessions-pro-filter" for="sessionsFilter">
+            <span>Filtrar por paciente</span>
+            <select id="sessionsFilter">
+              <option value="" selected disabled>Selecciona paciente</option>
+              ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
+            </select>
+          </label>
+        </div>
+        <div class="sessions-list sessions-pro-list" id="sessionsList"></div>
+      </section>
     `,
     afterRender: bindSessionsForm
   },

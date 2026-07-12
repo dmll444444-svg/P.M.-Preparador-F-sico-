@@ -1,4 +1,4 @@
-const PM_CACHE = "pm-online-v1.8.0-dashboard-admin-pro-v2";
+const PM_CACHE = "pm-online-v1.9.0-sesiones-pro";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
   "./app.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",
