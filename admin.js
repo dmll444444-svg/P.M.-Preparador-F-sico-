@@ -1720,11 +1720,196 @@ function getSelectedPatientBySearch(value) {
 }
 
 
-function getNextSessionNumber(patientNickname) {
-  if (!patientNickname) return "-";
-  const patientSessions = sessions.filter(session => session.patientNickname === patientNickname);
-  return patientSessions.length + 1;
+const PPF_NCI_VERSION = 1;
+
+function nciNickname(value = "") {
+  return String(value || "").trim().replace(/^@+/, "").toLowerCase();
 }
+
+function nciSessionPatient(session = {}) {
+  return nciNickname(session.patientNickname || session.nickname || session.patient || session.clientNickname || "");
+}
+
+function nciSessionDate(session = {}) {
+  return String(session.fecha || session.date || "9999-12-31");
+}
+
+function nciSessionMicro(session = {}) {
+  return Number(session.microciclo || session.micro || session.microcycle || 0);
+}
+
+function nciSessionCreatedAt(session = {}) {
+  return Date.parse(session.createdAt || session.updatedAt || "") || 0;
+}
+
+function nciCompletedSessionIds() {
+  let completed = [];
+  try { completed = JSON.parse(localStorage.getItem("completedSessions") || "[]"); } catch (_) {}
+  if (!Array.isArray(completed)) completed = [];
+  return new Set(completed.map(item => String(item?.sessionId || item?.id || "").trim()).filter(Boolean));
+}
+
+function nciIsCompleted(session = {}, completedIds = nciCompletedSessionIds()) {
+  const id = String(session.id || session.sessionId || "").trim();
+  return Boolean(id && completedIds.has(id));
+}
+
+function nciChronologicalCompare(a = {}, b = {}) {
+  const dateCompare = nciSessionDate(a).localeCompare(nciSessionDate(b));
+  if (dateCompare !== 0) return dateCompare;
+
+  const microCompare = nciSessionMicro(a) - nciSessionMicro(b);
+  if (microCompare !== 0) return microCompare;
+
+  const orderCompare = Number(a.dayOrder || 0) - Number(b.dayOrder || 0);
+  if (orderCompare !== 0) return orderCompare;
+
+  const createdCompare = nciSessionCreatedAt(a) - nciSessionCreatedAt(b);
+  if (createdCompare !== 0) return createdCompare;
+
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
+function nciUpdateNotificationNumbers(changedSessions = []) {
+  if (!changedSessions.length) return false;
+  let notifications = [];
+  try { notifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
+  if (!Array.isArray(notifications) || !notifications.length) return false;
+
+  const numberById = new Map(changedSessions.map(session => [String(session.id || ""), Number(session.numero || 0)]));
+  let changed = false;
+  notifications = notifications.map(item => {
+    const number = numberById.get(String(item?.sessionId || ""));
+    if (!number) return item;
+    const nextBody = item?.type === "prepared_session" ? `Tu sesión nº ${number} ya está disponible.` : item.body;
+    if (Number(item.sessionNumber || 0) === number && item.body === nextBody) return item;
+    changed = true;
+    return { ...item, sessionNumber: number, body: nextBody, updatedAt: new Date().toISOString() };
+  });
+  if (changed) localStorage.setItem("notifications", JSON.stringify(notifications));
+  return changed;
+}
+
+function nciRenumberPatientSessions(patientNickname, { touchUpdatedAt = true } = {}) {
+  const patientKey = nciNickname(patientNickname);
+  if (!patientKey) return { changed: false, notificationsChanged: false, sessions: [] };
+
+  const completedIds = nciCompletedSessionIds();
+  const patientSessions = sessions.filter(session => nciSessionPatient(session) === patientKey);
+  const completed = patientSessions.filter(session => nciIsCompleted(session, completedIds));
+  const pending = patientSessions.filter(session => !nciIsCompleted(session, completedIds));
+
+  // Las sesiones terminadas conservan su número histórico. Las pendientes se
+  // ordenan por fecha, microciclo y orden dentro del día.
+  const lastCompletedNumber = completed.reduce((max, session) => Math.max(max, Number(session.numero || session.sessionNumber || 0)), 0);
+
+  const groups = new Map();
+  pending.forEach(session => {
+    const key = `${nciSessionDate(session)}|${nciSessionMicro(session)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(session);
+  });
+
+  groups.forEach(group => {
+    group.sort((a, b) => {
+      const orderA = Number(a.dayOrder || 0);
+      const orderB = Number(b.dayOrder || 0);
+      if (orderA > 0 && orderB > 0 && orderA !== orderB) return orderA - orderB;
+      const created = nciSessionCreatedAt(a) - nciSessionCreatedAt(b);
+      if (created !== 0) return created;
+      return String(a.id || "").localeCompare(String(b.id || ""));
+    });
+    group.forEach((session, index) => { session.__nciDayOrder = index + 1; });
+  });
+
+  pending.sort((a, b) => {
+    const aCopy = { ...a, dayOrder: a.__nciDayOrder || a.dayOrder };
+    const bCopy = { ...b, dayOrder: b.__nciDayOrder || b.dayOrder };
+    return nciChronologicalCompare(aCopy, bCopy);
+  });
+
+  const changedSessions = [];
+  const nowIso = new Date().toISOString();
+  pending.forEach((session, index) => {
+    const nextNumber = lastCompletedNumber + index + 1;
+    const nextDayOrder = Number(session.__nciDayOrder || 1);
+    delete session.__nciDayOrder;
+    const didChange = Number(session.numero || 0) !== nextNumber || Number(session.dayOrder || 0) !== nextDayOrder;
+    if (!didChange) return;
+    session.numero = nextNumber;
+    session.numeroSesion = nextNumber;
+    session.sessionNumber = nextNumber;
+    session.dayOrder = nextDayOrder;
+    session.numberingVersion = PPF_NCI_VERSION;
+    if (touchUpdatedAt) session.updatedAt = nowIso;
+    changedSessions.push(session);
+  });
+
+  const notificationsChanged = nciUpdateNotificationNumbers(changedSessions);
+  return { changed: changedSessions.length > 0, notificationsChanged, sessions: changedSessions };
+}
+
+function nciRenumberAllSessions(options = {}) {
+  const patientKeys = Array.from(new Set(sessions.map(nciSessionPatient).filter(Boolean)));
+  let changed = false;
+  let notificationsChanged = false;
+  patientKeys.forEach(key => {
+    const result = nciRenumberPatientSessions(key, options);
+    changed = changed || result.changed;
+    notificationsChanged = notificationsChanged || result.notificationsChanged;
+  });
+  if (changed) {
+    window.sessions = sessions;
+    localStorage.setItem("sessions", JSON.stringify(sessions));
+  }
+  return { changed, notificationsChanged };
+}
+
+function nciPreviewSessionNumber(patientNickname, dateValue, microValue, editingId = null) {
+  const patientKey = nciNickname(patientNickname);
+  if (!patientKey || !dateValue) return "-";
+  const completedIds = nciCompletedSessionIds();
+  const patientSessions = sessions.filter(session => nciSessionPatient(session) === patientKey);
+  const completed = patientSessions.filter(session => nciIsCompleted(session, completedIds));
+  const lastCompletedNumber = completed.reduce((max, session) => Math.max(max, Number(session.numero || 0)), 0);
+  const pending = patientSessions
+    .filter(session => !nciIsCompleted(session, completedIds) && String(session.id) !== String(editingId || ""))
+    .map(session => ({ ...session }));
+  const candidate = {
+    id: editingId || "__nci_preview__",
+    patientNickname,
+    fecha: dateValue,
+    microciclo: Number(microValue || 0),
+    createdAt: editingId ? (sessions.find(item => String(item.id) === String(editingId))?.createdAt || new Date().toISOString()) : new Date().toISOString(),
+    dayOrder: 0
+  };
+  pending.push(candidate);
+
+  const grouped = new Map();
+  pending.forEach(session => {
+    const key = `${nciSessionDate(session)}|${nciSessionMicro(session)}`;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(session);
+  });
+  grouped.forEach(group => {
+    group.sort((a, b) => nciSessionCreatedAt(a) - nciSessionCreatedAt(b) || String(a.id).localeCompare(String(b.id)));
+    group.forEach((session, index) => { session.dayOrder = index + 1; });
+  });
+  pending.sort(nciChronologicalCompare);
+  const index = pending.findIndex(session => String(session.id) === String(candidate.id));
+  return index >= 0 ? lastCompletedNumber + index + 1 : "-";
+}
+
+function getNextSessionNumber(patientNickname, dateValue = "", microValue = 0) {
+  return nciPreviewSessionNumber(patientNickname, dateValue, microValue, null);
+}
+
+window.PPF_NCI = {
+  version: PPF_NCI_VERSION,
+  renumberPatient: nciRenumberPatientSessions,
+  renumberAll: nciRenumberAllSessions,
+  preview: nciPreviewSessionNumber
+};
 
 function getMicrocycleInfo(patientNickname, date, manualNumber = "") {
   if (!patientNickname || !date) {
@@ -1767,6 +1952,7 @@ function sortSessionsByNumber(list = []) {
 
 function renderSessionList(filterNickname = "") {
   normalizeSessionMicrocycles(filterNickname);
+  nciRenumberAllSessions({ touchUpdatedAt: true });
   const list = document.getElementById("sessionsList");
   if (!list) return;
 
@@ -1950,7 +2136,34 @@ function bindSessionsForm() {
 
 
 
-  const principalTypes = ["F. ppal. TS", "F. ppal. TI", "Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos", "Mov. Olímpicos"];
+  const principalTypes = ["F. ppal. TS", "F. ppal. TI", "Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos", "Mov. Olímpicos", "Tarea de Campo"];
+
+  const principalUnitGroups = [
+    { label: "Carga", options: [["Kg", "Kg"], ["%", "%"], ["BW", "BW · Peso corporal"]] },
+    { label: "Distancia", options: [["m", "m · Metros"]] },
+    { label: "Tiempo", options: [["s", "s · Segundos"], ["min", "min · Minutos"]] },
+    { label: "Otras", options: [["rep", "rep · Repeticiones"], ["cal", "cal · Calorías"]] },
+    { label: "Velocidad", options: [["m/s", "m/s"]] }
+  ];
+
+  function getSuggestedPrincipalUnit(type = "") {
+    const normalized = String(type || "").trim();
+    if (["F. ppal. TS", "F. ppal. TI", "Mov. Olímpicos"].includes(normalized)) return "Kg";
+    if (["Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos"].includes(normalized)) return "rep";
+    if (normalized === "Tarea de Campo") return "m";
+    return "Kg";
+  }
+
+  function renderPrincipalUnitOptions(selected = "Kg") {
+    const current = String(selected || "Kg");
+    const known = principalUnitGroups.some(group => group.options.some(([value]) => value === current));
+    const legacyOption = known ? "" : `<optgroup label="Unidad existente"><option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option></optgroup>`;
+    return legacyOption + principalUnitGroups.map(group => `
+      <optgroup label="${group.label}">
+        ${group.options.map(([value, label]) => `<option value="${value}" ${current === value ? "selected" : ""}>${label}</option>`).join("")}
+      </optgroup>
+    `).join("");
+  }
   const activationTypes = ["T. Superior", "T. Inferior", "Core", "Pliometría"];
   const mobilityTypes = ["Movilidad", "Est. Estático", "Fascias"];
 
@@ -2085,11 +2298,8 @@ function bindSessionsForm() {
           <div><label>Carga</label><input id="${prefix}_carga_${number}" type="number" step="0.01" placeholder="Ej: 120" value="${escapeHtml(item.carga || "")}" /></div>
           <div>
             <label>Unidad</label>
-            <select id="${prefix}_unidad_${number}">
-              <option value="Kg" ${(item.unidad || "Kg") === "Kg" ? "selected" : ""}>Kg</option>
-              <option value="%" ${item.unidad === "%" ? "selected" : ""}>%</option>
-              <option value="m/s" ${item.unidad === "m/s" ? "selected" : ""}>m/s</option>
-              <option value="BW" ${item.unidad === "BW" ? "selected" : ""}>BW</option>
+            <select id="${prefix}_unidad_${number}" data-principal-unit>
+              ${renderPrincipalUnitOptions(item.unidad || "Kg")}
             </select>
           </div>
         ` : ""}
@@ -2153,8 +2363,20 @@ function bindSessionsForm() {
 
         if (typeSelect && libraryExercise.type) {
           const option = [...typeSelect.options].find(opt => opt.value === libraryExercise.type);
-          if (option) typeSelect.value = libraryExercise.type;
+          if (option) {
+            typeSelect.value = libraryExercise.type;
+            typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+          }
         }
+      });
+    });
+
+    document.querySelectorAll('select[id*="_tipo_"]').forEach(typeSelect => {
+      if (!typeSelect.id.startsWith("principal_")) return;
+      typeSelect.addEventListener("change", () => {
+        const unitSelect = document.getElementById(typeSelect.id.replace("_tipo_", "_unidad_"));
+        if (!unitSelect) return;
+        unitSelect.value = getSuggestedPrincipalUnit(typeSelect.value);
       });
     });
   }
@@ -2197,9 +2419,13 @@ function bindSessionsForm() {
     updateSelectedSessionPatientCard();
     kpiClientName.textContent = patient ? patient.nombre : "-";
     kpiClientNickname.textContent = patient ? `@${patient.nickname}` : "-";
-    sessionNumber.textContent = editingSessionId ? (sessions.find(item => item.id === editingSessionId)?.numero || "-") : getNextSessionNumber(patientNickname);
-
-    const microInfo = editingSessionId ? { number: sessions.find(item => item.id === editingSessionId)?.microciclo || "-" } : getMicrocycleInfo(patientNickname, date.value);
+    const existingSession = editingSessionId ? sessions.find(item => String(item.id) === String(editingSessionId)) : null;
+    const microManualActive = Boolean(microManualCheck && microManualCheck.checked);
+    const manualMicro = Number(String(microManualSelect?.value || "").replace(/\D/g, ""));
+    const microInfo = existingSession
+      ? { number: microManualActive && manualMicro ? manualMicro : (existingSession.microciclo || "-") }
+      : getMicrocycleInfo(patientNickname, date.value, microManualActive && manualMicro ? manualMicro : "");
+    sessionNumber.textContent = nciPreviewSessionNumber(patientNickname, date.value, microInfo.number, editingSessionId);
 
     if (microInfo.number === "-") {
       microciclo.textContent = "-";
@@ -2255,6 +2481,16 @@ function bindSessionsForm() {
   }
 
   setTodayIfEmpty("sessionDate");
+  if (Number(localStorage.getItem("ppfNciVersion") || 0) < PPF_NCI_VERSION) {
+    const migration = nciRenumberAllSessions({ touchUpdatedAt: true });
+    localStorage.setItem("ppfNciVersion", String(PPF_NCI_VERSION));
+    if (migration.changed && window.PPF_SUPABASE?.pushKey) {
+      window.PPF_SUPABASE.pushKey("sessions").catch(error => console.warn("No se pudo sincronizar la migración NCI:", error));
+    }
+    if (migration.notificationsChanged && window.PPF_SUPABASE?.pushKey) {
+      window.PPF_SUPABASE.pushKey("notifications").catch(error => console.warn("No se pudieron sincronizar las notificaciones NCI:", error));
+    }
+  }
   renderModule("movilidad");
   refreshSessionInfo();
   renderSessionList();
@@ -2278,6 +2514,8 @@ function bindSessionsForm() {
   }
 
   date.addEventListener("change", refreshSessionInfo);
+  if (microManualCheck) microManualCheck.addEventListener("change", refreshSessionInfo);
+  if (microManualSelect) microManualSelect.addEventListener("change", refreshSessionInfo);
   filter.addEventListener("change", () => renderSessionList(filter.value));
 
   patientSearch.addEventListener("change", () => {
@@ -2471,6 +2709,9 @@ function bindSessionsForm() {
       sessions.push(storedPayload);
     }
 
+    const renumberResult = nciRenumberPatientSessions(storedPayload.patientNickname, { touchUpdatedAt: true });
+    const finalPayload = sessions.find(item => String(item.id) === String(storedPayload.id)) || storedPayload;
+
     window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
 
@@ -2481,12 +2722,17 @@ function bindSessionsForm() {
       cloudConfirmed = await window.PPF_SUPABASE.pushKey("sessions");
     }
 
+    if (renumberResult.notificationsChanged && window.PPF_SUPABASE?.pushKey) {
+      try { await window.PPF_SUPABASE.pushKey("notifications"); }
+      catch (error) { console.warn("No se pudieron actualizar los números de las notificaciones:", error); }
+    }
+
     if (typeof syncRuntimeToDB === "function") {
       try { await syncRuntimeToDB(); }
       catch (error) { console.warn("No se pudo sincronizar IndexedDB:", error); }
     }
 
-    return { created, payload: storedPayload, cloudConfirmed };
+    return { created, payload: finalPayload, cloudConfirmed };
   }
 
   async function createPreparedSessionNotification(session) {
@@ -2559,7 +2805,7 @@ function bindSessionsForm() {
   const payload = {
   id: existing?.id || editingSessionId || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
   patientNickname,
-  numero: existing ? existing.numero : getNextSessionNumber(patientNickname),
+  numero: existing ? existing.numero : nciPreviewSessionNumber(patientNickname, date.value, selectedMicro, null),
   fecha: date.value,
   microciclo: selectedMicro,
   microManual: microManualActive,
@@ -4332,19 +4578,28 @@ function bindPeriodicityPanel() {
 
 
 
-function deleteSession(sessionId) {
+async function deleteSession(sessionId) {
   const session = sessions.find(item => item.id === sessionId);
   if (!session) return;
 
   const confirmed = confirm(`¿Eliminar la sesión nº ${session.numero}?`);
   if (!confirmed) return;
 
+  const patientNickname = session.patientNickname;
   sessions = sessions.filter(item => item.id !== sessionId);
+  const result = nciRenumberPatientSessions(patientNickname, { touchUpdatedAt: true });
+  window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  if (window.PPF_SUPABASE?.pushKey) {
+    try { await window.PPF_SUPABASE.pushKey("sessions"); } catch (error) { console.warn(error); }
+    if (result.notificationsChanged) {
+      try { await window.PPF_SUPABASE.pushKey("notifications"); } catch (error) { console.warn(error); }
+    }
+  }
   renderSection("sesiones");
 }
 
-function deleteSelectedSessions() {
+async function deleteSelectedSessions() {
   const selected = [...document.querySelectorAll(".session-select:checked")].map(input => input.value);
 
   if (selected.length === 0) {
@@ -4355,8 +4610,23 @@ function deleteSelectedSessions() {
   const confirmed = confirm(`¿Eliminar ${selected.length} sesión${selected.length === 1 ? "" : "es"} seleccionada${selected.length === 1 ? "" : "s"}?`);
   if (!confirmed) return;
 
+  const affectedPatients = Array.from(new Set(
+    sessions.filter(item => selected.includes(item.id)).map(item => item.patientNickname).filter(Boolean)
+  ));
   sessions = sessions.filter(item => !selected.includes(item.id));
+  let notificationsChanged = false;
+  affectedPatients.forEach(nickname => {
+    const result = nciRenumberPatientSessions(nickname, { touchUpdatedAt: true });
+    notificationsChanged = notificationsChanged || result.notificationsChanged;
+  });
+  window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  if (window.PPF_SUPABASE?.pushKey) {
+    try { await window.PPF_SUPABASE.pushKey("sessions"); } catch (error) { console.warn(error); }
+    if (notificationsChanged) {
+      try { await window.PPF_SUPABASE.pushKey("notifications"); } catch (error) { console.warn(error); }
+    }
+  }
   renderSection("sesiones");
 }
 
