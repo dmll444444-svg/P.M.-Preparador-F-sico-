@@ -485,40 +485,150 @@ function calculateIMC() {
   imcValue.textContent = imc.toFixed(1);
 }
 
+let ppfPatientListQuery = "";
+let ppfPatientListFilter = "all";
+
+function ppfPatientPresence(patient = {}) {
+  const stats = pmReadJson("userStats", {});
+  const key = pmNormalizeNickname(patient.nickname);
+  const stat = Object.entries(stats || {}).find(([nickname]) => pmNormalizeNickname(nickname) === key)?.[1] || {};
+  const online = window.PPF_PRESENCE?.isOnline ? window.PPF_PRESENCE.isOnline(stat) : Boolean(stat.online);
+  return { online, stat };
+}
+
+function ppfPatientSessionSummary(patient = {}) {
+  const agenda = pmSessionAgenda();
+  const key = pmNormalizeNickname(patient.nickname);
+  const belongs = item => pmNormalizeNickname(pmSessionPatientKey(item.session || {})) === key;
+  return {
+    pending: agenda.pending.filter(belongs).length,
+    done: agenda.done.filter(belongs).length
+  };
+}
+
+function ppfPatientInitials(name = "") {
+  return String(name || "P").trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0).toUpperCase()).join("") || "P";
+}
+
 function renderPatientList() {
   const list = document.getElementById("patientList");
   if (!list) return;
 
+  const query = ppfPatientListQuery.trim().toLowerCase();
+  const rows = patients
+    .map(patient => {
+      const presence = ppfPatientPresence(patient);
+      const sessionSummary = ppfPatientSessionSummary(patient);
+      return { patient, presence, sessionSummary };
+    })
+    .filter(({ patient, presence, sessionSummary }) => {
+      const haystack = [patient.nombre, patient.nickname, patient.email, patient.telefono, patient.contenido]
+        .map(value => String(value || "").toLowerCase()).join(" ");
+      if (query && !haystack.includes(query)) return false;
+      if (ppfPatientListFilter === "online" && !presence.online) return false;
+      if (ppfPatientListFilter === "pending" && sessionSummary.pending < 1) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.presence.online !== b.presence.online) return a.presence.online ? -1 : 1;
+      return String(a.patient.nombre || "").localeCompare(String(b.patient.nombre || ""), "es");
+    });
+
+  const count = document.getElementById("patientListResultCount");
+  if (count) count.textContent = `${rows.length} ${rows.length === 1 ? "paciente" : "pacientes"}`;
+
   if (patients.length === 0) {
-    list.innerHTML = `<p>No hay pacientes creados todavía.</p>`;
+    list.innerHTML = `<div class="patients-pro-empty"><span>👤</span><b>Aún no hay pacientes</b><small>Crea la primera ficha para empezar.</small></div>`;
     return;
   }
 
-  list.innerHTML = patients.map(patient => `
-    <div class="patient-row">
-      ${(getPatientPhotoSafe(patient) ? `<img class="patient-thumb" src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="patient-thumb">${patient.nombre.charAt(0).toUpperCase()}</div>`)
-      }
-      <div>
-        <strong>${patient.nombre}</strong>
-        <p>${patient.email || "Sin email"} · ${patient.telefono || "Sin teléfono"} · @${patient.nickname || "sin-nickname"}</p>
-        <p><strong>Acceso cliente:</strong> Usuario: ${patient.nickname || "-"} · Contraseña: ${patient.accessPassword || "-"}</p>
-        <div class="patient-tags">
-          <span>${patient.edad} años</span>
-          <span>${patient.peso} kg</span>
-          <span>${patient.altura} cm</span>
-          <span>IMC ${patient.imc}</span>
-          <span>% graso ${patient.grasa || "-"}</span>
-          <span>${patient.contenido}</span>
-          <span>Alta: ${patient.fechaAlta || "-"}</span>
-        </div>
+  if (rows.length === 0) {
+    list.innerHTML = `<div class="patients-pro-empty"><span>⌕</span><b>Sin resultados</b><small>Prueba con otro nombre, nickname o filtro.</small></div>`;
+    return;
+  }
 
-        <div class="patient-card-actions">
-          <button class="edit-btn" type="button" onclick="editPatient('${patient.nickname}')">Editar</button>
-          <button class="delete-btn" type="button" onclick="deletePatient('${patient.nickname}')">Eliminar</button>
+  list.innerHTML = rows.map(({ patient, presence, sessionSummary }) => {
+    const nickname = encodeURIComponent(patient.nickname || "");
+    const photo = getPatientPhotoSafe(patient);
+    const lastActivity = presence.stat?.lastActivity || presence.stat?.lastHeartbeat || presence.stat?.lastSeen || "";
+    const lastText = presence.online ? "En línea ahora" : (lastActivity ? `Última actividad ${new Date(lastActivity).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}` : "Sin actividad reciente");
+    return `
+      <article class="patient-row patient-pro-card" data-patient-nickname="${nickname}">
+        <div class="patient-pro-avatar-wrap">
+          ${photo ? `<img class="patient-thumb" src="${photo}" alt="${patient.nombre}">` : `<div class="patient-thumb">${ppfPatientInitials(patient.nombre)}</div>`}
+          <span class="patient-pro-presence ${presence.online ? "is-online" : ""}" title="${presence.online ? "En línea" : "Desconectado"}"></span>
         </div>
-      </div>
-    </div>
-  `).join("");
+        <div class="patient-pro-main">
+          <div class="patient-pro-head">
+            <div>
+              <strong>${patient.nombre || "Paciente"}</strong>
+              <p>@${patient.nickname || "sin-nickname"} · ${patient.contenido || "Sin programa"}</p>
+            </div>
+            <span class="patient-pro-status ${presence.online ? "is-online" : ""}">${presence.online ? "En línea" : "Desconectado"}</span>
+          </div>
+
+          <div class="patient-pro-meta">
+            <span>🏋️ <b>${sessionSummary.pending}</b> pendientes</span>
+            <span>✅ <b>${sessionSummary.done}</b> terminadas</span>
+            <span>📅 Alta ${patient.fechaAlta || "-"}</span>
+          </div>
+
+          <p class="patient-pro-contact">${patient.email || "Sin email"} · ${patient.telefono || "Sin teléfono"}</p>
+          <small class="patient-pro-last">${lastText}</small>
+
+          <div class="patient-card-actions patient-pro-actions">
+            <button class="primary-btn patient-pro-session-btn" type="button" data-patient-action="session" data-nickname="${nickname}">🏋️ Nueva sesión</button>
+            <button class="edit-btn" type="button" data-patient-action="edit" data-nickname="${nickname}">Editar ficha</button>
+            <button class="patient-pro-more-btn" type="button" data-patient-action="history" data-nickname="${nickname}">Historial</button>
+            <button class="delete-btn patient-pro-delete" type="button" data-patient-action="delete" data-nickname="${nickname}" aria-label="Eliminar paciente">Eliminar</button>
+          </div>
+        </div>
+      </article>`;
+  }).join("");
+}
+
+function bindPatientsProList() {
+  const search = document.getElementById("patientListSearch");
+  if (search) {
+    search.value = ppfPatientListQuery;
+    search.addEventListener("input", () => {
+      ppfPatientListQuery = search.value;
+      renderPatientList();
+    });
+  }
+
+  document.querySelectorAll("[data-patient-filter]").forEach(button => {
+    button.classList.toggle("active", button.dataset.patientFilter === ppfPatientListFilter);
+    button.addEventListener("click", () => {
+      ppfPatientListFilter = button.dataset.patientFilter || "all";
+      document.querySelectorAll("[data-patient-filter]").forEach(item => item.classList.toggle("active", item === button));
+      renderPatientList();
+    });
+  });
+
+  document.getElementById("patientList")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-patient-action]");
+    if (!button) return;
+    const nickname = decodeURIComponent(button.dataset.nickname || "");
+    const action = button.dataset.patientAction;
+    if (action === "edit") return editPatient(nickname);
+    if (action === "delete") return deletePatient(nickname);
+    if (action === "history") {
+      renderSection("historial");
+      setTimeout(() => {
+        const select = document.getElementById("historyFilter");
+        if (select) { select.value = nickname; select.dispatchEvent(new Event("change")); }
+      }, 0);
+      return;
+    }
+    if (action === "session") {
+      pmNavigateAdmin("sesiones");
+      setTimeout(() => {
+        const select = document.getElementById("sessionPatientSearch");
+        if (select) { select.value = nickname; select.dispatchEvent(new Event("change", { bubbles: true })); }
+      }, 0);
+    }
+  });
 }
 
 function renderHistoryList(filterNickname = "") {
@@ -891,6 +1001,12 @@ function bindPatientForm() {
 
   setTodayIfEmpty("fechaAlta");
   renderPatientList();
+  bindPatientsProList();
+  document.getElementById("patientsProAddBtn")?.addEventListener("click", () => {
+    resetPatientFormState();
+    document.getElementById("nombre")?.focus({ preventScroll: true });
+    document.getElementById("patientForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   if (typeof updateRemovePhotoButton === "function") updateRemovePhotoButton();
 
   if (cancelBtn) cancelBtn.addEventListener("click", resetPatientFormState);
@@ -1452,7 +1568,30 @@ const patientHTML = `
     </button>
   </div>
 
-  <div class="patient-list" id="patientList"></div>
+  <section class="patients-pro-directory">
+    <div class="patients-pro-directory-head">
+      <div>
+        <p class="eyebrow">DIRECTORIO</p>
+        <h2>Mis pacientes</h2>
+        <span id="patientListResultCount">0 pacientes</span>
+      </div>
+      <button class="primary-btn patients-pro-add" type="button" id="patientsProAddBtn">＋ Nuevo paciente</button>
+    </div>
+
+    <div class="patients-pro-toolbar">
+      <label class="patients-pro-search">
+        <span>⌕</span>
+        <input id="patientListSearch" type="search" placeholder="Buscar por nombre, usuario, email o teléfono…" autocomplete="off" />
+      </label>
+      <div class="patients-pro-filters" aria-label="Filtros de pacientes">
+        <button type="button" data-patient-filter="all" class="active">Todos</button>
+        <button type="button" data-patient-filter="online">En línea</button>
+        <button type="button" data-patient-filter="pending">Con pendientes</button>
+      </div>
+    </div>
+
+    <div class="patient-list patients-pro-list" id="patientList"></div>
+  </section>
 `;
 
 const historialHTML = `

@@ -5930,3 +5930,73 @@ body.admin-mobile-ui .admin-mobile-more-grid > button {
   .admin-home-session-item>i{display:block}
   .admin-home-avatar{width:40px;height:40px;border-radius:13px}
 }
+
+/* =========================================================
+   PACIENTES PRO v1 · directorio comercial responsive
+   ========================================================= */
+.patients-pro-directory{margin-top:30px;padding-top:4px}
+.patients-pro-directory-head{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:16px}
+.patients-pro-directory-head .eyebrow{margin:0 0 5px;color:#67e8b3;font-size:.7rem;font-weight:900;letter-spacing:.14em}
+.patients-pro-directory-head h2{margin:0;font-size:1.45rem;letter-spacing:-.02em}
+.patients-pro-directory-head>div>span{display:block;margin-top:5px;color:#8295aa;font-size:.82rem}
+.patients-pro-add{min-height:44px;border-radius:14px;padding:0 17px}
+.patients-pro-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid rgba(148,163,184,.12);border-radius:18px;background:rgba(6,15,27,.48)}
+.patients-pro-search{flex:1;min-width:220px;display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid rgba(148,163,184,.16);border-radius:13px;background:#0b1727;color:#7990a8}
+.patients-pro-search:focus-within{border-color:rgba(52,211,153,.65);box-shadow:0 0 0 3px rgba(52,211,153,.08)}
+.patients-pro-search input{width:100%;min-height:42px;border:0!important;padding:0!important;background:transparent!important;box-shadow:none!important;color:#e6f2fb}
+.patients-pro-filters{display:flex;gap:6px;flex-wrap:wrap}
+.patients-pro-filters button{min-height:38px;padding:0 12px;border:1px solid #26374d;border-radius:12px;background:#101c2d;color:#91a5b9;font-weight:800;cursor:pointer}
+.patients-pro-filters button.active{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.12);color:#74e8b4}
+.patients-pro-list{gap:10px;margin-top:14px}
+.patient-pro-card{grid-template-columns:82px minmax(0,1fr);align-items:start;padding:17px 18px;background:linear-gradient(145deg,rgba(15,28,47,.96),rgba(8,17,30,.96));border-color:rgba(148,163,184,.12);box-shadow:0 12px 28px rgba(0,0,0,.14);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.patient-pro-card:hover{transform:translateY(-2px);border-color:rgba(52,211,153,.28);box-shadow:0 17px 36px rgba(0,0,0,.22)}
+.patient-pro-avatar-wrap{position:relative;width:76px}
+.patient-pro-avatar-wrap .patient-thumb{font-size:1.12rem;letter-spacing:.02em}
+.patient-pro-presence{position:absolute;right:-2px;bottom:-2px;width:16px;height:16px;border:3px solid #0c1829;border-radius:50%;background:#64748b}
+.patient-pro-presence.is-online{background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.1),0 0 14px rgba(74,222,128,.7)}
+.patient-pro-main{min-width:0}
+.patient-pro-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.patient-pro-head strong{margin:0;font-size:1.08rem;color:#f2f7fb}
+.patient-pro-head p{margin:4px 0 0;color:#8095ab;font-size:.82rem}
+.patient-pro-status{flex:0 0 auto;padding:5px 9px;border:1px solid #334155;border-radius:999px;color:#94a3b8;font-size:.68rem;font-weight:900}
+.patient-pro-status.is-online{border-color:rgba(74,222,128,.32);background:rgba(74,222,128,.09);color:#6ee7a5}
+.patient-pro-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.patient-pro-meta span{padding:6px 9px;border-radius:10px;background:rgba(148,163,184,.07);color:#9eb0c2;font-size:.75rem}
+.patient-pro-meta b{color:#e2edf7}
+.patient-pro-contact{margin:10px 0 0!important;color:#b5c4d2!important;font-size:.78rem!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.patient-pro-last{display:block;margin-top:5px;color:#667b91;font-size:.7rem}
+.patient-pro-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px}
+.patient-pro-actions button{min-height:36px;padding:0 11px;border-radius:11px;font-size:.75rem}
+.patient-pro-session-btn{background:linear-gradient(135deg,#31d98b,#20b97b)!important;color:#032016!important}
+.patient-pro-more-btn{border:1px solid #304158;background:#132036;color:#b7c5d4;font-weight:800;cursor:pointer}
+.patient-pro-delete{margin-left:auto}
+.patients-pro-empty{min-height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;border:1px dashed #2a3d55;border-radius:20px;color:#879aae;background:rgba(8,17,30,.5)}
+.patients-pro-empty span{width:48px;height:48px;display:grid;place-items:center;border-radius:16px;background:rgba(52,211,153,.1);color:#6ee7b7;font-size:1.4rem}
+.patients-pro-empty b{color:#dce8f2}
+.patients-pro-empty small{font-size:.78rem}
+@media(max-width:760px){
+  .patients-pro-directory-head{align-items:center}
+  .patients-pro-add{padding:0 12px;font-size:.78rem}
+  .patients-pro-toolbar{align-items:stretch;flex-direction:column;padding:9px;border-radius:16px}
+  .patients-pro-search{min-width:0}
+  .patients-pro-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}
+  .patients-pro-filters button{padding:0 6px;font-size:.7rem}
+  .patient-pro-card{grid-template-columns:58px minmax(0,1fr);gap:12px;padding:14px 12px;border-radius:18px}
+  .patient-pro-avatar-wrap{width:56px}
+  .patient-pro-avatar-wrap .patient-thumb{width:56px;height:56px;border-radius:16px;font-size:.86rem}
+  .patient-pro-presence{width:14px;height:14px}
+  .patient-pro-head strong{font-size:.96rem}
+  .patient-pro-status{display:none}
+  .patient-pro-meta{gap:5px;margin-top:9px}
+  .patient-pro-meta span{padding:5px 7px;font-size:.67rem}
+  .patient-pro-contact{font-size:.7rem!important}
+  .patient-pro-actions{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:6px}
+  .patient-pro-actions button{padding:0 7px;font-size:.68rem}
+  .patient-pro-delete{grid-column:1/-1;margin:0;min-height:32px!important;background:transparent!important;border-color:rgba(248,113,113,.2)!important;color:#f59a9a!important}
+}
+@media(max-width:390px){
+  .patients-pro-directory-head{align-items:flex-start;flex-direction:column}
+  .patients-pro-add{width:100%}
+  .patient-pro-actions{grid-template-columns:1fr 1fr}
+  .patient-pro-session-btn{grid-column:1/-1}
+}
