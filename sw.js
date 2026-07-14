@@ -1,4 +1,4 @@
-const PM_CACHE = "pm-online-v1.13.0-numeracion-cronologica-inteligente";
+const PM_CACHE = "pm-online-v1.22.0-agenda-pro-v4-workspace-ui-fix";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
   "./app.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",

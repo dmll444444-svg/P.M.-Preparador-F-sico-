@@ -1720,7 +1720,33 @@ function getSelectedPatientBySearch(value) {
 }
 
 
-const PPF_NCI_VERSION = 1;
+const PPF_NCI_VERSION = 4;
+
+const PPF_SESSION_KINDS = {
+  gym: { icon: "🏋️", label: "Gimnasio" },
+  field: { icon: "🏟️", label: "Campo" },
+  recovery: { icon: "🧘", label: "Recuperación" },
+  testing: { icon: "📊", label: "Test / Valoración" },
+  competition: { icon: "🏆", label: "Competición" },
+  other: { icon: "🎯", label: "Otra" }
+};
+
+function nciSessionKind(session = {}) {
+  const key = String(session.sessionKind || session.sessionType || "gym").trim().toLowerCase();
+  return PPF_SESSION_KINDS[key] ? key : "other";
+}
+
+function nciSessionKindMeta(session = {}) {
+  return PPF_SESSION_KINDS[nciSessionKind(session)];
+}
+
+function nciDisplayNumber(session = {}) {
+  const explicit = String(session.displaySessionNumber || "").trim();
+  if (explicit) return explicit;
+  const base = Number(session.sessionBaseNumber || session.microciclo || session.micro || session.microcycle || session.numero || 0);
+  const order = Number(session.subsessionOrder || session.dayOrder || 1);
+  return base > 0 ? `${base}.${Math.max(1, order)}` : String(session.numero || "-");
+}
 
 function nciNickname(value = "") {
   return String(value || "").trim().replace(/^@+/, "").toLowerCase();
@@ -1776,15 +1802,22 @@ function nciUpdateNotificationNumbers(changedSessions = []) {
   try { notifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
   if (!Array.isArray(notifications) || !notifications.length) return false;
 
-  const numberById = new Map(changedSessions.map(session => [String(session.id || ""), Number(session.numero || 0)]));
+  const byId = new Map(changedSessions.map(session => [String(session.id || ""), session]));
   let changed = false;
   notifications = notifications.map(item => {
-    const number = numberById.get(String(item?.sessionId || ""));
-    if (!number) return item;
-    const nextBody = item?.type === "prepared_session" ? `Tu sesión nº ${number} ya está disponible.` : item.body;
-    if (Number(item.sessionNumber || 0) === number && item.body === nextBody) return item;
+    const session = byId.get(String(item?.sessionId || ""));
+    if (!session) return item;
+    const displayNumber = nciDisplayNumber(session);
+    const nextBody = item?.type === "prepared_session" ? `Tu sesión nº ${displayNumber} ya está disponible.` : item.body;
+    if (String(item.displaySessionNumber || item.sessionNumber || "") === displayNumber && item.body === nextBody) return item;
     changed = true;
-    return { ...item, sessionNumber: number, body: nextBody, updatedAt: new Date().toISOString() };
+    return {
+      ...item,
+      sessionNumber: session.numero || item.sessionNumber || null,
+      displaySessionNumber: displayNumber,
+      body: nextBody,
+      updatedAt: new Date().toISOString()
+    };
   });
   if (changed) localStorage.setItem("notifications", JSON.stringify(notifications));
   return changed;
@@ -1796,13 +1829,10 @@ function nciRenumberPatientSessions(patientNickname, { touchUpdatedAt = true } =
 
   const completedIds = nciCompletedSessionIds();
   const patientSessions = sessions.filter(session => nciSessionPatient(session) === patientKey);
-  const completed = patientSessions.filter(session => nciIsCompleted(session, completedIds));
   const pending = patientSessions.filter(session => !nciIsCompleted(session, completedIds));
 
-  // Las sesiones terminadas conservan su número histórico. Las pendientes se
-  // ordenan por fecha, microciclo y orden dentro del día.
-  const lastCompletedNumber = completed.reduce((max, session) => Math.max(max, Number(session.numero || session.sessionNumber || 0)), 0);
-
+  // Cada grupo fecha + microciclo comparte número base. El orden manual
+  // (dayOrder/subsessionOrder) decide qué sesión será .1, .2, .3...
   const groups = new Map();
   pending.forEach(session => {
     const key = `${nciSessionDate(session)}|${nciSessionMicro(session)}`;
@@ -1810,39 +1840,36 @@ function nciRenumberPatientSessions(patientNickname, { touchUpdatedAt = true } =
     groups.get(key).push(session);
   });
 
+  const changedSessions = [];
+  const nowIso = new Date().toISOString();
   groups.forEach(group => {
     group.sort((a, b) => {
-      const orderA = Number(a.dayOrder || 0);
-      const orderB = Number(b.dayOrder || 0);
+      const orderA = Number(a.subsessionOrder || a.dayOrder || 0);
+      const orderB = Number(b.subsessionOrder || b.dayOrder || 0);
       if (orderA > 0 && orderB > 0 && orderA !== orderB) return orderA - orderB;
       const created = nciSessionCreatedAt(a) - nciSessionCreatedAt(b);
       if (created !== 0) return created;
       return String(a.id || "").localeCompare(String(b.id || ""));
     });
-    group.forEach((session, index) => { session.__nciDayOrder = index + 1; });
-  });
 
-  pending.sort((a, b) => {
-    const aCopy = { ...a, dayOrder: a.__nciDayOrder || a.dayOrder };
-    const bCopy = { ...b, dayOrder: b.__nciDayOrder || b.dayOrder };
-    return nciChronologicalCompare(aCopy, bCopy);
-  });
-
-  const changedSessions = [];
-  const nowIso = new Date().toISOString();
-  pending.forEach((session, index) => {
-    const nextNumber = lastCompletedNumber + index + 1;
-    const nextDayOrder = Number(session.__nciDayOrder || 1);
-    delete session.__nciDayOrder;
-    const didChange = Number(session.numero || 0) !== nextNumber || Number(session.dayOrder || 0) !== nextDayOrder;
-    if (!didChange) return;
-    session.numero = nextNumber;
-    session.numeroSesion = nextNumber;
-    session.sessionNumber = nextNumber;
-    session.dayOrder = nextDayOrder;
-    session.numberingVersion = PPF_NCI_VERSION;
-    if (touchUpdatedAt) session.updatedAt = nowIso;
-    changedSessions.push(session);
+    group.forEach((session, index) => {
+      const base = nciSessionMicro(session) || Number(session.sessionBaseNumber || session.numero || 0) || 1;
+      const order = index + 1;
+      const display = `${base}.${order}`;
+      const didChange = Number(session.sessionBaseNumber || 0) !== base ||
+        Number(session.subsessionOrder || session.dayOrder || 0) !== order ||
+        String(session.displaySessionNumber || "") !== display ||
+        Number(session.numberingVersion || 0) !== PPF_NCI_VERSION;
+      if (!didChange) return;
+      session.sessionBaseNumber = base;
+      session.subsessionOrder = order;
+      session.dayOrder = order;
+      session.displaySessionNumber = display;
+      session.displayOrder = order;
+      session.numberingVersion = PPF_NCI_VERSION;
+      if (touchUpdatedAt) session.updatedAt = nowIso;
+      changedSessions.push(session);
+    });
   });
 
   const notificationsChanged = nciUpdateNotificationNumbers(changedSessions);
@@ -1867,37 +1894,24 @@ function nciRenumberAllSessions(options = {}) {
 
 function nciPreviewSessionNumber(patientNickname, dateValue, microValue, editingId = null) {
   const patientKey = nciNickname(patientNickname);
-  if (!patientKey || !dateValue) return "-";
+  const base = Number(microValue || 0);
+  if (!patientKey || !dateValue || !base) return "-";
   const completedIds = nciCompletedSessionIds();
-  const patientSessions = sessions.filter(session => nciSessionPatient(session) === patientKey);
-  const completed = patientSessions.filter(session => nciIsCompleted(session, completedIds));
-  const lastCompletedNumber = completed.reduce((max, session) => Math.max(max, Number(session.numero || 0)), 0);
-  const pending = patientSessions
-    .filter(session => !nciIsCompleted(session, completedIds) && String(session.id) !== String(editingId || ""))
-    .map(session => ({ ...session }));
-  const candidate = {
-    id: editingId || "__nci_preview__",
-    patientNickname,
-    fecha: dateValue,
-    microciclo: Number(microValue || 0),
-    createdAt: editingId ? (sessions.find(item => String(item.id) === String(editingId))?.createdAt || new Date().toISOString()) : new Date().toISOString(),
-    dayOrder: 0
-  };
-  pending.push(candidate);
+  const sameGroup = sessions
+    .filter(session => nciSessionPatient(session) === patientKey)
+    .filter(session => !nciIsCompleted(session, completedIds))
+    .filter(session => String(session.id) !== String(editingId || ""))
+    .filter(session => nciSessionDate(session) === String(dateValue) && nciSessionMicro(session) === base)
+    .slice()
+    .sort((a, b) => Number(a.subsessionOrder || a.dayOrder || 0) - Number(b.subsessionOrder || b.dayOrder || 0) || nciSessionCreatedAt(a) - nciSessionCreatedAt(b));
 
-  const grouped = new Map();
-  pending.forEach(session => {
-    const key = `${nciSessionDate(session)}|${nciSessionMicro(session)}`;
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key).push(session);
-  });
-  grouped.forEach(group => {
-    group.sort((a, b) => nciSessionCreatedAt(a) - nciSessionCreatedAt(b) || String(a.id).localeCompare(String(b.id)));
-    group.forEach((session, index) => { session.dayOrder = index + 1; });
-  });
-  pending.sort(nciChronologicalCompare);
-  const index = pending.findIndex(session => String(session.id) === String(candidate.id));
-  return index >= 0 ? lastCompletedNumber + index + 1 : "-";
+  if (editingId) {
+    const current = sessions.find(item => String(item.id) === String(editingId));
+    if (current && nciSessionDate(current) === String(dateValue) && nciSessionMicro(current) === base) {
+      return `${base}.${Number(current.subsessionOrder || current.dayOrder || 1)}`;
+    }
+  }
+  return `${base}.${sameGroup.length + 1}`;
 }
 
 function getNextSessionNumber(patientNickname, dateValue = "", microValue = 0) {
@@ -1908,7 +1922,9 @@ window.PPF_NCI = {
   version: PPF_NCI_VERSION,
   renumberPatient: nciRenumberPatientSessions,
   renumberAll: nciRenumberAllSessions,
-  preview: nciPreviewSessionNumber
+  preview: nciPreviewSessionNumber,
+  display: nciDisplayNumber,
+  kind: nciSessionKindMeta
 };
 
 function getMicrocycleInfo(patientNickname, date, manualNumber = "") {
@@ -1934,20 +1950,94 @@ function getMicrocycleInfo(patientNickname, date, manualNumber = "") {
 }
 
 
-function sortSessionsByNumber(list = []) {
+function sortSessionsByOfficialOrder(list = []) {
   return [...list].sort((a, b) => {
-    const numA = Number(a.numero) || 0;
-    const numB = Number(b.numero) || 0;
+    // En el historial se muestran primero los días más recientes.
+    const dateCompare = nciSessionDate(b).localeCompare(nciSessionDate(a));
+    if (dateCompare !== 0) return dateCompare;
 
-    if (numA !== numB) return numB - numA;
+    // Para un mismo día, cada cliente mantiene su bloque unido.
+    const patientCompare = nciSessionPatient(a).localeCompare(nciSessionPatient(b));
+    if (patientCompare !== 0) return patientCompare;
 
-    const microA = Number(a.microciclo) || 0;
-    const microB = Number(b.microciclo) || 0;
+    // Historial descendente: el micro y la subsesión más recientes aparecen arriba.
+    // Ejemplo visual: 16.1, 15.2, 15.1, 14.1.
+    const microCompare = nciSessionMicro(b) - nciSessionMicro(a);
+    if (microCompare !== 0) return microCompare;
 
-    if (microA !== microB) return microB - microA;
+    const orderA = Number(a.subsessionOrder || a.dayOrder || 1);
+    const orderB = Number(b.subsessionOrder || b.dayOrder || 1);
+    if (orderA !== orderB) return orderB - orderA;
 
-    return String(b.fecha || "").localeCompare(String(a.fecha || ""));
+    const createdCompare = nciSessionCreatedAt(a) - nciSessionCreatedAt(b);
+    if (createdCompare !== 0) return createdCompare;
+
+    return String(a.id || "").localeCompare(String(b.id || ""));
   });
+}
+
+async function moveSessionWithinSubsessions(sessionId, direction) {
+  const session = sessions.find(item => String(item.id) === String(sessionId));
+  if (!session || nciIsCompleted(session)) return;
+  const group = sessions
+    .filter(item => nciSessionPatient(item) === nciSessionPatient(session))
+    .filter(item => !nciIsCompleted(item))
+    .filter(item => nciSessionDate(item) === nciSessionDate(session) && nciSessionMicro(item) === nciSessionMicro(session))
+    .sort((a, b) => Number(a.subsessionOrder || a.dayOrder || 0) - Number(b.subsessionOrder || b.dayOrder || 0) || nciSessionCreatedAt(a) - nciSessionCreatedAt(b));
+  const index = group.findIndex(item => String(item.id) === String(sessionId));
+  // El grupo interno está en orden cronológico ascendente (.1, .2, .3),
+  // pero el historial se muestra descendente (.3, .2, .1).
+  // Por eso subir visualmente (direction = -1) significa aumentar la subsesión.
+  const target = index - Number(direction || 0);
+  if (index < 0 || target < 0 || target >= group.length) return;
+  group.forEach((item, idx) => { item.dayOrder = idx + 1; item.subsessionOrder = idx + 1; });
+  const temp = group[index].dayOrder;
+  group[index].dayOrder = group[target].dayOrder;
+  group[index].subsessionOrder = group[target].subsessionOrder;
+  group[target].dayOrder = temp;
+  group[target].subsessionOrder = temp;
+  const result = nciRenumberPatientSessions(session.patientNickname, { touchUpdatedAt: true });
+  localStorage.setItem("sessions", JSON.stringify(sessions));
+  if (window.PPF_SUPABASE?.pushKey) {
+    await window.PPF_SUPABASE.pushKey("sessions");
+    if (result.notificationsChanged) await window.PPF_SUPABASE.pushKey("notifications");
+  }
+  const activeFilter = document.getElementById("sessionsFilter")?.value || "";
+  renderSessionList(activeFilter);
+  requestAnimationFrame(() => {
+    const movedCard = document.querySelector(`[data-session-id="${CSS.escape(String(sessionId))}"]`);
+    const swappedCard = document.querySelector(`[data-session-id="${CSS.escape(String(group[target]?.id || ""))}"]`);
+    [movedCard, swappedCard].filter(Boolean).forEach(card => {
+      card.classList.remove("session-card-reordered");
+      void card.offsetWidth;
+      card.classList.add("session-card-reordered");
+    });
+  });
+  window.dispatchEvent(new CustomEvent("ppf:sessions-reordered", {
+    detail: {
+      patientNickname: session.patientNickname,
+      date: nciSessionDate(session),
+      microcycle: nciSessionMicro(session)
+    }
+  }));
+}
+window.moveSessionWithinSubsessions = moveSessionWithinSubsessions;
+
+function nciSessionMoveState(session = {}) {
+  if (!session || nciIsCompleted(session)) return { canMoveUp: false, canMoveDown: false, position: 1, total: 1 };
+  const group = sessions
+    .filter(item => nciSessionPatient(item) === nciSessionPatient(session))
+    .filter(item => !nciIsCompleted(item))
+    .filter(item => nciSessionDate(item) === nciSessionDate(session) && nciSessionMicro(item) === nciSessionMicro(session));
+  const position = Math.max(1, Number(session.subsessionOrder || session.dayOrder || 1));
+  const total = Math.max(1, group.length);
+  // El historial es descendente: la subsesión más alta está arriba.
+  return {
+    canMoveUp: position < total,
+    canMoveDown: position > 1,
+    position,
+    total
+  };
 }
 
 function renderSessionList(filterNickname = "") {
@@ -1956,7 +2046,11 @@ function renderSessionList(filterNickname = "") {
   const list = document.getElementById("sessionsList");
   if (!list) return;
 
-  const visible = sortSessionsByNumber(filterNickname ? sessions.filter(session => session.patientNickname === filterNickname) : sessions);
+  const filterKey = nciNickname(filterNickname);
+  const filteredSessions = filterKey
+    ? sessions.filter(session => nciSessionPatient(session) === filterKey)
+    : sessions;
+  const visible = sortSessionsByOfficialOrder(filteredSessions);
 
   if (visible.length === 0) {
     list.innerHTML = `<p>No hay sesiones creadas todavía.</p>`;
@@ -2018,22 +2112,28 @@ function renderSessionList(filterNickname = "") {
     </div>
   ` + visible.map(session => {
     const patient = patients.find(p => p.nickname === session.patientNickname);
+    const moveState = nciSessionMoveState(session);
 
     return `
-      <article class="session-card session-pro-card">
+      <article class="session-card session-pro-card" data-session-id="${session.id}">
         <div class="session-card-header">
           <label class="session-check">
             <input class="session-select" type="checkbox" value="${session.id}" />
-            <span class="session-badge">Sesión nº ${session.numero}</span>
+            <span class="session-badge">${nciSessionKindMeta(session).icon} Sesión ${nciDisplayNumber(session)}</span>
           </label>
-          <span class="session-date">Sesión nº ${session.numero} · ${session.microcicloLabel || (`Micro ${session.microciclo} · ${session.fecha}`)}</span>
+          <span class="session-date">${nciSessionKindMeta(session).label} · ${session.microcicloLabel || (`Micro ${session.microciclo} · ${session.fecha}`)}</span>
         </div>
         <div class="session-pro-person session-pro-person-clean">
           <div><h3>${patient ? patient.nombre : session.patientNickname}</h3><p>@${session.patientNickname}</p></div>
-          <span class="session-pro-status">Preparada</span>
+          <span class="session-pro-status">${nciSessionKindMeta(session).icon} ${nciSessionKindMeta(session).label}</span>
         </div>
         <div class="session-card-actions">
           <button class="edit-btn" type="button" onclick="editSession('${session.id}')">✏️ Editar sesión</button>
+          <div class="session-order-control" role="group" aria-label="Orden de la subsesión">
+            <span class="session-order-label">Orden</span>
+            <button class="secondary-btn session-order-btn" type="button" onclick="moveSessionWithinSubsessions('${session.id}', -1)" title="Subir sesión en el listado" aria-label="Subir sesión" ${moveState.canMoveUp ? "" : "disabled"}>⬆️ Subir</button>
+            <button class="secondary-btn session-order-btn" type="button" onclick="moveSessionWithinSubsessions('${session.id}', 1)" title="Bajar sesión en el listado" aria-label="Bajar sesión" ${moveState.canMoveDown ? "" : "disabled"}>⬇️ Bajar</button>
+          </div>
           <button class="secondary-btn copy-session-btn" type="button" onclick="copySessionToClipboard('${session.id}')">📋 Copiar sesión</button>
           <button class="delete-btn" type="button" onclick="deleteSession('${session.id}')">🗑️ Eliminar</button>
         </div>
@@ -2074,7 +2174,7 @@ function copySessionToClipboard(sessionId) {
 
   localStorage.setItem("ppfSessionClipboard", JSON.stringify(clipboardPayload));
 
-  alert(`Sesión copiada: ${patient ? patient.nombre : session.patientNickname} · Sesión nº ${session.numero || "-"}. Ahora puedes seleccionar otro paciente y pulsar "Pegar sesión copiada".`);
+  alert(`Sesión copiada: ${patient ? patient.nombre : session.patientNickname} · Sesión ${nciDisplayNumber(session)}. Ahora puedes seleccionar otro paciente y pulsar "Pegar sesión copiada".`);
 }
 
 window.copySessionToClipboard = copySessionToClipboard;
@@ -2091,6 +2191,7 @@ function bindSessionsForm() {
   const microManualCheck = document.getElementById("sessionMicroManualCheck");
   const microManualSelect = document.getElementById("sessionMicroManualSelect");
   const date = document.getElementById("sessionDate");
+  const sessionKind = document.getElementById("sessionKind");
   const filter = document.getElementById("sessionsFilter");
   const kpiClientName = document.getElementById("kpiClientName");
   const kpiClientNickname = document.getElementById("kpiClientNickname");
@@ -2466,6 +2567,7 @@ function bindSessionsForm() {
   }
 
   function resetSessionForm() {
+    if (sessionKind) sessionKind.value = "gym";
     form.reset();
     moduleData.movilidad = Array.from({ length: 10 }, () => defaultExercise("Movilidad"));
     moduleData.activacion = Array.from({ length: 10 }, () => defaultExercise("T. Superior"));
@@ -2754,9 +2856,10 @@ function bindSessionsForm() {
       recipient: String(session.patientNickname || "").trim().toLowerCase(),
       recipientName: patient?.nombre || session.patientNickname,
       title: "Nueva sesión preparada",
-      body: `Tu sesión nº ${session.numero || "-"} ya está disponible.`,
+      body: `Tu sesión nº ${nciDisplayNumber(session)} ya está disponible.`,
       sessionId: session.id,
       sessionNumber: session.numero || null,
+      displaySessionNumber: nciDisplayNumber(session),
       sessionDate: session.fecha || "",
       createdAt: new Date().toISOString(),
       createdBy: currentUser?.nickname || "admin",
@@ -2805,9 +2908,11 @@ function bindSessionsForm() {
   const payload = {
   id: existing?.id || editingSessionId || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
   patientNickname,
-  numero: existing ? existing.numero : nciPreviewSessionNumber(patientNickname, date.value, selectedMicro, null),
+  numero: existing ? existing.numero : (sessions.filter(item => nciSessionPatient(item) === nciNickname(patientNickname)).reduce((max, item) => Math.max(max, Number(item.numero || 0)), 0) + 1),
   fecha: date.value,
   microciclo: selectedMicro,
+  sessionBaseNumber: selectedMicro,
+  sessionKind: sessionKind?.value || existing?.sessionKind || "gym",
   microManual: microManualActive,
   microcicloManual: microManualActive,
   microcicloLabel: `Micro ${selectedMicro} · ${date.value}${microManualActive ? " · Manual" : ""}`,
@@ -2870,6 +2975,7 @@ function bindSessionsForm() {
     patientSearch.value = session.patientNickname;
     patientHidden.value = session.patientNickname;
     date.value = session.fecha;
+    if (sessionKind) sessionKind.value = nciSessionKind(session);
 
     moduleData.movilidad = (session.modules?.movilidad || []).map(item => ({ nombre: item.nombre || "", series: item.series || "", repeticiones: item.repeticiones || "", carga: item.carga || "", unidad: item.unidad || "Kg", rpe: item.rpe || "", tipo: item.tipo || "Movilidad", url: item.url || "", deleted: Boolean(item.deleted) }));
     while (moduleData.movilidad.length < 10) moduleData.movilidad.push(defaultExercise("Movilidad"));
@@ -4582,7 +4688,7 @@ async function deleteSession(sessionId) {
   const session = sessions.find(item => item.id === sessionId);
   if (!session) return;
 
-  const confirmed = confirm(`¿Eliminar la sesión nº ${session.numero}?`);
+  const confirmed = confirm(`¿Eliminar la sesión ${nciDisplayNumber(session)}?`);
   if (!confirmed) return;
 
   const patientNickname = session.patientNickname;
@@ -6548,7 +6654,8 @@ function pmAdminDashboardHTML() {
             <button type="button" data-home-section="valoraciones"><span>📈</span><b>Nueva valoración</b><small>Registrar pruebas</small><i>›</i></button>
             <button type="button" data-home-section="biblioteca"><span>📚</span><b>Biblioteca</b><small>Ejercicios y recursos</small><i>›</i></button>
             <button type="button" data-home-section="graficaPro"><span>🕸️</span><b>Gráfica PRO</b><small>Analizar distribución</small><i>›</i></button>
-            <button type="button" data-home-section="periodicidad"><span>📅</span><b>Periodicidad</b><small>Planificación anual</small><i>›</i></button>
+            <button type="button" data-home-section="agenda"><span>📅</span><b>Agenda PRO</b><small>Semana y horarios</small><i>›</i></button>
+            <button type="button" data-home-section="periodicidad"><span>📆</span><b>Periodicidad</b><small>Planificación anual</small><i>›</i></button>
           </div>
         </article>
 
@@ -6612,6 +6719,870 @@ function pmBindAdminDashboard() {
   window.addEventListener("pagehide", () => window.clearTimeout(minuteTimeout), { once: true });
 }
 
+
+
+/* =========================================================
+   AGENDA PRO MASTER v1 · vista semanal sobre sessions
+   Una sola fuente de verdad: las sesiones existentes.
+   ========================================================= */
+let agendaProWeekAnchor = agendaProStartOfWeek(new Date());
+let agendaProSelectedSessionId = null;
+let agendaProDraggedSessionId = null;
+let agendaProTouchDrag = null;
+let agendaProSuppressClickUntil = 0;
+let agendaProViewMode = "calendar";
+let agendaProWorkspacePatient = "";
+
+function agendaProEscape(value = "") {
+  return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+}
+
+function agendaProStartOfWeek(value) {
+  const date = value instanceof Date ? new Date(value) : new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return agendaProStartOfWeek(new Date());
+  date.setHours(12, 0, 0, 0);
+  const day = date.getDay() || 7;
+  date.setDate(date.getDate() - day + 1);
+  return date;
+}
+
+function agendaProIsoDate(date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function agendaProAddDays(date, amount) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function agendaProWeekDays() {
+  return Array.from({ length: 7 }, (_, index) => agendaProAddDays(agendaProWeekAnchor, index));
+}
+
+function agendaProSessionDateTime(session = {}) {
+  const date = String(session.fecha || session.date || "");
+  const time = String(session.scheduledTime || "").trim();
+  if (!date) return 0;
+  const stamp = new Date(`${date}T${time || "23:59"}:00`).getTime();
+  return Number.isFinite(stamp) ? stamp : 0;
+}
+
+function agendaProStatus(session = {}) {
+  if (String(session.agendaStatus || "").toLowerCase() === "cancelled") return "cancelled";
+  if (nciIsCompleted(session)) return "completed";
+  const stamp = agendaProSessionDateTime(session);
+  if (stamp && stamp < Date.now() && String(session.fecha || "") < agendaProIsoDate(new Date())) return "late";
+  return "scheduled";
+}
+
+function agendaProStatusMeta(status) {
+  return {
+    scheduled: { label: "Preparada", icon: "●" },
+    completed: { label: "Terminada", icon: "✓" },
+    cancelled: { label: "Cancelada", icon: "×" },
+    late: { label: "Atrasada", icon: "!" }
+  }[status] || { label: "Preparada", icon: "●" };
+}
+
+function agendaProPatient(session = {}) {
+  const key = nciSessionPatient(session);
+  return patients.find(patient => nciNickname(patient.nickname) === key) || {
+    nombre: session.patientName || session.nombrePaciente || session.patientNickname || "Paciente",
+    nickname: session.patientNickname || ""
+  };
+}
+
+function agendaProSort(a = {}, b = {}) {
+  const timeA = String(a.scheduledTime || "99:99");
+  const timeB = String(b.scheduledTime || "99:99");
+  if (timeA !== timeB) return timeA.localeCompare(timeB);
+  const micro = nciSessionMicro(a) - nciSessionMicro(b);
+  if (micro !== 0) return micro;
+  return Number(a.subsessionOrder || a.dayOrder || 1) - Number(b.subsessionOrder || b.dayOrder || 1);
+}
+
+function agendaProFilteredSessions() {
+  const patient = document.getElementById("agendaProPatientFilter")?.value || "";
+  const kind = document.getElementById("agendaProKindFilter")?.value || "";
+  const status = document.getElementById("agendaProStatusFilter")?.value || "";
+  const query = String(document.getElementById("agendaProSearch")?.value || "").trim().toLowerCase();
+  return sessions.filter(session => {
+    if (patient && nciSessionPatient(session) !== nciNickname(patient)) return false;
+    if (kind && nciSessionKind(session) !== kind) return false;
+    if (status && agendaProStatus(session) !== status) return false;
+    if (query) {
+      const person = agendaProPatient(session);
+      const haystack = `${person.nombre || ""} ${person.nickname || ""} ${nciDisplayNumber(session)} ${nciSessionMicro(session)}`.toLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  });
+}
+
+
+function agendaProTimeToMinutes(value = "") {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  return Math.max(0, Math.min(1439, Number(match[1]) * 60 + Number(match[2])));
+}
+
+function agendaProMinutesToTime(value) {
+  const minutes = Math.max(0, Math.min(1439, Math.round(Number(value || 0) / 5) * 5));
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function agendaProDropTime(daySessions = [], index = 0) {
+  const timed = daySessions.map(session => agendaProTimeToMinutes(session.scheduledTime)).filter(value => value !== null);
+  if (!timed.length) return "09:00";
+  if (index <= 0) return agendaProMinutesToTime(Math.max(360, timed[0] - 30));
+  if (index >= timed.length) return agendaProMinutesToTime(Math.min(1320, timed[timed.length - 1] + 60));
+  return agendaProMinutesToTime((timed[index - 1] + timed[index]) / 2);
+}
+
+function agendaProDropZone(date, time, index, label = "Soltar aquí") {
+  return `<div class="agenda-pro-drop-slot" data-agenda-drop-date="${agendaProEscape(date)}" data-agenda-drop-time="${agendaProEscape(time)}" data-agenda-drop-index="${index}"><span>${agendaProEscape(time)}</span><i>${agendaProEscape(label)}</i></div>`;
+}
+
+function agendaProDayList(date, daySessions = []) {
+  if (!daySessions.length) return `${agendaProDropZone(date, "09:00", 0, "Programar a las 09:00")}<div class="agenda-pro-day-empty"><span>＋</span><small>Sin sesiones</small></div>`;
+  const parts = [];
+  daySessions.forEach((session, index) => {
+    parts.push(agendaProDropZone(date, agendaProDropTime(daySessions, index), index));
+    parts.push(agendaProCard(session));
+  });
+  parts.push(agendaProDropZone(date, agendaProDropTime(daySessions, daySessions.length), daySessions.length));
+  return parts.join("");
+}
+
+async function agendaProMoveSession(sessionId, targetDate, targetTime = "", targetIndex = null) {
+  const session = sessions.find(item => String(item.id) === String(sessionId));
+  if (!session || !targetDate) return false;
+  const previousPatient = session.patientNickname;
+  const previousDate = String(session.fecha || "");
+  const previousTime = String(session.scheduledTime || "");
+  session.fecha = targetDate;
+  if (targetTime) session.scheduledTime = targetTime;
+  if (targetIndex !== null && Number.isFinite(Number(targetIndex))) session.agendaOrder = Number(targetIndex);
+  session.reprogrammedAt = new Date().toISOString();
+  session.updatedAt = session.reprogrammedAt;
+  nciRenumberPatientSessions(previousPatient, { touchUpdatedAt: true });
+  persistSessionsOnly();
+  let synced = true;
+  try {
+    if (window.PPF_SUPABASE?.pushValue) synced = await window.PPF_SUPABASE.pushValue("sessions", sessions);
+    else if (window.PPF_SUPABASE?.pushKey) synced = await window.PPF_SUPABASE.pushKey("sessions");
+  } catch (error) {
+    synced = false;
+    console.error("Agenda PRO no pudo sincronizar la reprogramación:", error);
+  }
+  agendaProRenderWeek();
+  const moved = document.querySelector(`[data-agenda-session-id="${CSS.escape(String(sessionId))}"]`);
+  moved?.classList.add("agenda-pro-just-moved");
+  window.setTimeout(() => moved?.classList.remove("agenda-pro-just-moved"), 650);
+  if (!synced) alert("La sesión se reprogramó en este dispositivo, pero Supabase no confirmó la sincronización.");
+  return previousDate !== targetDate || previousTime !== String(session.scheduledTime || "");
+}
+
+function agendaProClearDropTargets() {
+  document.querySelectorAll(".agenda-pro-day.is-drop-target,.agenda-pro-drop-slot.is-drop-target").forEach(element => element.classList.remove("is-drop-target"));
+}
+
+function agendaProTargetFromPoint(x, y) {
+  const element = document.elementFromPoint(x, y);
+  return element?.closest?.("[data-agenda-drop-time],[data-agenda-drop-date]") || null;
+}
+
+function agendaProConflict(session = {}) {
+  const date = String(session.fecha || "");
+  const time = String(session.scheduledTime || "").trim();
+  if (!date || !time || agendaProStatus(session) === "cancelled") return false;
+  const key = nciSessionPatient(session);
+  return sessions.some(other => String(other.id) !== String(session.id) && nciSessionPatient(other) === key && String(other.fecha || "") === date && String(other.scheduledTime || "").trim() === time && agendaProStatus(other) !== "cancelled");
+}
+
+
+function agendaProPriority(session = {}) {
+  const value = String(session.agendaPriority || "medium").toLowerCase();
+  return ["high", "medium", "low"].includes(value) ? value : "medium";
+}
+
+function agendaProPriorityMeta(priority) {
+  return {
+    high: { label: "Alta", icon: "🔴", rank: 3 },
+    medium: { label: "Media", icon: "🟡", rank: 2 },
+    low: { label: "Baja", icon: "⚪", rank: 1 }
+  }[priority] || { label: "Media", icon: "🟡", rank: 2 };
+}
+
+function agendaProDayIntelligence(date, daySessions = []) {
+  const active = daySessions.filter(session => agendaProStatus(session) !== "cancelled");
+  const kinds = {};
+  active.forEach(session => {
+    const meta = nciSessionKindMeta(session);
+    const key = nciSessionKind(session);
+    if (!kinds[key]) kinds[key] = { icon: meta.icon, count: 0 };
+    kinds[key].count += 1;
+  });
+  const conflicts = active.filter(agendaProConflict).length;
+  const withoutTime = active.filter(session => !String(session.scheduledTime || "").trim()).length;
+  const high = active.filter(session => agendaProPriority(session) === "high").length;
+  const loadLevel = active.length >= 8 ? "high" : active.length >= 5 ? "medium" : "light";
+  return { total: active.length, conflicts, withoutTime, high, kinds, loadLevel, date };
+}
+
+function agendaProIntelligence(visibleSessions = []) {
+  const weekStart = agendaProIsoDate(agendaProWeekDays()[0]);
+  const weekEnd = agendaProIsoDate(agendaProWeekDays()[6]);
+  const weekSessions = visibleSessions.filter(session => String(session.fecha || "") >= weekStart && String(session.fecha || "") <= weekEnd);
+  const days = agendaProWeekDays().map(day => {
+    const date = agendaProIsoDate(day);
+    return agendaProDayIntelligence(date, weekSessions.filter(session => String(session.fecha || "") === date));
+  });
+  const warnings = [];
+  const noTime = weekSessions.filter(session => session.fecha && !String(session.scheduledTime || "").trim() && agendaProStatus(session) !== "cancelled");
+  const conflicts = weekSessions.filter(agendaProConflict);
+  const late = weekSessions.filter(session => agendaProStatus(session) === "late");
+  const highPriority = weekSessions.filter(session => agendaProPriority(session) === "high" && agendaProStatus(session) !== "completed" && agendaProStatus(session) !== "cancelled");
+  const overloaded = days.filter(day => day.total >= 8);
+  if (conflicts.length) warnings.push({ type: "conflict", icon: "⚠️", title: `${conflicts.length} conflicto${conflicts.length === 1 ? "" : "s"} horario${conflicts.length === 1 ? "" : "s"}`, detail: "Mismo cliente, fecha y hora", filter: "conflict" });
+  if (noTime.length) warnings.push({ type: "time", icon: "⏱️", title: `${noTime.length} sesión${noTime.length === 1 ? "" : "es"} sin hora`, detail: "Asigna una franja para completar la agenda", filter: "without-time" });
+  if (late.length) warnings.push({ type: "late", icon: "🔴", title: `${late.length} sesión${late.length === 1 ? "" : "es"} atrasada${late.length === 1 ? "" : "s"}`, detail: "Revisa o reprograma estas sesiones", filter: "late" });
+  if (overloaded.length) warnings.push({ type: "load", icon: "📊", title: `${overloaded.length} día${overloaded.length === 1 ? "" : "s"} con carga alta`, detail: "8 o más sesiones programadas", filter: "overload" });
+  if (highPriority.length) warnings.push({ type: "priority", icon: "⭐", title: `${highPriority.length} sesión${highPriority.length === 1 ? "" : "es"} de prioridad alta`, detail: "Revisión recomendada", filter: "priority" });
+  return { weekSessions, days, warnings, noTime, conflicts, late, highPriority, overloaded };
+}
+
+function agendaProIntelligenceHTML(data) {
+  const warnings = data.warnings || [];
+  return `<section class="agenda-pro-intelligence ${warnings.length ? "has-warnings" : "is-clear"}" id="agendaProIntelligence">
+    <div class="agenda-pro-intelligence-head">
+      <div><p class="eyebrow">ATENCIÓN DE LA SEMANA</p><h3>${warnings.length ? "Agenda que requiere revisión" : "Todo bajo control"}</h3></div>
+      <span>${warnings.length ? `${warnings.length} aviso${warnings.length === 1 ? "" : "s"}` : "✓ Sin incidencias"}</span>
+    </div>
+    <div class="agenda-pro-intelligence-grid">
+      ${warnings.length ? warnings.map(item => `<button type="button" class="agenda-pro-alert agenda-pro-alert-${item.type}" data-agenda-intel-filter="${item.filter}"><i>${item.icon}</i><span><strong>${agendaProEscape(item.title)}</strong><small>${agendaProEscape(item.detail)}</small></span><b>›</b></button>`).join("") : `<div class="agenda-pro-intelligence-clear"><i>✅</i><span><strong>Semana organizada</strong><small>No hay conflictos, atrasos ni sesiones sin hora.</small></span></div>`}
+    </div>
+  </section>`;
+}
+
+function agendaProCard(session) {
+  const patient = agendaProPatient(session);
+  const kind = nciSessionKindMeta(session);
+  const status = agendaProStatus(session);
+  const statusMeta = agendaProStatusMeta(status);
+  const duration = Math.max(0, Number(session.durationMinutes || 0));
+  const conflict = agendaProConflict(session);
+  const priority = agendaProPriority(session);
+  const priorityMeta = agendaProPriorityMeta(priority);
+  return `
+    <article class="agenda-pro-session agenda-pro-status-${status} agenda-pro-priority-${priority} ${conflict ? "has-conflict" : ""}" draggable="true" tabindex="0" data-agenda-session-id="${agendaProEscape(session.id)}">
+      <div class="agenda-pro-session-time">
+        <strong>${agendaProEscape(session.scheduledTime || "Sin hora")}</strong>
+        ${duration ? `<small>${duration} min</small>` : `<small>Duración pendiente</small>`}
+      </div>
+      <div class="agenda-pro-session-main">
+        <div class="agenda-pro-session-title">
+          <span class="agenda-pro-kind-icon">${kind.icon}</span>
+          <div><strong>${agendaProEscape(patient.nombre)}</strong><small>@${agendaProEscape(patient.nickname || session.patientNickname || "")}</small></div>
+        </div>
+        <div class="agenda-pro-session-meta">
+          <span>Sesión ${agendaProEscape(nciDisplayNumber(session))}</span>
+          <span>Micro ${agendaProEscape(nciSessionMicro(session) || "-")}</span>
+          <span class="agenda-pro-state"><i>${statusMeta.icon}</i>${statusMeta.label}</span>
+          <span class="agenda-pro-priority"><i>${priorityMeta.icon}</i>${priorityMeta.label}</span>
+          ${conflict ? `<span class="agenda-pro-conflict">⚠ Conflicto</span>` : ""}
+        </div>
+      </div>
+      <button type="button" class="agenda-pro-edit-btn" data-agenda-edit="${agendaProEscape(session.id)}">Editar</button>
+    </article>`;
+}
+
+function agendaProWeekNumber(date = new Date()) {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+}
+
+function agendaProHTML() {
+  const weekDays = agendaProWeekDays();
+  const weekStart = agendaProIsoDate(weekDays[0]);
+  const weekEnd = agendaProIsoDate(weekDays[6]);
+  const all = sessions.slice();
+  const weekSessions = all.filter(session => String(session.fecha || "") >= weekStart && String(session.fecha || "") <= weekEnd);
+  const clientKeys = new Set(weekSessions.map(session => pmNormalizeNickname(session.patientNickname || session.nickname || session.patient || session.cliente || "")).filter(Boolean));
+  const doubleGroups = new Map();
+  weekSessions.forEach(session => {
+    const key = `${pmNormalizeNickname(session.patientNickname || session.nickname || session.patient || session.cliente || "")}|${String(session.fecha || "")}|${String(nciSessionMicro(session) || "")}`;
+    doubleGroups.set(key, (doubleGroups.get(key) || 0) + 1);
+  });
+  const doubleCount = [...doubleGroups.values()].filter(count => count > 1).length;
+  const withoutTime = weekSessions.filter(session => session.fecha && !String(session.scheduledTime || "").trim()).length;
+  const monthLabel = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short" }).format(weekDays[0]);
+  const endLabel = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", year: "numeric" }).format(weekDays[6]);
+  const weekNumber = agendaProWeekNumber(weekDays[0]);
+  return `
+    <div class="agenda-pro agenda-pro-v2 agenda-pro-v3" id="agendaProRoot">
+      <section class="agenda-pro-hero agenda-pro-hero-compact">
+        <div class="agenda-pro-title-block"><p class="eyebrow">CENTRO DE PLANIFICACIÓN</p><h2>📅 Agenda PRO</h2></div>
+        <div class="agenda-pro-hero-range"><small>SEMANA ${weekNumber}</small><strong>${monthLabel} — ${endLabel}</strong></div>
+      </section>
+
+      <section class="agenda-pro-kpis agenda-pro-kpis-compact">
+        <article><span>📅</span><div><small>Sesiones</small><strong>${weekSessions.length}</strong></div></article>
+        <article><span>👥</span><div><small>Clientes</small><strong>${clientKeys.size}</strong></div></article>
+        <article><span>⇄</span><div><small>Dobles</small><strong>${doubleCount}</strong></div></article>
+        <article><span>⏱️</span><div><small>Sin hora</small><strong>${withoutTime}</strong></div></article>
+      </section>
+
+      <section class="agenda-pro-view-switch" aria-label="Modo de Agenda PRO">
+        <button type="button" id="agendaProCalendarMode" class="${agendaProViewMode === "calendar" ? "is-active" : ""}"><span>📅</span> Calendario</button>
+        <button type="button" id="agendaProClientMode" class="${agendaProViewMode === "client" ? "is-active" : ""}"><span>👤</span> Cliente</button>
+      </section>
+
+      <section class="agenda-pro-toolbar" id="agendaProCalendarToolbar">
+        <div class="agenda-pro-week-nav">
+          <button type="button" id="agendaProPrevWeek" aria-label="Semana anterior">←</button>
+          <button type="button" id="agendaProToday">Hoy</button>
+          <button type="button" id="agendaProNextWeek" aria-label="Semana siguiente">→</button>
+          <input type="date" id="agendaProAnchorDate" value="${agendaProIsoDate(agendaProWeekAnchor)}" aria-label="Seleccionar semana">
+        </div>
+        <div class="agenda-pro-filters">
+          <input type="search" id="agendaProSearch" placeholder="Buscar cliente o sesión..." aria-label="Buscar en agenda">
+          <select id="agendaProPatientFilter"><option value="">Todos los clientes</option>${patients.map(p => `<option value="${agendaProEscape(p.nickname)}">${agendaProEscape(p.nombre)}</option>`).join("")}</select>
+          <select id="agendaProKindFilter"><option value="">Todas las actividades</option>${Object.entries(PPF_SESSION_KINDS).map(([key, meta]) => `<option value="${key}">${meta.icon} ${meta.label}</option>`).join("")}</select>
+          <select id="agendaProStatusFilter"><option value="">Todos los estados</option><option value="scheduled">Preparadas</option><option value="completed">Terminadas</option><option value="late">Atrasadas</option><option value="cancelled">Canceladas</option></select>
+        </div>
+      </section>
+
+      <section class="agenda-client-workspace" id="agendaClientWorkspace" hidden></section>
+      <section id="agendaProIntelligenceMount"></section>
+      <section class="agenda-pro-today" id="agendaProTodayProgress"></section>
+      <section class="agenda-pro-week" id="agendaProWeek"></section>
+      <section class="agenda-pro-unassigned" id="agendaProUnassigned"></section>
+      <aside class="agenda-pro-editor agenda-pro-inspector" id="agendaProEditor" hidden></aside>
+      <div class="agenda-pro-inspector-backdrop" id="agendaProInspectorBackdrop" hidden></div>
+    </div>`;
+}
+
+
+function agendaWorkspacePatientKey() {
+  if (agendaProWorkspacePatient) return nciNickname(agendaProWorkspacePatient);
+  const filter = document.getElementById("agendaProPatientFilter")?.value || "";
+  if (filter) return nciNickname(filter);
+  const firstWithSessions = patients.find(patient => sessions.some(session => nciSessionPatient(session) === nciNickname(patient.nickname)));
+  return nciNickname(firstWithSessions?.nickname || patients[0]?.nickname || "");
+}
+
+function agendaWorkspaceSessions(patientKey) {
+  return sessions.filter(session => nciSessionPatient(session) === patientKey).sort((a, b) => {
+    const date = String(a.fecha || "").localeCompare(String(b.fecha || ""));
+    if (date !== 0) return date;
+    const micro = nciSessionMicro(a) - nciSessionMicro(b);
+    if (micro !== 0) return micro;
+    return Number(a.subsessionOrder || a.dayOrder || 1) - Number(b.subsessionOrder || b.dayOrder || 1);
+  });
+}
+
+function agendaWorkspaceSessionCard(session) {
+  const kind = nciSessionKindMeta(session);
+  const status = agendaProStatus(session);
+  const meta = agendaProStatusMeta(status);
+  const priority = agendaProPriorityMeta(agendaProPriority(session));
+  const date = session.fecha ? new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${session.fecha}T12:00:00`)) : "Sin fecha";
+  return `<button type="button" class="agenda-workspace-session agenda-workspace-status-${status}" data-agenda-workspace-session="${agendaProEscape(session.id)}">
+    <span class="agenda-workspace-node">${kind.icon}</span>
+    <span class="agenda-workspace-copy"><strong>Sesión ${agendaProEscape(nciDisplayNumber(session))}</strong><small>${agendaProEscape(kind.label)} · Micro ${agendaProEscape(nciSessionMicro(session) || "-")}</small><em>${agendaProEscape(date)}${session.scheduledTime ? ` · ${agendaProEscape(session.scheduledTime)}` : " · Sin hora"}</em></span>
+    <span class="agenda-workspace-state"><i>${meta.icon}</i>${agendaProEscape(meta.label)}<small>${priority.icon} ${agendaProEscape(priority.label)}</small></span>
+    <b>›</b>
+  </button>`;
+}
+
+function agendaWorkspaceRender() {
+  const mount = document.getElementById("agendaClientWorkspace");
+  if (!mount) return;
+  const key = agendaWorkspacePatientKey();
+  agendaProWorkspacePatient = key;
+  const patient = patients.find(item => nciNickname(item.nickname) === key) || { nombre: "Selecciona cliente", nickname: "" };
+  const all = agendaWorkspaceSessions(key);
+  const completed = all.filter(item => agendaProStatus(item) === "completed");
+  const pending = all.filter(item => !["completed", "cancelled"].includes(agendaProStatus(item)));
+  const cancelled = all.filter(item => agendaProStatus(item) === "cancelled");
+  const noTime = pending.filter(item => !String(item.scheduledTime || "").trim()).length;
+  const compliance = all.length ? Math.round((completed.length / Math.max(1, completed.length + pending.length)) * 100) : 0;
+  const next = pending.slice().sort((a,b) => agendaProSessionDateTime(a)-agendaProSessionDateTime(b))[0];
+  const currentMicro = all.reduce((max,item)=>Math.max(max,nciSessionMicro(item)||0),0);
+  const grouped = new Map();
+  all.forEach(session => {
+    const micro = nciSessionMicro(session) || 0;
+    if (!grouped.has(micro)) grouped.set(micro, []);
+    grouped.get(micro).push(session);
+  });
+  const timeline = [...grouped.entries()].sort((a,b)=>b[0]-a[0]).map(([micro, list]) => `<section class="agenda-workspace-micro"><header><span>MICRO ${agendaProEscape(micro || "-")}</span><small>${list.length} sesión${list.length===1?"":"es"}</small></header><div>${list.slice().sort((a,b)=>agendaProSessionDateTime(b)-agendaProSessionDateTime(a) || Number(b.subsessionOrder||1)-Number(a.subsessionOrder||1)).map(agendaWorkspaceSessionCard).join("")}</div></section>`).join("");
+  mount.innerHTML = `<div class="agenda-workspace-head">
+      <div class="agenda-workspace-person"><span>${agendaProEscape((patient.nombre || patient.nickname || "?").trim().charAt(0).toUpperCase())}</span><div><p class="eyebrow">CLIENT WORKSPACE</p><h2>${agendaProEscape(patient.nombre || "Selecciona cliente")}</h2><small>@${agendaProEscape(patient.nickname || "")} · Micro actual ${agendaProEscape(currentMicro || "-")}</small></div></div>
+      <div class="agenda-workspace-selector"><label>Cliente<select id="agendaWorkspacePatient">${patients.map(item=>`<option value="${agendaProEscape(item.nickname)}" ${nciNickname(item.nickname)===key?"selected":""}>${agendaProEscape(item.nombre)}</option>`).join("")}</select></label><button type="button" id="agendaWorkspaceNewSession">＋ Nueva sesión</button></div>
+    </div>
+    <section class="agenda-workspace-summary">
+      <article><span>📅</span><div><small>Sesiones</small><strong>${all.length}</strong></div></article>
+      <article><span>✅</span><div><small>Terminadas</small><strong>${completed.length}</strong></div></article>
+      <article><span>⏳</span><div><small>Pendientes</small><strong>${pending.length}</strong></div></article>
+      <article><span>📈</span><div><small>Cumplimiento</small><strong>${compliance}%</strong></div></article>
+    </section>
+    <section class="agenda-workspace-focus">
+      <div><p class="eyebrow">PRÓXIMA SESIÓN</p>${next?`<h3>${nciSessionKindMeta(next).icon} Sesión ${agendaProEscape(nciDisplayNumber(next))}</h3><p>${agendaProEscape(next.fecha || "Sin fecha")} · ${agendaProEscape(next.scheduledTime || "Sin hora")} · Micro ${agendaProEscape(nciSessionMicro(next)||"-")}</p>`:`<h3>Sin sesiones pendientes</h3><p>El cliente no tiene una próxima sesión programada.</p>`}</div>
+      <div class="agenda-workspace-flags"><span>${cancelled.length} canceladas</span><span>${noTime} sin hora</span>${next?`<button type="button" data-agenda-workspace-session="${agendaProEscape(next.id)}">Abrir próxima</button>`:""}</div>
+    </section>
+    <section class="agenda-workspace-body"><div class="agenda-workspace-title"><div><p class="eyebrow">LÍNEA TEMPORAL</p><h3>Plan completo del cliente</h3></div><span>${all.length} registros</span></div>${timeline || `<div class="agenda-workspace-empty"><span>📭</span><h3>Sin sesiones</h3><p>Crea la primera sesión para este cliente.</p></div>`}</section>`;
+  document.getElementById("agendaWorkspacePatient")?.addEventListener("change", event => { agendaProWorkspacePatient = event.target.value; agendaWorkspaceRender(); });
+  document.getElementById("agendaWorkspaceNewSession")?.addEventListener("click", () => {
+    const nickname = patient.nickname || "";
+    renderSection("sesiones");
+    setTimeout(() => { const select=document.getElementById("sessionPatientSearch"); if(select){select.value=nickname; select.dispatchEvent(new Event("change",{bubbles:true}));} }, 0);
+  });
+  mount.querySelectorAll("[data-agenda-workspace-session]").forEach(button => button.addEventListener("click", () => agendaProOpenEditor(button.dataset.agendaWorkspaceSession)));
+}
+
+function agendaProApplyViewMode() {
+  const clientMode = agendaProViewMode === "client";
+  const ids = ["agendaProCalendarToolbar","agendaProIntelligenceMount","agendaProTodayProgress","agendaProWeek","agendaProUnassigned"];
+  ids.forEach(id => { const element=document.getElementById(id); if(element) element.hidden=clientMode; });
+  const workspace=document.getElementById("agendaClientWorkspace");
+  if(workspace) workspace.hidden=!clientMode;
+  document.getElementById("agendaProCalendarMode")?.classList.toggle("is-active", !clientMode);
+  document.getElementById("agendaProClientMode")?.classList.toggle("is-active", clientMode);
+  if(clientMode) agendaWorkspaceRender();
+}
+
+function agendaProRenderWeek() {
+  agendaProApplyViewMode();
+  if (agendaProViewMode === "client") return;
+  const week = document.getElementById("agendaProWeek");
+  const unassigned = document.getElementById("agendaProUnassigned");
+  if (!week || !unassigned) return;
+  const filtered = agendaProFilteredSessions();
+  const todayIso = agendaProIsoDate(new Date());
+  const dailyCounts = agendaProWeekDays().map(day => filtered.filter(session => String(session.fecha || "") === agendaProIsoDate(day)).length);
+  const maxDaily = Math.max(1, ...dailyCounts);
+  const intelligence = agendaProIntelligence(filtered);
+  const intelligenceMount = document.getElementById("agendaProIntelligenceMount");
+  if (intelligenceMount) intelligenceMount.innerHTML = agendaProIntelligenceHTML(intelligence);
+  week.innerHTML = agendaProWeekDays().map((day, dayIndex) => {
+    const iso = agendaProIsoDate(day);
+    const daySessions = filtered.filter(session => String(session.fecha || "") === iso).sort(agendaProSort);
+    const label = new Intl.DateTimeFormat("es-ES", { weekday: "short" }).format(day).replace(".", "");
+    const load = Math.round((daySessions.length / maxDaily) * 100);
+    const dayIntel = agendaProDayIntelligence(iso, daySessions);
+    const kindSummary = Object.values(dayIntel.kinds).slice(0, 4).map(item => `<span>${item.icon} ${item.count}</span>`).join("");
+    return `<article class="agenda-pro-day agenda-pro-load-${dayIntel.loadLevel} ${iso === todayIso ? "is-today" : ""}" data-agenda-drop-date="${iso}">
+      <header><span>${label}</span><strong>${day.getDate()}</strong><small>${daySessions.length} sesión${daySessions.length === 1 ? "" : "es"}</small><div class="agenda-pro-day-intel">${kindSummary}${dayIntel.conflicts ? `<em>⚠ ${dayIntel.conflicts}</em>` : ""}${dayIntel.high ? `<em>⭐ ${dayIntel.high}</em>` : ""}</div><div class="agenda-pro-load"><i style="width:${load}%"></i></div></header>
+      <div class="agenda-pro-day-list">${agendaProDayList(iso, daySessions)}</div>
+    </article>`;
+  }).join("");
+
+  const todaySessions = filtered.filter(session => String(session.fecha || "") === todayIso);
+  const completedToday = todaySessions.filter(session => agendaProStatus(session) === "completed").length;
+  const progress = todaySessions.length ? Math.round((completedToday / todaySessions.length) * 100) : 0;
+  const todayBox = document.getElementById("agendaProTodayProgress");
+  if (todayBox) {
+    const scheduledToday = todaySessions.filter(session => agendaProStatus(session) === "scheduled").length;
+    const cancelledToday = todaySessions.filter(session => agendaProStatus(session) === "cancelled").length;
+    const noTimeToday = todaySessions.filter(session => !String(session.scheduledTime || "").trim()).length;
+    todayBox.innerHTML = `<div><small>OBJETIVO DEL DÍA</small><strong>${completedToday} de ${todaySessions.length} sesiones completadas</strong><span>${scheduledToday} preparadas · ${cancelledToday} canceladas · ${noTimeToday} sin hora</span></div><div class="agenda-pro-progress"><i style="width:${progress}%"></i></div><b>${progress}%</b>`;
+  }
+
+  const withoutTime = filtered.filter(session => session.fecha && !String(session.scheduledTime || "").trim()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || agendaProSort(a, b));
+  unassigned.innerHTML = `<div class="agenda-pro-section-head"><div><p class="eyebrow">BANDEJA DE PROGRAMACIÓN</p><h3>Sesiones sin hora</h3><p>Asigna hora y duración para completar la agenda.</p></div><strong>${withoutTime.length}</strong></div>
+    <div class="agenda-pro-unassigned-grid">${withoutTime.length ? withoutTime.map(agendaProCard).join("") : `<div class="agenda-pro-all-scheduled">✓ Todas las sesiones tienen hora asignada.</div>`}</div>`;
+}
+
+function agendaProDateLabel(value, includeTime = false) {
+  if (!value) return "Sin registro";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("es-ES", includeTime
+    ? { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }
+    : { day: "2-digit", month: "short", year: "numeric" }
+  ).format(date);
+}
+
+function agendaProPatientTimeline(session = {}) {
+  const key = nciSessionPatient(session);
+  const ordered = sessions.filter(item => nciSessionPatient(item) === key).slice().sort((a, b) => {
+    const date = String(a.fecha || "").localeCompare(String(b.fecha || ""));
+    if (date) return date;
+    const micro = Number(nciSessionMicro(a) || 0) - Number(nciSessionMicro(b) || 0);
+    if (micro) return micro;
+    return Number(a.subsessionOrder || a.dayOrder || 1) - Number(b.subsessionOrder || b.dayOrder || 1);
+  });
+  const index = ordered.findIndex(item => String(item.id) === String(session.id));
+  return { previous: index > 0 ? ordered[index - 1] : null, next: index >= 0 && index < ordered.length - 1 ? ordered[index + 1] : null };
+}
+
+function agendaProHistory(session = {}) {
+  const list = Array.isArray(session.agendaHistory) ? session.agendaHistory.slice(-8).reverse() : [];
+  if (!list.length) {
+    if (session.updatedAt) list.push({ type: "updated", at: session.updatedAt, label: "Última modificación" });
+    if (session.createdAt) list.push({ type: "created", at: session.createdAt, label: "Sesión creada" });
+  }
+  return list;
+}
+
+function agendaProAddHistory(session, type, label) {
+  if (!session) return;
+  const history = Array.isArray(session.agendaHistory) ? session.agendaHistory : [];
+  history.push({ type, label, at: new Date().toISOString(), by: currentUser?.nickname || "admin" });
+  session.agendaHistory = history.slice(-30);
+}
+
+async function agendaProNotifyClient(sessionId) {
+  const session = sessions.find(item => String(item.id) === String(sessionId));
+  if (!session) return;
+  try {
+    await agendaProCreateDuplicateNotification(session);
+    agendaProAddHistory(session, "notification", "Notificación enviada al cliente");
+    session.updatedAt = new Date().toISOString();
+    persistSessionsOnly();
+    if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
+    alert("Notificación enviada al cliente.");
+    agendaProOpenEditor(session.id);
+  } catch (error) {
+    console.error("Agenda PRO no pudo enviar la notificación:", error);
+    alert("No se pudo confirmar el envío de la notificación.");
+  }
+}
+
+function agendaProOpenEditor(sessionId) {
+  const session = sessions.find(item => String(item.id) === String(sessionId));
+  const editor = document.getElementById("agendaProEditor");
+  if (!session || !editor) return;
+  agendaProSelectedSessionId = session.id;
+  const patient = agendaProPatient(session);
+  const kindMeta = nciSessionKindMeta(session);
+  const priorityMeta = agendaProPriorityMeta(agendaProPriority(session));
+  const statusMeta = agendaProStatusMeta(agendaProStatus(session));
+  const timeline = agendaProPatientTimeline(session);
+  const history = agendaProHistory(session);
+  editor.hidden = false;
+  document.getElementById("agendaProInspectorBackdrop")?.removeAttribute("hidden");
+  editor.innerHTML = `
+    <div class="agenda-master-head">
+      <div class="agenda-master-identity">
+        <span class="agenda-master-kind">${kindMeta.icon}</span>
+        <div><p class="eyebrow">INSPECTOR MASTER</p><h3>${agendaProEscape(patient.nombre)}</h3><span>@${agendaProEscape(patient.nickname || session.patientNickname || "")} · Sesión ${agendaProEscape(nciDisplayNumber(session))} · Micro ${agendaProEscape(nciSessionMicro(session) || "-")}</span></div>
+      </div>
+      <button type="button" id="agendaProCloseEditor" aria-label="Cerrar inspector">✕</button>
+    </div>
+
+    <div class="agenda-master-badges">
+      <span>${kindMeta.icon} ${agendaProEscape(kindMeta.label)}</span>
+      <span>${statusMeta.icon} ${agendaProEscape(statusMeta.label)}</span>
+      <span>${priorityMeta.icon} Prioridad ${agendaProEscape(priorityMeta.label.toLowerCase())}</span>
+    </div>
+
+    <section class="agenda-master-quick">
+      <article><small>Sesión anterior</small>${timeline.previous ? `<strong>${agendaProEscape(nciDisplayNumber(timeline.previous))}</strong><span>${agendaProEscape(timeline.previous.fecha || "Sin fecha")}</span>` : `<strong>—</strong><span>Sin sesión anterior</span>`}</article>
+      <article><small>Sesión siguiente</small>${timeline.next ? `<strong>${agendaProEscape(nciDisplayNumber(timeline.next))}</strong><span>${agendaProEscape(timeline.next.fecha || "Sin fecha")}</span>` : `<strong>—</strong><span>Sin sesión siguiente</span>`}</article>
+      <article><small>Programación</small><strong>${agendaProEscape(session.scheduledTime || "Sin hora")}</strong><span>${Math.max(0, Number(session.durationMinutes || 0)) || "—"} min</span></article>
+    </section>
+
+    <form id="agendaProForm" class="agenda-master-form">
+      <div class="agenda-master-section-head"><div><small>PLANIFICACIÓN</small><h4>Datos de agenda</h4></div></div>
+      <div class="agenda-master-fields">
+        <label>Fecha<input type="date" id="agendaProDate" required value="${agendaProEscape(session.fecha || "")}"></label>
+        <label>Hora<input type="time" id="agendaProTime" value="${agendaProEscape(session.scheduledTime || "")}"></label>
+        <label>Duración (min)<input type="number" id="agendaProDuration" min="0" step="5" value="${agendaProEscape(session.durationMinutes || 60)}"></label>
+        <label>Actividad<select id="agendaProKind">${Object.entries(PPF_SESSION_KINDS).map(([key, meta]) => `<option value="${key}" ${nciSessionKind(session) === key ? "selected" : ""}>${meta.icon} ${meta.label}</option>`).join("")}</select></label>
+        <label>Estado<select id="agendaProAgendaStatus"><option value="scheduled" ${String(session.agendaStatus || "scheduled") === "scheduled" ? "selected" : ""}>Preparada</option><option value="cancelled" ${String(session.agendaStatus || "") === "cancelled" ? "selected" : ""}>Cancelada</option></select></label>
+        <label>Prioridad<select id="agendaProPriority"><option value="high" ${agendaProPriority(session) === "high" ? "selected" : ""}>🔴 Alta</option><option value="medium" ${agendaProPriority(session) === "medium" ? "selected" : ""}>🟡 Media</option><option value="low" ${agendaProPriority(session) === "low" ? "selected" : ""}>⚪ Baja</option></select></label>
+      </div>
+
+      <div class="agenda-master-section-head"><div><small>SEGUIMIENTO</small><h4>Observaciones</h4></div></div>
+      <label class="agenda-pro-notes"><textarea id="agendaProNotes" rows="5" placeholder="Notas visibles para el preparador...">${agendaProEscape(session.agendaNotes || "")}</textarea></label>
+
+      <div class="agenda-master-actions-primary">
+        <button type="submit" class="primary-btn">💾 Guardar cambios</button>
+        <button type="button" class="secondary-btn" id="agendaProOpenSession">Abrir sesión completa</button>
+      </div>
+
+      <div class="agenda-master-section-head"><div><small>ACCIONES RÁPIDAS</small><h4>Operaciones</h4></div></div>
+      <div class="agenda-master-actions-grid">
+        <button type="button" class="secondary-btn" id="agendaProDuplicateSession">📋 Duplicar sesión</button>
+        <button type="button" class="secondary-btn" id="agendaProNotifyClient">🔔 Notificar cliente</button>
+        <button type="button" class="delete-btn" id="agendaProDeleteSession">🗑️ Eliminar sesión</button>
+      </div>
+
+      <div class="agenda-master-section-head"><div><small>TRAZABILIDAD</small><h4>Historial reciente</h4></div></div>
+      <div class="agenda-master-history">
+        ${history.length ? history.map(item => `<div><i>${item.type === "created" ? "＋" : item.type === "notification" ? "🔔" : "↻"}</i><span><strong>${agendaProEscape(item.label || "Actualización")}</strong><small>${agendaProEscape(agendaProDateLabel(item.at, true))}${item.by ? ` · ${agendaProEscape(item.by)}` : ""}</small></span></div>`).join("") : `<p>Sin actividad registrada.</p>`}
+      </div>
+    </form>`;
+  editor.scrollTop = 0;
+  const closeInspector = () => { editor.hidden = true; document.getElementById("agendaProInspectorBackdrop")?.setAttribute("hidden", ""); agendaProSelectedSessionId = null; };
+  document.getElementById("agendaProCloseEditor")?.addEventListener("click", closeInspector);
+  document.getElementById("agendaProInspectorBackdrop")?.addEventListener("click", closeInspector, { once: true });
+  document.getElementById("agendaProOpenSession")?.addEventListener("click", () => { editSession(session.id); });
+  document.getElementById("agendaProDuplicateSession")?.addEventListener("click", () => agendaProDuplicateSession(session.id));
+  document.getElementById("agendaProNotifyClient")?.addEventListener("click", () => agendaProNotifyClient(session.id));
+  document.getElementById("agendaProDeleteSession")?.addEventListener("click", () => agendaProDeleteSession(session.id));
+  document.getElementById("agendaProForm")?.addEventListener("submit", agendaProSaveEditor);
+}
+
+async function agendaProCreateDuplicateNotification(session) {
+  if (!session?.patientNickname || !session?.id) return;
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
+  if (!Array.isArray(list)) list = [];
+  const patient = agendaProPatient(session);
+  list.push({
+    id: crypto.randomUUID ? crypto.randomUUID() : `notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: "prepared_session",
+    recipient: String(session.patientNickname || "").trim().toLowerCase(),
+    recipientName: patient.nombre || session.patientNickname,
+    title: "Nueva sesión preparada",
+    body: `Tu sesión nº ${nciDisplayNumber(session)} ya está disponible.`,
+    sessionId: session.id,
+    sessionNumber: session.numero || null,
+    displaySessionNumber: nciDisplayNumber(session),
+    sessionDate: session.fecha || "",
+    createdAt: new Date().toISOString(),
+    createdBy: currentUser?.nickname || "admin",
+    readBy: []
+  });
+  if (list.length > 500) list = list.slice(-500);
+  localStorage.setItem("notifications", JSON.stringify(list));
+  if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("notifications", list);
+  else if (window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("notifications");
+}
+
+async function agendaProDuplicateSession(sessionId) {
+  const source = sessions.find(item => String(item.id) === String(sessionId));
+  if (!source) return alert("No se ha encontrado la sesión para duplicar.");
+  const patient = agendaProPatient(source);
+  const confirmed = confirm(`¿Duplicar la sesión ${nciDisplayNumber(source)} de ${patient.nombre}?\n\nSe creará una sesión nueva independiente con el mismo contenido.`);
+  if (!confirmed) return;
+
+  const now = new Date().toISOString();
+  const clone = JSON.parse(JSON.stringify(source));
+  clone.id = crypto.randomUUID ? crypto.randomUUID() : `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  clone.createdAt = now;
+  clone.updatedAt = now;
+  clone.numero = sessions.filter(item => nciSessionPatient(item) === nciSessionPatient(source)).reduce((max, item) => Math.max(max, Number(item.numero || 0)), 0) + 1;
+  clone.agendaStatus = "scheduled";
+  clone.terminada = false;
+  clone.completed = false;
+  clone.isCompleted = false;
+  clone.completedAt = null;
+  clone.finishedAt = null;
+  clone.lastCompletedAt = null;
+  clone.subsessionOrder = Number(source.subsessionOrder || source.dayOrder || 1) + 0.5;
+  clone.dayOrder = clone.subsessionOrder;
+  clone.displayOrder = clone.subsessionOrder;
+  clone.agendaHistory = [{ type: "created", label: "Sesión duplicada desde Agenda", at: now, by: currentUser?.nickname || "admin" }];
+
+  sessions.push(clone);
+  const renumberResult = nciRenumberPatientSessions(clone.patientNickname, { touchUpdatedAt: true });
+  const created = sessions.find(item => String(item.id) === String(clone.id)) || clone;
+  window.sessions = sessions;
+  localStorage.setItem("sessions", JSON.stringify(sessions));
+
+  try {
+    if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
+    else if (window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("sessions");
+    if (renumberResult.notificationsChanged && window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("notifications");
+    await agendaProCreateDuplicateNotification(created);
+  } catch (error) {
+    console.error("Agenda PRO no pudo confirmar la duplicación en Supabase:", error);
+    alert("La sesión se ha duplicado en este dispositivo, pero Supabase no confirmó toda la sincronización.");
+  }
+
+  renderSection("agenda");
+  setTimeout(() => agendaProOpenEditor(created.id), 0);
+}
+
+async function agendaProDeleteSession(sessionId) {
+  const session = sessions.find(item => String(item.id) === String(sessionId));
+  if (!session) return;
+  const patient = agendaProPatient(session);
+  const confirmed = confirm(`¿Eliminar definitivamente la sesión ${nciDisplayNumber(session)} de ${patient.nombre}?\n\nEsta acción no se puede deshacer.`);
+  if (!confirmed) return;
+
+  const nickname = session.patientNickname;
+  sessions = sessions.filter(item => String(item.id) !== String(sessionId));
+  const renumberResult = nciRenumberPatientSessions(nickname, { touchUpdatedAt: true });
+  window.sessions = sessions;
+  localStorage.setItem("sessions", JSON.stringify(sessions));
+
+  try {
+    if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
+    else if (window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("sessions");
+    if (renumberResult.notificationsChanged && window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("notifications");
+  } catch (error) {
+    console.error("Agenda PRO no pudo confirmar la eliminación en Supabase:", error);
+    alert("La sesión se eliminó en este dispositivo, pero Supabase no confirmó la sincronización.");
+  }
+  renderSection("agenda");
+}
+
+async function agendaProSaveEditor(event) {
+  event.preventDefault();
+  const session = sessions.find(item => String(item.id) === String(agendaProSelectedSessionId));
+  if (!session) return;
+  const oldPatient = session.patientNickname;
+  session.fecha = document.getElementById("agendaProDate")?.value || session.fecha;
+  session.scheduledTime = document.getElementById("agendaProTime")?.value || "";
+  session.durationMinutes = Math.max(0, Number(document.getElementById("agendaProDuration")?.value || 0));
+  session.sessionKind = document.getElementById("agendaProKind")?.value || session.sessionKind || "gym";
+  session.agendaStatus = document.getElementById("agendaProAgendaStatus")?.value || "scheduled";
+  session.agendaPriority = document.getElementById("agendaProPriority")?.value || "medium";
+  session.agendaNotes = document.getElementById("agendaProNotes")?.value?.trim() || "";
+  agendaProAddHistory(session, "updated", "Agenda actualizada");
+  session.updatedAt = new Date().toISOString();
+  nciRenumberPatientSessions(oldPatient);
+  persistSessionsOnly();
+  let synced = true;
+  try {
+    if (window.PPF_SUPABASE?.pushValue) synced = await window.PPF_SUPABASE.pushValue("sessions", sessions);
+    else if (window.PPF_SUPABASE?.pushKey) synced = await window.PPF_SUPABASE.pushKey("sessions");
+  } catch (error) { synced = false; console.error("Agenda PRO no pudo sincronizar:", error); }
+  renderSection("agenda");
+  if (!synced) alert("La agenda se guardó en este dispositivo, pero Supabase no confirmó la sincronización.");
+}
+
+async function agendaProMoveSessionToDate(sessionId, targetDate) {
+  return agendaProMoveSession(sessionId, targetDate);
+}
+
+function bindAgendaPro() {
+  document.getElementById("agendaProCalendarMode")?.addEventListener("click", () => { agendaProViewMode = "calendar"; agendaProApplyViewMode(); agendaProRenderWeek(); });
+  document.getElementById("agendaProClientMode")?.addEventListener("click", () => { agendaProViewMode = "client"; agendaProApplyViewMode(); });
+  agendaProApplyViewMode();
+  agendaProRenderWeek();
+  document.getElementById("agendaProPrevWeek")?.addEventListener("click", () => { agendaProWeekAnchor = agendaProAddDays(agendaProWeekAnchor, -7); renderSection("agenda"); });
+  document.getElementById("agendaProNextWeek")?.addEventListener("click", () => { agendaProWeekAnchor = agendaProAddDays(agendaProWeekAnchor, 7); renderSection("agenda"); });
+  document.getElementById("agendaProToday")?.addEventListener("click", () => { agendaProWeekAnchor = agendaProStartOfWeek(new Date()); renderSection("agenda"); });
+  document.getElementById("agendaProAnchorDate")?.addEventListener("change", event => { agendaProWeekAnchor = agendaProStartOfWeek(event.target.value); renderSection("agenda"); });
+  ["agendaProPatientFilter", "agendaProKindFilter", "agendaProStatusFilter"].forEach(id => document.getElementById(id)?.addEventListener("change", agendaProRenderWeek));
+  document.getElementById("agendaProSearch")?.addEventListener("input", agendaProRenderWeek);
+  document.getElementById("agendaProIntelligenceMount")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-agenda-intel-filter]");
+    if (!button) return;
+    const filter = button.dataset.agendaIntelFilter;
+    if (filter === "without-time") document.getElementById("agendaProUnassigned")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    else if (filter === "late") { const status = document.getElementById("agendaProStatusFilter"); if (status) status.value = "late"; agendaProRenderWeek(); }
+    else {
+      const selector = filter === "conflict" ? ".agenda-pro-session.has-conflict" : filter === "priority" ? ".agenda-pro-session.agenda-pro-priority-high" : ".agenda-pro-day.agenda-pro-load-high";
+      const target = document.querySelector(selector);
+      target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      target?.classList.add("agenda-pro-intel-focus");
+      window.setTimeout(() => target?.classList.remove("agenda-pro-intel-focus"), 1200);
+    }
+  });
+  const root = document.getElementById("agendaProRoot");
+
+  root?.addEventListener("click", event => {
+    if (Date.now() < agendaProSuppressClickUntil) return;
+    const button = event.target.closest("[data-agenda-edit]");
+    if (button) { agendaProOpenEditor(button.dataset.agendaEdit); return; }
+    const card = event.target.closest("[data-agenda-session-id]");
+    if (card) agendaProOpenEditor(card.dataset.agendaSessionId);
+  });
+
+  root?.addEventListener("dragstart", event => {
+    const card = event.target.closest("[data-agenda-session-id]");
+    if (!card) return;
+    agendaProDraggedSessionId = card.dataset.agendaSessionId;
+    card.classList.add("is-dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer?.setData("text/plain", agendaProDraggedSessionId);
+  });
+  root?.addEventListener("dragend", event => {
+    event.target.closest("[data-agenda-session-id]")?.classList.remove("is-dragging");
+    agendaProDraggedSessionId = null;
+    agendaProClearDropTargets();
+  });
+  root?.addEventListener("dragover", event => {
+    const target = event.target.closest("[data-agenda-drop-time],[data-agenda-drop-date]");
+    if (!target) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    agendaProClearDropTargets();
+    target.classList.add("is-drop-target");
+    target.closest(".agenda-pro-day")?.classList.add("is-drop-target");
+  });
+  root?.addEventListener("dragleave", event => {
+    const target = event.target.closest("[data-agenda-drop-time],[data-agenda-drop-date]");
+    if (target && !target.contains(event.relatedTarget)) target.classList.remove("is-drop-target");
+  });
+  root?.addEventListener("drop", event => {
+    const target = event.target.closest("[data-agenda-drop-time],[data-agenda-drop-date]");
+    if (!target) return;
+    event.preventDefault();
+    const id = agendaProDraggedSessionId || event.dataTransfer?.getData("text/plain");
+    const date = target.dataset.agendaDropDate || target.closest("[data-agenda-drop-date]")?.dataset.agendaDropDate;
+    const time = target.dataset.agendaDropTime || "";
+    const index = target.dataset.agendaDropIndex ?? null;
+    agendaProClearDropTargets();
+    agendaProMoveSession(id, date, time, index);
+  });
+
+  // PWA/móvil: pulsación larga y arrastre táctil.
+  root?.addEventListener("pointerdown", event => {
+    if (event.pointerType === "mouse" || event.target.closest("button,input,select,textarea,a")) return;
+    const card = event.target.closest("[data-agenda-session-id]");
+    if (!card) return;
+    const state = { id: card.dataset.agendaSessionId, card, pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false, target: null };
+    state.timer = window.setTimeout(() => {
+      state.active = true;
+      agendaProTouchDrag = state;
+      card.classList.add("is-dragging", "is-touch-dragging");
+      navigator.vibrate?.(18);
+      try { card.setPointerCapture(event.pointerId); } catch (_) {}
+    }, 420);
+    agendaProTouchDrag = state;
+  });
+  root?.addEventListener("pointermove", event => {
+    const state = agendaProTouchDrag;
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (!state.active) {
+      if (Math.hypot(event.clientX - state.x, event.clientY - state.y) > 10) {
+        window.clearTimeout(state.timer);
+        agendaProTouchDrag = null;
+      }
+      return;
+    }
+    event.preventDefault();
+    const target = agendaProTargetFromPoint(event.clientX, event.clientY);
+    agendaProClearDropTargets();
+    if (target) {
+      target.classList.add("is-drop-target");
+      target.closest(".agenda-pro-day")?.classList.add("is-drop-target");
+    }
+    state.target = target;
+  }, { passive: false });
+  const finishTouchDrag = event => {
+    const state = agendaProTouchDrag;
+    if (!state || state.pointerId !== event.pointerId) return;
+    window.clearTimeout(state.timer);
+    agendaProTouchDrag = null;
+    state.card?.classList.remove("is-dragging", "is-touch-dragging");
+    if (!state.active) return;
+    agendaProSuppressClickUntil = Date.now() + 500;
+    const target = state.target || agendaProTargetFromPoint(event.clientX, event.clientY);
+    agendaProClearDropTargets();
+    if (!target) return;
+    const date = target.dataset.agendaDropDate || target.closest("[data-agenda-drop-date]")?.dataset.agendaDropDate;
+    const time = target.dataset.agendaDropTime || "";
+    const index = target.dataset.agendaDropIndex ?? null;
+    agendaProMoveSession(state.id, date, time, index);
+  };
+  root?.addEventListener("pointerup", finishTouchDrag);
+  root?.addEventListener("pointercancel", finishTouchDrag);
+}
+
 const sections = {
   inicio: { title: "Inicio", html: () => pmAdminDashboardHTML(), afterRender: pmBindAdminDashboard },
   paciente: { title: "Paciente", html: patientHTML, afterRender: bindPatientForm },
@@ -6630,6 +7601,7 @@ const sections = {
   },
   historial: { title: "Historial", html: historialHTML, afterRender: bindHistoryForm },
   archivos: { title: "Archivos", html: archivosHTML, afterRender: bindFilesForm },
+  agenda: { title: "Agenda PRO", html: () => agendaProHTML(), afterRender: bindAgendaPro },
   sesiones: {
     title: "Creación sesiones",
     html: `
@@ -6672,6 +7644,15 @@ const sections = {
             </div>
             <label for="sessionDate">Fecha</label>
             <input id="sessionDate" type="date" required />
+            <label for="sessionKind">Tipo de sesión</label>
+            <select id="sessionKind" class="session-kind-select">
+              <option value="gym">🏋️ Gimnasio</option>
+              <option value="field">🏟️ Campo</option>
+              <option value="recovery">🧘 Recuperación</option>
+              <option value="testing">📊 Test / Valoración</option>
+              <option value="competition">🏆 Competición</option>
+              <option value="other">🎯 Otra</option>
+            </select>
           </div>
         </div>
 
@@ -7114,7 +8095,9 @@ function pmNavigateAdmin(key, options = {}) {
 function renderSection(key) {
   const section = sections[key] || sections.inicio;
   const isHome = key === "inicio";
+  const isAgenda = key === "agenda";
   document.body.classList.toggle("admin-home-active", isHome);
+  document.body.classList.toggle("admin-agenda-active", isAgenda);
   sectionTitle.textContent = section.title;
   contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
   if (!isHome) pmSetDashboardKpis(key);

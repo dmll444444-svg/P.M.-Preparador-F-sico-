@@ -129,7 +129,7 @@ function renderClientSessions() {
       ${mySessions.map(session => `
         <article class="session-card">
           <div class="session-card-header">
-            <span class="session-badge">Sesión nº ${session.numero}</span>
+            <span class="session-badge">${getClientSessionKind(session).icon} Sesión ${getClientSessionDisplayNumber(session)}</span>
             <span class="session-date">${getClientMicroLabel(session)}</span>
           </div>
 
@@ -495,7 +495,7 @@ function renderClientLatestSessions() {
     <div class="client-latest-list">
       ${mySessions.map(session => `
         <article class="client-latest-card">
-          <span class="session-badge">Sesión nº ${session.numero}</span>
+          <span class="session-badge">${getClientSessionKind(session).icon} Sesión ${getClientSessionDisplayNumber(session)}</span>
           <strong>${getClientMicroLabel(session)}</strong>
           <p>${getClientSessionSeries(session)} series · ${getClientSessionExercises(session).length} ejercicios · ${Math.round(getClientSessionTonnage(session))} Kg</p>
         </article>
@@ -667,6 +667,23 @@ function getClientComputedMicro(session) {
   return dates.indexOf(session.fecha) + 1;
 }
 
+function getClientSessionDisplayNumber(session = {}) {
+  const explicit = String(session.displaySessionNumber || "").trim();
+  if (explicit) return explicit;
+  const base = Number(session.sessionBaseNumber || session.microciclo || session.numero || 0);
+  const order = Number(session.subsessionOrder || session.dayOrder || 1);
+  return base > 0 ? `${base}.${Math.max(1, order)}` : String(session.numero || "-");
+}
+
+function getClientSessionKind(session = {}) {
+  const kinds = {
+    gym: { icon: "🏋️", label: "Gimnasio" }, field: { icon: "🏟️", label: "Campo" },
+    recovery: { icon: "🧘", label: "Recuperación" }, testing: { icon: "📊", label: "Test / Valoración" },
+    competition: { icon: "🏆", label: "Competición" }, other: { icon: "🎯", label: "Otra" }
+  };
+  return kinds[String(session.sessionKind || session.sessionType || "gym").toLowerCase()] || kinds.other;
+}
+
 function getClientMicroLabel(session) {
   const micro = getClientComputedMicro(session);
   return `Micro ${micro} · ${session.fecha || ""}`;
@@ -747,7 +764,10 @@ function getClientPendingSessions() {
       const dateA = a.fecha || "";
       const dateB = b.fecha || "";
       if (dateA !== dateB) return dateA.localeCompare(dateB);
-      return Number(a.numero || 0) - Number(b.numero || 0);
+      const microA = Number(a.microciclo || a.sessionBaseNumber || 0);
+      const microB = Number(b.microciclo || b.sessionBaseNumber || 0);
+      if (microA !== microB) return microA - microB;
+      return Number(a.subsessionOrder || a.dayOrder || 1) - Number(b.subsessionOrder || b.dayOrder || 1);
     });
 }
 
@@ -757,7 +777,7 @@ function completeClientSession(sessionId) {
 
   if (isSessionCompleted(sessionId)) return;
 
-  const confirmed = confirm(`¿Marcar la sesión nº ${session.numero} como terminada?`);
+  const confirmed = confirm(`¿Marcar la sesión ${getClientSessionDisplayNumber(session)} como terminada?`);
   if (!confirmed) return;
 
   completedSessions.push({
@@ -969,7 +989,7 @@ function renderClientRadarProForSession(session) {
       <div class="module-panel-header">
         <div>
           <p class="eyebrow">Radar PRO</p>
-          <h3>Foco de la sesión nº ${session.numero}</h3>
+          <h3>Foco de la sesión ${getClientSessionDisplayNumber(session)}</h3>
         </div>
       </div>
 
@@ -1039,11 +1059,12 @@ function renderNextSession() {
     ${renderClientRadarProForSession(nextSession)}
     <article class="client-next-session-card">
       <div class="session-card-header">
-        <span class="session-badge">Sesión nº ${nextSession.numero}</span>
+        <span class="session-badge">${getClientSessionKind(nextSession).icon} Sesión ${getClientSessionDisplayNumber(nextSession)}</span>
         <span class="session-date">${getClientMicroLabel(nextSession)}</span>
       </div>
 
       <h2>Sesión próxima</h2>
+      <p class="client-session-kind">${getClientSessionKind(nextSession).icon} ${getClientSessionKind(nextSession).label}</p>
       <p>Realiza esta sesión y al terminar pulsa el botón para guardarla en Mis sesiones y actualizar tus gráficas.</p>
 
       <div class="client-next-summary">
