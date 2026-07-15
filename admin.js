@@ -1720,7 +1720,7 @@ function getSelectedPatientBySearch(value) {
 }
 
 
-const PPF_NCI_VERSION = 4;
+const PPF_NCI_VERSION = 5;
 
 const PPF_SESSION_KINDS = {
   gym: { icon: "🏋️", label: "Gimnasio" },
@@ -1768,6 +1768,15 @@ function nciSessionCreatedAt(session = {}) {
   return Date.parse(session.createdAt || session.updatedAt || "") || 0;
 }
 
+function nciSessionTime(session = {}) {
+  const value = String(session.scheduledTime || session.time || "").trim();
+  return /^\d{2}:\d{2}$/.test(value) ? value : "23:59";
+}
+
+function nciMicroSequenceOrder(session = {}) {
+  return Number(session.microSequenceOrder || session.subsessionOrder || session.dayOrder || 0);
+}
+
 function nciCompletedSessionIds() {
   let completed = [];
   try { completed = JSON.parse(localStorage.getItem("completedSessions") || "[]"); } catch (_) {}
@@ -1784,11 +1793,14 @@ function nciChronologicalCompare(a = {}, b = {}) {
   const dateCompare = nciSessionDate(a).localeCompare(nciSessionDate(b));
   if (dateCompare !== 0) return dateCompare;
 
-  const microCompare = nciSessionMicro(a) - nciSessionMicro(b);
-  if (microCompare !== 0) return microCompare;
+  const timeCompare = nciSessionTime(a).localeCompare(nciSessionTime(b));
+  if (timeCompare !== 0) return timeCompare;
 
-  const orderCompare = Number(a.dayOrder || 0) - Number(b.dayOrder || 0);
-  if (orderCompare !== 0) return orderCompare;
+  const agendaCompare = Number(a.agendaOrder || 0) - Number(b.agendaOrder || 0);
+  if (agendaCompare !== 0) return agendaCompare;
+
+  const currentOrderCompare = nciMicroSequenceOrder(a) - nciMicroSequenceOrder(b);
+  if (currentOrderCompare !== 0) return currentOrderCompare;
 
   const createdCompare = nciSessionCreatedAt(a) - nciSessionCreatedAt(b);
   if (createdCompare !== 0) return createdCompare;
@@ -1823,47 +1835,49 @@ function nciUpdateNotificationNumbers(changedSessions = []) {
   return changed;
 }
 
-function nciRenumberPatientSessions(patientNickname, { touchUpdatedAt = true } = {}) {
+function nciRenumberPatientSessions(patientNickname, { touchUpdatedAt = true, rebuildOrder = false } = {}) {
   const patientKey = nciNickname(patientNickname);
   if (!patientKey) return { changed: false, notificationsChanged: false, sessions: [] };
 
-  const completedIds = nciCompletedSessionIds();
   const patientSessions = sessions.filter(session => nciSessionPatient(session) === patientKey);
-  const pending = patientSessions.filter(session => !nciIsCompleted(session, completedIds));
 
-  // Cada grupo fecha + microciclo comparte número base. El orden manual
-  // (dayOrder/subsessionOrder) decide qué sesión será .1, .2, .3...
+  // NCI v2: cada microciclo tiene una única secuencia continua, aunque sus
+  // sesiones estén repartidas en varios días. Ejemplo: 15.1, 15.2, 15.3...
   const groups = new Map();
-  pending.forEach(session => {
-    const key = `${nciSessionDate(session)}|${nciSessionMicro(session)}`;
+  patientSessions.forEach(session => {
+    const micro = nciSessionMicro(session) || Number(session.sessionBaseNumber || session.numero || 0) || 1;
+    const key = String(micro);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(session);
   });
 
   const changedSessions = [];
   const nowIso = new Date().toISOString();
-  groups.forEach(group => {
-    group.sort((a, b) => {
-      const orderA = Number(a.subsessionOrder || a.dayOrder || 0);
-      const orderB = Number(b.subsessionOrder || b.dayOrder || 0);
-      if (orderA > 0 && orderB > 0 && orderA !== orderB) return orderA - orderB;
-      const created = nciSessionCreatedAt(a) - nciSessionCreatedAt(b);
-      if (created !== 0) return created;
-      return String(a.id || "").localeCompare(String(b.id || ""));
-    });
+  groups.forEach((group, microKey) => {
+    const mustRebuild = rebuildOrder || group.some(session =>
+      Number(session.numberingVersion || 0) < PPF_NCI_VERSION ||
+      !Number.isFinite(Number(session.microSequenceOrder)) ||
+      Number(session.microSequenceOrder) <= 0
+    );
+
+    group.sort(mustRebuild
+      ? nciChronologicalCompare
+      : (a, b) => nciMicroSequenceOrder(a) - nciMicroSequenceOrder(b) || nciChronologicalCompare(a, b));
 
     group.forEach((session, index) => {
-      const base = nciSessionMicro(session) || Number(session.sessionBaseNumber || session.numero || 0) || 1;
+      const base = Number(microKey) || 1;
       const order = index + 1;
       const display = `${base}.${order}`;
       const didChange = Number(session.sessionBaseNumber || 0) !== base ||
         Number(session.subsessionOrder || session.dayOrder || 0) !== order ||
+        Number(session.microSequenceOrder || 0) !== order ||
         String(session.displaySessionNumber || "") !== display ||
         Number(session.numberingVersion || 0) !== PPF_NCI_VERSION;
       if (!didChange) return;
       session.sessionBaseNumber = base;
       session.subsessionOrder = order;
       session.dayOrder = order;
+      session.microSequenceOrder = order;
       session.displaySessionNumber = display;
       session.displayOrder = order;
       session.numberingVersion = PPF_NCI_VERSION;
@@ -1896,22 +1910,23 @@ function nciPreviewSessionNumber(patientNickname, dateValue, microValue, editing
   const patientKey = nciNickname(patientNickname);
   const base = Number(microValue || 0);
   if (!patientKey || !dateValue || !base) return "-";
-  const completedIds = nciCompletedSessionIds();
-  const sameGroup = sessions
+  const sameMicro = sessions
     .filter(session => nciSessionPatient(session) === patientKey)
-    .filter(session => !nciIsCompleted(session, completedIds))
     .filter(session => String(session.id) !== String(editingId || ""))
-    .filter(session => nciSessionDate(session) === String(dateValue) && nciSessionMicro(session) === base)
+    .filter(session => nciSessionMicro(session) === base)
     .slice()
-    .sort((a, b) => Number(a.subsessionOrder || a.dayOrder || 0) - Number(b.subsessionOrder || b.dayOrder || 0) || nciSessionCreatedAt(a) - nciSessionCreatedAt(b));
+    .sort((a, b) => nciMicroSequenceOrder(a) - nciMicroSequenceOrder(b) || nciChronologicalCompare(a, b));
 
   if (editingId) {
     const current = sessions.find(item => String(item.id) === String(editingId));
-    if (current && nciSessionDate(current) === String(dateValue) && nciSessionMicro(current) === base) {
+    if (current && nciSessionMicro(current) === base) {
       return `${base}.${Number(current.subsessionOrder || current.dayOrder || 1)}`;
     }
   }
-  return `${base}.${sameGroup.length + 1}`;
+
+  const virtual = { fecha: dateValue, scheduledTime: "23:59", createdAt: new Date().toISOString() };
+  const position = sameMicro.filter(item => nciChronologicalCompare(item, virtual) <= 0).length + 1;
+  return `${base}.${position}`;
 }
 
 function getNextSessionNumber(patientNickname, dateValue = "", microValue = 0) {
@@ -1981,22 +1996,26 @@ async function moveSessionWithinSubsessions(sessionId, direction) {
   if (!session || nciIsCompleted(session)) return;
   const group = sessions
     .filter(item => nciSessionPatient(item) === nciSessionPatient(session))
-    .filter(item => !nciIsCompleted(item))
-    .filter(item => nciSessionDate(item) === nciSessionDate(session) && nciSessionMicro(item) === nciSessionMicro(session))
-    .sort((a, b) => Number(a.subsessionOrder || a.dayOrder || 0) - Number(b.subsessionOrder || b.dayOrder || 0) || nciSessionCreatedAt(a) - nciSessionCreatedAt(b));
+    .filter(item => nciSessionMicro(item) === nciSessionMicro(session))
+    .sort((a, b) => nciMicroSequenceOrder(a) - nciMicroSequenceOrder(b) || nciChronologicalCompare(a, b));
   const index = group.findIndex(item => String(item.id) === String(sessionId));
-  // El grupo interno está en orden cronológico ascendente (.1, .2, .3),
-  // pero el historial se muestra descendente (.3, .2, .1).
-  // Por eso subir visualmente (direction = -1) significa aumentar la subsesión.
+  // El historial es descendente (.3, .2, .1): subir visualmente aumenta la
+  // posición oficial; bajar la reduce.
   const target = index - Number(direction || 0);
   if (index < 0 || target < 0 || target >= group.length) return;
-  group.forEach((item, idx) => { item.dayOrder = idx + 1; item.subsessionOrder = idx + 1; });
-  const temp = group[index].dayOrder;
-  group[index].dayOrder = group[target].dayOrder;
-  group[index].subsessionOrder = group[target].subsessionOrder;
-  group[target].dayOrder = temp;
-  group[target].subsessionOrder = temp;
-  const result = nciRenumberPatientSessions(session.patientNickname, { touchUpdatedAt: true });
+  group.forEach((item, idx) => {
+    item.microSequenceOrder = idx + 1;
+    item.dayOrder = idx + 1;
+    item.subsessionOrder = idx + 1;
+  });
+  const sourceOrder = group[index].microSequenceOrder;
+  group[index].microSequenceOrder = group[target].microSequenceOrder;
+  group[index].dayOrder = group[index].microSequenceOrder;
+  group[index].subsessionOrder = group[index].microSequenceOrder;
+  group[target].microSequenceOrder = sourceOrder;
+  group[target].dayOrder = sourceOrder;
+  group[target].subsessionOrder = sourceOrder;
+  const result = nciRenumberPatientSessions(session.patientNickname, { touchUpdatedAt: true, rebuildOrder: false });
   localStorage.setItem("sessions", JSON.stringify(sessions));
   if (window.PPF_SUPABASE?.pushKey) {
     await window.PPF_SUPABASE.pushKey("sessions");
@@ -2016,19 +2035,18 @@ async function moveSessionWithinSubsessions(sessionId, direction) {
   window.dispatchEvent(new CustomEvent("ppf:sessions-reordered", {
     detail: {
       patientNickname: session.patientNickname,
-      date: nciSessionDate(session),
       microcycle: nciSessionMicro(session)
     }
   }));
 }
+
 window.moveSessionWithinSubsessions = moveSessionWithinSubsessions;
 
 function nciSessionMoveState(session = {}) {
   if (!session || nciIsCompleted(session)) return { canMoveUp: false, canMoveDown: false, position: 1, total: 1 };
   const group = sessions
     .filter(item => nciSessionPatient(item) === nciSessionPatient(session))
-    .filter(item => !nciIsCompleted(item))
-    .filter(item => nciSessionDate(item) === nciSessionDate(session) && nciSessionMicro(item) === nciSessionMicro(session));
+    .filter(item => nciSessionMicro(item) === nciSessionMicro(session));
   const position = Math.max(1, Number(session.subsessionOrder || session.dayOrder || 1));
   const total = Math.max(1, group.length);
   // El historial es descendente: la subsesión más alta está arriba.
@@ -2584,7 +2602,7 @@ function bindSessionsForm() {
 
   setTodayIfEmpty("sessionDate");
   if (Number(localStorage.getItem("ppfNciVersion") || 0) < PPF_NCI_VERSION) {
-    const migration = nciRenumberAllSessions({ touchUpdatedAt: true });
+    const migration = nciRenumberAllSessions({ touchUpdatedAt: true, rebuildOrder: true });
     localStorage.setItem("ppfNciVersion", String(PPF_NCI_VERSION));
     if (migration.changed && window.PPF_SUPABASE?.pushKey) {
       window.PPF_SUPABASE.pushKey("sessions").catch(error => console.warn("No se pudo sincronizar la migración NCI:", error));
@@ -2811,7 +2829,7 @@ function bindSessionsForm() {
       sessions.push(storedPayload);
     }
 
-    const renumberResult = nciRenumberPatientSessions(storedPayload.patientNickname, { touchUpdatedAt: true });
+    const renumberResult = nciRenumberPatientSessions(storedPayload.patientNickname, { touchUpdatedAt: true, rebuildOrder: true });
     const finalPayload = sessions.find(item => String(item.id) === String(storedPayload.id)) || storedPayload;
 
     window.sessions = sessions;
@@ -6867,7 +6885,7 @@ async function agendaProMoveSession(sessionId, targetDate, targetTime = "", targ
   if (targetIndex !== null && Number.isFinite(Number(targetIndex))) session.agendaOrder = Number(targetIndex);
   session.reprogrammedAt = new Date().toISOString();
   session.updatedAt = session.reprogrammedAt;
-  nciRenumberPatientSessions(previousPatient, { touchUpdatedAt: true });
+  nciRenumberPatientSessions(previousPatient, { touchUpdatedAt: true, rebuildOrder: true });
   persistSessionsOnly();
   let synced = true;
   try {
@@ -7133,8 +7151,8 @@ function agendaWorkspaceRender() {
       <article><span>📈</span><div><small>Cumplimiento</small><strong>${compliance}%</strong></div></article>
     </section>
     <section class="agenda-workspace-focus">
-      <div><p class="eyebrow">PRÓXIMA SESIÓN</p>${next?`<h3>${nciSessionKindMeta(next).icon} Sesión ${agendaProEscape(nciDisplayNumber(next))}</h3><p>${agendaProEscape(next.fecha || "Sin fecha")} · ${agendaProEscape(next.scheduledTime || "Sin hora")} · Micro ${agendaProEscape(nciSessionMicro(next)||"-")}</p>`:`<h3>Sin sesiones pendientes</h3><p>El cliente no tiene una próxima sesión programada.</p>`}</div>
-      <div class="agenda-workspace-flags"><span>${cancelled.length} canceladas</span><span>${noTime} sin hora</span>${next?`<button type="button" data-agenda-workspace-session="${agendaProEscape(next.id)}">Abrir próxima</button>`:""}</div>
+      <div class="agenda-workspace-next-copy"><p class="eyebrow">PRÓXIMA SESIÓN</p>${next?`<h3>${nciSessionKindMeta(next).icon} Sesión ${agendaProEscape(nciDisplayNumber(next))}</h3><p>${agendaProEscape(next.fecha || "Sin fecha")} · ${agendaProEscape(next.scheduledTime || "Sin hora")} · Micro ${agendaProEscape(nciSessionMicro(next)||"-")}</p><button class="agenda-workspace-open-next" type="button" data-agenda-workspace-session="${agendaProEscape(next.id)}"><span>↗</span> Abrir sesión</button>`:`<h3>Sin sesiones pendientes</h3><p>El cliente no tiene una próxima sesión programada.</p>`}</div>
+      <div class="agenda-workspace-flags"><span>${cancelled.length} canceladas</span><span>${noTime} sin hora</span></div>
     </section>
     <section class="agenda-workspace-body"><div class="agenda-workspace-title"><div><p class="eyebrow">LÍNEA TEMPORAL</p><h3>Plan completo del cliente</h3></div><span>${all.length} registros</span></div>${timeline || `<div class="agenda-workspace-empty"><span>📭</span><h3>Sin sesiones</h3><p>Crea la primera sesión para este cliente.</p></div>`}</section>`;
   document.getElementById("agendaWorkspacePatient")?.addEventListener("change", event => { agendaProWorkspacePatient = event.target.value; agendaWorkspaceRender(); });
@@ -7183,15 +7201,27 @@ function agendaProRenderWeek() {
     </article>`;
   }).join("");
 
-  const todaySessions = filtered.filter(session => String(session.fecha || "") === todayIso);
-  const completedToday = todaySessions.filter(session => agendaProStatus(session) === "completed").length;
-  const progress = todaySessions.length ? Math.round((completedToday / todaySessions.length) * 100) : 0;
+  // El resumen corresponde al día visible: hoy si pertenece a la semana abierta;
+  // en semanas pasadas/futuras utiliza el día seleccionado como ancla.
+  const visibleDays = agendaProWeekDays();
+  const focusIso = visibleDays.some(day => agendaProIsoDate(day) === todayIso)
+    ? todayIso
+    : agendaProIsoDate(agendaProWeekAnchor);
+  const focusSessions = filtered.filter(session => String(session.fecha || "") === focusIso);
+  const completedFocus = focusSessions.filter(session => agendaProStatus(session) === "completed").length;
+  const progress = focusSessions.length ? Math.round((completedFocus / focusSessions.length) * 100) : 0;
   const todayBox = document.getElementById("agendaProTodayProgress");
   if (todayBox) {
-    const scheduledToday = todaySessions.filter(session => agendaProStatus(session) === "scheduled").length;
-    const cancelledToday = todaySessions.filter(session => agendaProStatus(session) === "cancelled").length;
-    const noTimeToday = todaySessions.filter(session => !String(session.scheduledTime || "").trim()).length;
-    todayBox.innerHTML = `<div><small>OBJETIVO DEL DÍA</small><strong>${completedToday} de ${todaySessions.length} sesiones completadas</strong><span>${scheduledToday} preparadas · ${cancelledToday} canceladas · ${noTimeToday} sin hora</span></div><div class="agenda-pro-progress"><i style="width:${progress}%"></i></div><b>${progress}%</b>`;
+    if (!focusSessions.length) {
+      todayBox.classList.add("is-empty");
+      todayBox.innerHTML = `<div><small>OBJETIVO DEL DÍA</small><strong>Agenda libre</strong><span>No hay sesiones programadas para este día.</span></div>`;
+    } else {
+      todayBox.classList.remove("is-empty");
+      const scheduledFocus = focusSessions.filter(session => agendaProStatus(session) === "scheduled").length;
+      const cancelledFocus = focusSessions.filter(session => agendaProStatus(session) === "cancelled").length;
+      const noTimeFocus = focusSessions.filter(session => !String(session.scheduledTime || "").trim()).length;
+      todayBox.innerHTML = `<div><small>OBJETIVO DEL DÍA</small><strong>${completedFocus} de ${focusSessions.length} sesiones completadas</strong><span>${scheduledFocus} preparadas · ${cancelledFocus} canceladas · ${noTimeFocus} sin hora</span></div><div class="agenda-pro-progress"><i style="width:${progress}%"></i></div><b>${progress}%</b>`;
+    }
   }
 
   const withoutTime = filtered.filter(session => session.fecha && !String(session.scheduledTime || "").trim()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || agendaProSort(a, b));
@@ -7378,9 +7408,10 @@ async function agendaProDuplicateSession(sessionId) {
   clone.completedAt = null;
   clone.finishedAt = null;
   clone.lastCompletedAt = null;
-  clone.subsessionOrder = Number(source.subsessionOrder || source.dayOrder || 1) + 0.5;
-  clone.dayOrder = clone.subsessionOrder;
-  clone.displayOrder = clone.subsessionOrder;
+  clone.microSequenceOrder = Number(source.microSequenceOrder || source.subsessionOrder || source.dayOrder || 1) + 0.5;
+  clone.subsessionOrder = clone.microSequenceOrder;
+  clone.dayOrder = clone.microSequenceOrder;
+  clone.displayOrder = clone.microSequenceOrder;
   clone.agendaHistory = [{ type: "created", label: "Sesión duplicada desde Agenda", at: now, by: currentUser?.nickname || "admin" }];
 
   sessions.push(clone);
@@ -7441,7 +7472,7 @@ async function agendaProSaveEditor(event) {
   session.agendaNotes = document.getElementById("agendaProNotes")?.value?.trim() || "";
   agendaProAddHistory(session, "updated", "Agenda actualizada");
   session.updatedAt = new Date().toISOString();
-  nciRenumberPatientSessions(oldPatient);
+  nciRenumberPatientSessions(oldPatient, { touchUpdatedAt: true, rebuildOrder: true });
   persistSessionsOnly();
   let synced = true;
   try {
