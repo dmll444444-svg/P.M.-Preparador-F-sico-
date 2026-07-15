@@ -7135,6 +7135,41 @@ function agendaProWeekNumber(date = new Date()) {
   return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
 }
 
+
+function agendaProDelayedSessions() {
+  return sessions
+    .filter(session => agendaProStatus(session) === "late")
+    .sort((a, b) => {
+      const stamp = agendaProSessionDateTime(a) - agendaProSessionDateTime(b);
+      if (stamp !== 0) return stamp;
+      return String(agendaProPatient(a).nombre || "").localeCompare(String(agendaProPatient(b).nombre || ""), "es");
+    });
+}
+
+function agendaProDelayedKpiHTML(delayed = []) {
+  const count = delayed.length;
+  const visible = delayed.slice(0, 8);
+  const tone = count === 0 ? "is-clear" : count <= 3 ? "is-warning" : "is-danger";
+  const list = count
+    ? visible.map(session => {
+        const patient = agendaProPatient(session);
+        const date = session.fecha
+          ? new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${session.fecha}T12:00:00`))
+          : "Sin fecha";
+        return `<button type="button" class="agenda-pro-delayed-item" data-agenda-delayed-session="${agendaProEscape(session.id)}"><span><strong>${agendaProEscape(patient.nombre || "Paciente")}</strong><small>Sesión ${agendaProEscape(nciDisplayNumber(session))} · ${agendaProEscape(date)}</small></span><b>›</b></button>`;
+      }).join("") + (count > visible.length ? `<p class="agenda-pro-delayed-more">＋ ${count - visible.length} más</p>` : "")
+    : `<div class="agenda-pro-delayed-empty"><span>✅</span><strong>Todo al día</strong><small>No hay sesiones retrasadas.</small></div>`;
+
+  return `<article class="agenda-pro-delayed-kpi ${tone}" id="agendaProDelayedKpi" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
+    <span>⏰</span><div><small>Retrasadas</small><strong>${count}</strong></div>
+    <div class="agenda-pro-delayed-tooltip" role="dialog" aria-label="Listado de sesiones retrasadas">
+      <header><div><small>REVISIÓN RÁPIDA</small><strong>Sesiones retrasadas</strong></div><em>${count}</em></header>
+      <div class="agenda-pro-delayed-list">${list}</div>
+      ${count ? `<footer>Selecciona una sesión para abrir el Inspector MASTER.</footer>` : ""}
+    </div>
+  </article>`;
+}
+
 function agendaProHTML() {
   const weekDays = agendaProWeekDays();
   const weekStart = agendaProIsoDate(weekDays[0]);
@@ -7149,6 +7184,7 @@ function agendaProHTML() {
   });
   const doubleCount = [...doubleGroups.values()].filter(count => count > 1).length;
   const withoutTime = weekSessions.filter(session => session.fecha && agendaProNeedsTime(session) && !String(session.scheduledTime || "").trim()).length;
+  const delayedSessions = agendaProDelayedSessions();
   const monthLabel = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short" }).format(weekDays[0]);
   const endLabel = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", year: "numeric" }).format(weekDays[6]);
   const weekNumber = agendaProWeekNumber(weekDays[0]);
@@ -7164,6 +7200,7 @@ function agendaProHTML() {
         <article><span>👥</span><div><small>Clientes</small><strong>${clientKeys.size}</strong></div></article>
         <article><span>⇄</span><div><small>Dobles</small><strong>${doubleCount}</strong></div></article>
         <article><span>⏱️</span><div><small>Sin hora</small><strong>${withoutTime}</strong></div></article>
+        ${agendaProDelayedKpiHTML(delayedSessions)}
       </section>
 
       <section class="agenda-pro-view-switch" aria-label="Modo de Agenda PRO">
@@ -7634,10 +7671,38 @@ function bindAgendaPro() {
 
   root?.addEventListener("click", event => {
     if (Date.now() < agendaProSuppressClickUntil) return;
+    const delayedItem = event.target.closest("[data-agenda-delayed-session]");
+    if (delayedItem) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById("agendaProDelayedKpi")?.classList.remove("is-open");
+      agendaProOpenEditor(delayedItem.dataset.agendaDelayedSession);
+      return;
+    }
+    const delayedKpi = event.target.closest("#agendaProDelayedKpi");
+    if (delayedKpi) {
+      event.preventDefault();
+      const open = delayedKpi.classList.toggle("is-open");
+      delayedKpi.setAttribute("aria-expanded", String(open));
+      return;
+    }
+    const openDelayed = document.getElementById("agendaProDelayedKpi.is-open");
+    if (openDelayed) {
+      openDelayed.classList.remove("is-open");
+      openDelayed.setAttribute("aria-expanded", "false");
+    }
     const button = event.target.closest("[data-agenda-edit]");
     if (button) { agendaProOpenEditor(button.dataset.agendaEdit); return; }
     const card = event.target.closest("[data-agenda-session-id]");
     if (card) agendaProOpenEditor(card.dataset.agendaSessionId);
+  });
+
+  root?.addEventListener("keydown", event => {
+    const kpi = event.target.closest?.("#agendaProDelayedKpi");
+    if (!kpi || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    const open = kpi.classList.toggle("is-open");
+    kpi.setAttribute("aria-expanded", String(open));
   });
 
   root?.addEventListener("dragstart", event => {

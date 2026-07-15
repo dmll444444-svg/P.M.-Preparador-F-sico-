@@ -6222,3 +6222,33 @@ body.admin-agenda-active .admin-header{margin-bottom:10px}
 .agenda-pro-flexible{color:#5eead4!important;background:rgba(13,148,136,.16)!important;border:1px solid rgba(45,212,191,.28);border-radius:999px;padding:3px 7px}
 #agendaProTimeLabel.is-disabled{opacity:.55}
 #agendaProTimeLabel.is-disabled input{cursor:not-allowed}
+
+/* Agenda PRO v4.3 · KPI de sesiones retrasadas */
+.agenda-pro-kpis-compact{grid-template-columns:repeat(5,minmax(0,1fr))}
+.agenda-pro-delayed-kpi{position:relative;cursor:pointer;outline:none;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+.agenda-pro-delayed-kpi:hover,.agenda-pro-delayed-kpi:focus-visible,.agenda-pro-delayed-kpi.is-open{transform:translateY(-1px);box-shadow:0 14px 30px rgba(0,0,0,.24)}
+.agenda-pro-delayed-kpi.is-clear{border-color:rgba(50,216,151,.28)}
+.agenda-pro-delayed-kpi.is-warning{border-color:rgba(245,158,11,.52)}
+.agenda-pro-delayed-kpi.is-danger{border-color:rgba(248,113,113,.58)}
+.agenda-pro-delayed-kpi.is-warning>span{background:rgba(245,158,11,.14)}
+.agenda-pro-delayed-kpi.is-danger>span{background:rgba(248,113,113,.14)}
+.agenda-pro-delayed-tooltip{position:absolute;z-index:80;top:calc(100% + 10px);right:0;width:min(390px,88vw);padding:12px;border:1px solid #29435b;border-radius:17px;background:linear-gradient(155deg,#102238,#081422);box-shadow:0 24px 60px rgba(0,0,0,.48);opacity:0;visibility:hidden;transform:translateY(-6px);pointer-events:none;transition:opacity .16s ease,transform .16s ease,visibility .16s ease;text-align:left}
+.agenda-pro-delayed-kpi:hover .agenda-pro-delayed-tooltip,.agenda-pro-delayed-kpi:focus-within .agenda-pro-delayed-tooltip,.agenda-pro-delayed-kpi.is-open .agenda-pro-delayed-tooltip{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto}
+.agenda-pro-delayed-tooltip:before{content:"";position:absolute;right:28px;top:-7px;width:12px;height:12px;border-left:1px solid #29435b;border-top:1px solid #29435b;background:#0f2135;transform:rotate(45deg)}
+.agenda-pro-delayed-tooltip header{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:3px 4px 10px;border-bottom:1px solid #21384e}
+.agenda-pro-delayed-tooltip header div{display:grid;gap:2px}
+.agenda-pro-delayed-tooltip header small{color:#69e5b2;font-size:.59rem;font-weight:900;letter-spacing:.08em}
+.agenda-pro-delayed-tooltip header strong{font-size:.9rem}
+.agenda-pro-delayed-tooltip header em{display:grid;place-items:center;min-width:31px;height:31px;border-radius:10px;background:rgba(248,113,113,.14);color:#fca5a5;font-size:.78rem;font-style:normal;font-weight:900}
+.agenda-pro-delayed-list{display:grid;gap:6px;max-height:310px;overflow:auto;padding-top:9px}
+.agenda-pro-delayed-item{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:51px;padding:9px 10px;border:1px solid #213a51;border-radius:12px;background:#0d1b2d;color:#eef8fb;text-align:left;transition:border-color .16s ease,background .16s ease}
+.agenda-pro-delayed-item:hover,.agenda-pro-delayed-item:focus-visible{border-color:#e99d25;background:#12243a}
+.agenda-pro-delayed-item span{display:grid;gap:3px;min-width:0}
+.agenda-pro-delayed-item strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem}
+.agenda-pro-delayed-item small{color:#8ea5b8;font-size:.64rem}
+.agenda-pro-delayed-item b{color:#f5b84c;font-size:1rem}
+.agenda-pro-delayed-more,.agenda-pro-delayed-tooltip footer{margin:7px 3px 0;color:#819aae;font-size:.63rem}
+.agenda-pro-delayed-empty{display:grid;justify-items:center;gap:4px;padding:19px 10px;color:#83a0b5;text-align:center}
+.agenda-pro-delayed-empty span{font-size:1.25rem}.agenda-pro-delayed-empty strong{color:#69e5b2;font-size:.8rem}.agenda-pro-delayed-empty small{font-size:.65rem}
+@media(max-width:1100px){.agenda-pro-kpis-compact{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:720px){.agenda-pro-kpis-compact{grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}.agenda-pro-delayed-tooltip{position:fixed;left:12px;right:12px;top:auto;bottom:calc(76px + env(safe-area-inset-bottom));width:auto;max-height:64vh}.agenda-pro-delayed-tooltip:before{display:none}}
