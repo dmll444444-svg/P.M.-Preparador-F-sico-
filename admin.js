@@ -1720,7 +1720,7 @@ function getSelectedPatientBySearch(value) {
 }
 
 
-const PPF_NCI_VERSION = 5;
+const PPF_NCI_VERSION = 6;
 
 const PPF_SESSION_KINDS = {
   gym: { icon: "🏋️", label: "Gimnasio" },
@@ -1904,6 +1904,82 @@ function nciRenumberAllSessions(options = {}) {
     localStorage.setItem("sessions", JSON.stringify(sessions));
   }
   return { changed, notificationsChanged };
+}
+
+async function nciRunHistoricalMigrationV21() {
+  const migrationKey = "ppfNciHistoricalMigrationVersion";
+  const targetVersion = 21;
+
+  try {
+    if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
+      try { await window.PPF_SUPABASE_READY; } catch (_) {}
+    }
+
+    // IMPORTANTE: admin.js se evalúa antes de que termine el pull inicial de
+    // Supabase. Recargamos el array local después del pull para migrar los
+    // registros reales de nube, no la instantánea previa del navegador.
+    let loaded = [];
+    try { loaded = JSON.parse(localStorage.getItem("sessions") || "[]"); } catch (_) {}
+    if (!Array.isArray(loaded)) loaded = [];
+    sessions = loaded;
+    window.sessions = sessions;
+
+    const alreadyMigrated = Number(localStorage.getItem(migrationKey) || 0) >= targetVersion;
+    const hasBrokenSequence = (() => {
+      const seen = new Map();
+      return sessions.some(session => {
+        const patient = nciSessionPatient(session);
+        const micro = nciSessionMicro(session);
+        if (!patient || !micro) return false;
+        const display = String(session.displaySessionNumber || nciDisplayNumber(session));
+        const key = `${patient}::${micro}::${display}`;
+        const duplicate = seen.has(key);
+        seen.set(key, true);
+        return duplicate || Number(session.numberingVersion || 0) < PPF_NCI_VERSION;
+      });
+    })();
+
+    if (alreadyMigrated && !hasBrokenSequence) return false;
+
+    const result = nciRenumberAllSessions({ touchUpdatedAt: true, rebuildOrder: true });
+    localStorage.setItem(migrationKey, String(targetVersion));
+    localStorage.setItem("ppfNciVersion", String(PPF_NCI_VERSION));
+
+    if (result.changed) {
+      if (window.PPF_SUPABASE?.pushValue) {
+        await window.PPF_SUPABASE.pushValue("sessions", sessions);
+      } else if (window.PPF_SUPABASE?.pushKey) {
+        await window.PPF_SUPABASE.pushKey("sessions");
+      }
+    }
+    if (result.notificationsChanged && window.PPF_SUPABASE?.pushKey) {
+      await window.PPF_SUPABASE.pushKey("notifications");
+    }
+
+    // Refresca la vista activa para que la renumeración se vea sin F5.
+    try {
+      const activeSection = document.querySelector(".nav-item.active")?.dataset?.section;
+      if (activeSection && typeof renderSection === "function") renderSection(activeSection);
+      else if (typeof renderSessionList === "function") renderSessionList();
+    } catch (_) {}
+
+    window.dispatchEvent(new CustomEvent("ppf:nci-v21-migrated", {
+      detail: { changed: result.changed, sessions: sessions.length }
+    }));
+    return result.changed;
+  } catch (error) {
+    console.warn("No se pudo completar la migración histórica NCI v2.1:", error);
+    return false;
+  }
+}
+
+// Ejecutar siempre después del pull inicial de Supabase. El marcador evita
+// escrituras repetidas, pero la detección de duplicados repara datos antiguos
+// aunque el navegador conserve un marcador previo incorrecto.
+if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
+  window.PPF_SUPABASE_READY.then(() => nciRunHistoricalMigrationV21()).catch(() => nciRunHistoricalMigrationV21());
+} else {
+  setTimeout(nciRunHistoricalMigrationV21, 900);
 }
 
 function nciPreviewSessionNumber(patientNickname, dateValue, microValue, editingId = null) {

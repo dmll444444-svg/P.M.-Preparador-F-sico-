@@ -1,4 +1,4 @@
-const PM_CACHE = "pm-online-v1.23.0-nci-v2-micro-sequence";
+const PM_CACHE = "pm-online-v1.23.1-nci-v2-1-historical-migration";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
   "./app.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",
