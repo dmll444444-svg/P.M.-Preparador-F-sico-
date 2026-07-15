@@ -1,4 +1,4 @@
-const PM_CACHE = "pm-online-v1.25-agenda-flexible-v4-2-2";
+const PM_CACHE = "pm-online-v1.26-agenda-flexible-v4-2-3";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
   "./app.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",

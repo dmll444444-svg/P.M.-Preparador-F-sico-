@@ -6863,9 +6863,26 @@ function agendaProSessionDateTime(session = {}) {
   return Number.isFinite(stamp) ? stamp : 0;
 }
 
+function agendaProRawStatus(session = {}) {
+  return String(session.agendaStatus || session.status || session.estado || "").trim().toLowerCase();
+}
+
+function agendaProIsClosedWithoutTime(session = {}) {
+  const hasTime = Boolean(String(session.scheduledTime || session.time || "").trim());
+  if (hasTime) return false;
+  const status = agendaProRawStatus(session);
+  const cancelled = ["cancelled", "cancelada", "cancelado"].includes(status);
+  const completed = nciIsCompleted(session) || ["completed", "terminada", "terminado"].includes(status) || session.completed === true || session.terminada === true;
+  return cancelled || completed;
+}
+
 function agendaProScheduleMode(session = {}) {
   const value = String(session.scheduleMode || session.agendaScheduleMode || "").toLowerCase();
-  return value === "flexible" || session.flexibleSchedule === true ? "flexible" : "scheduled";
+  if (value === "flexible" || session.flexibleSchedule === true) return "flexible";
+  // Regla defensiva: una sesión ya cerrada sin hora nunca vuelve a ser una
+  // incidencia de planificación, aunque un registro histórico no se haya
+  // podido migrar todavía en Supabase.
+  return agendaProIsClosedWithoutTime(session) ? "flexible" : "scheduled";
 }
 
 function agendaProIsFlexible(session = {}) {
@@ -6873,7 +6890,9 @@ function agendaProIsFlexible(session = {}) {
 }
 
 function agendaProNeedsTime(session = {}) {
-  return !agendaProIsFlexible(session);
+  // Solo las sesiones activas y presenciales/dirigidas necesitan hora.
+  // Terminadas, canceladas y flexibles quedan fuera de KPI, avisos y bandeja.
+  return !agendaProIsFlexible(session) && !agendaProIsClosedWithoutTime(session);
 }
 
 function agendaProStatus(session = {}) {
@@ -8585,8 +8604,8 @@ window.addEventListener("storage", event => {
   syncVisualClock();
 })();
 
-/* Agenda PRO v4.2.2 · Migración flexible forzada */
-const PPF_FLEXIBLE_MIGRATION_VERSION = "agenda-flexible-v4.2.2";
+/* Agenda PRO v4.2.3 · Cierre definitivo de sesiones sin hora */
+const PPF_FLEXIBLE_MIGRATION_VERSION = "agenda-flexible-v4.2.3";
 
 function agendaProSessionIsCompletedForMigration(session = {}, completedIds = nciCompletedSessionIds()) {
   if (!session || typeof session !== "object") return false;
@@ -8596,19 +8615,31 @@ function agendaProSessionIsCompletedForMigration(session = {}, completedIds = nc
 
 function agendaProShouldAutoMigrateFlexible(session = {}, completedIds = nciCompletedSessionIds()) {
   if (!session || typeof session !== "object") return false;
-  if (agendaProIsFlexible(session)) return false;
+  const explicit = String(session.scheduleMode || session.agendaScheduleMode || "").toLowerCase();
+  if (explicit === "flexible" || session.flexibleSchedule === true) return false;
   if (String(session.scheduledTime || session.time || "").trim()) return false;
-  const status = String(session.agendaStatus || session.status || session.estado || "").toLowerCase();
-  const cancelled = status === "cancelled" || status === "cancelada" || status === "cancelado";
+  const status = agendaProRawStatus(session);
+  const cancelled = ["cancelled", "cancelada", "cancelado"].includes(status);
   return cancelled || agendaProSessionIsCompletedForMigration(session, completedIds);
 }
 
 function agendaProReadSyncedSessions() {
+  let stored = [];
   try {
-    const stored = JSON.parse(localStorage.getItem("sessions") || "[]");
-    if (Array.isArray(stored)) return stored;
+    const parsed = JSON.parse(localStorage.getItem("sessions") || "[]");
+    if (Array.isArray(parsed)) stored = parsed;
   } catch (_) {}
-  return Array.isArray(window.sessions) ? window.sessions : (Array.isArray(sessions) ? sessions : []);
+  const live = Array.isArray(window.sessions) ? window.sessions : (Array.isArray(sessions) ? sessions : []);
+  const merged = new Map();
+  [...stored, ...live].forEach((session, index) => {
+    if (!session || typeof session !== "object") return;
+    const key = String(session.id || session.sessionId || `${nciSessionPatient(session)}|${session.fecha || ""}|${nciSessionMicro(session)}|${index}`);
+    const previous = merged.get(key);
+    const previousStamp = Date.parse(previous?.updatedAt || previous?.createdAt || "") || 0;
+    const currentStamp = Date.parse(session.updatedAt || session.createdAt || "") || 0;
+    if (!previous || currentStamp >= previousStamp) merged.set(key, session);
+  });
+  return Array.from(merged.values());
 }
 
 async function agendaProMigrateHistoricalFlexibleSessions(options = {}) {
@@ -8640,6 +8671,29 @@ async function agendaProMigrateHistoricalFlexibleSessions(options = {}) {
   if (!changed && marker && !force) return { changed: 0, total: sessions.length };
 
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  // Algunas instalaciones antiguas conservan objetos completos también en
+  // completedSessions. Si existen, se normalizan para que ningún consumidor
+  // secundario vuelva a presentar "Sin hora" como incidencia.
+  try {
+    const completedRecords = JSON.parse(localStorage.getItem("completedSessions") || "[]");
+    if (Array.isArray(completedRecords)) {
+      const byId = new Map(sessions.map(item => [String(item.id || item.sessionId || ""), item]));
+      let completedChanged = false;
+      const normalizedCompleted = completedRecords.map(item => {
+        if (!item || typeof item !== "object") return item;
+        const id = String(item.sessionId || item.id || "");
+        const sourceSession = byId.get(id);
+        const hasTime = Boolean(String(item.scheduledTime || sourceSession?.scheduledTime || "").trim());
+        if (!hasTime) {
+          const next = { ...item, scheduleMode: "flexible", agendaScheduleMode: "flexible", flexibleSchedule: true, updatedAt: now };
+          completedChanged = completedChanged || JSON.stringify(next) !== JSON.stringify(item);
+          return next;
+        }
+        return item;
+      });
+      if (completedChanged) localStorage.setItem("completedSessions", JSON.stringify(normalizedCompleted));
+    }
+  } catch (_) {}
   localStorage.setItem(PPF_FLEXIBLE_MIGRATION_VERSION, now);
 
   if (changed) {
@@ -8681,7 +8735,7 @@ async function agendaProRunFlexibleMigrationAfterSync() {
 }
 
 function agendaProScheduleForcedFlexibleMigration() {
-  [400, 1200, 3000, 6000].forEach((delay, index) => {
+  [400, 1200, 3000, 6000, 10000].forEach((delay, index) => {
     setTimeout(() => {
       (index === 0 ? agendaProRunFlexibleMigrationAfterSync() : agendaProMigrateHistoricalFlexibleSessions({ force: true }))
         .catch(error => console.warn("Agenda PRO: reintento de migración flexible fallido:", error));
