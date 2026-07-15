@@ -6863,6 +6863,19 @@ function agendaProSessionDateTime(session = {}) {
   return Number.isFinite(stamp) ? stamp : 0;
 }
 
+function agendaProScheduleMode(session = {}) {
+  const value = String(session.scheduleMode || session.agendaScheduleMode || "").toLowerCase();
+  return value === "flexible" || session.flexibleSchedule === true ? "flexible" : "scheduled";
+}
+
+function agendaProIsFlexible(session = {}) {
+  return agendaProScheduleMode(session) === "flexible";
+}
+
+function agendaProNeedsTime(session = {}) {
+  return !agendaProIsFlexible(session);
+}
+
 function agendaProStatus(session = {}) {
   if (String(session.agendaStatus || "").toLowerCase() === "cancelled") return "cancelled";
   if (nciIsCompleted(session)) return "completed";
@@ -6991,7 +7004,7 @@ function agendaProTargetFromPoint(x, y) {
 function agendaProConflict(session = {}) {
   const date = String(session.fecha || "");
   const time = String(session.scheduledTime || "").trim();
-  if (!date || !time || agendaProStatus(session) === "cancelled") return false;
+  if (!date || !time || agendaProIsFlexible(session) || agendaProStatus(session) === "cancelled") return false;
   const key = nciSessionPatient(session);
   return sessions.some(other => String(other.id) !== String(session.id) && nciSessionPatient(other) === key && String(other.fecha || "") === date && String(other.scheduledTime || "").trim() === time && agendaProStatus(other) !== "cancelled");
 }
@@ -7020,7 +7033,7 @@ function agendaProDayIntelligence(date, daySessions = []) {
     kinds[key].count += 1;
   });
   const conflicts = active.filter(agendaProConflict).length;
-  const withoutTime = active.filter(session => !String(session.scheduledTime || "").trim()).length;
+  const withoutTime = active.filter(session => agendaProNeedsTime(session) && !String(session.scheduledTime || "").trim()).length;
   const high = active.filter(session => agendaProPriority(session) === "high").length;
   const loadLevel = active.length >= 8 ? "high" : active.length >= 5 ? "medium" : "light";
   return { total: active.length, conflicts, withoutTime, high, kinds, loadLevel, date };
@@ -7035,7 +7048,7 @@ function agendaProIntelligence(visibleSessions = []) {
     return agendaProDayIntelligence(date, weekSessions.filter(session => String(session.fecha || "") === date));
   });
   const warnings = [];
-  const noTime = weekSessions.filter(session => session.fecha && !String(session.scheduledTime || "").trim() && agendaProStatus(session) !== "cancelled");
+  const noTime = weekSessions.filter(session => session.fecha && agendaProNeedsTime(session) && !String(session.scheduledTime || "").trim() && agendaProStatus(session) !== "cancelled");
   const conflicts = weekSessions.filter(agendaProConflict);
   const late = weekSessions.filter(session => agendaProStatus(session) === "late");
   const highPriority = weekSessions.filter(session => agendaProPriority(session) === "high" && agendaProStatus(session) !== "completed" && agendaProStatus(session) !== "cancelled");
@@ -7070,10 +7083,11 @@ function agendaProCard(session) {
   const conflict = agendaProConflict(session);
   const priority = agendaProPriority(session);
   const priorityMeta = agendaProPriorityMeta(priority);
+  const flexible = agendaProIsFlexible(session);
   return `
-    <article class="agenda-pro-session agenda-pro-status-${status} agenda-pro-priority-${priority} ${conflict ? "has-conflict" : ""}" draggable="true" tabindex="0" data-agenda-session-id="${agendaProEscape(session.id)}">
+    <article class="agenda-pro-session agenda-pro-status-${status} agenda-pro-priority-${priority} ${flexible ? "is-flexible" : ""} ${conflict ? "has-conflict" : ""}" draggable="true" tabindex="0" data-agenda-session-id="${agendaProEscape(session.id)}">
       <div class="agenda-pro-session-time">
-        <strong>${agendaProEscape(session.scheduledTime || "Sin hora")}</strong>
+        <strong>${agendaProEscape(flexible ? "Horario flexible" : (session.scheduledTime || "Sin hora"))}</strong>
         ${duration ? `<small>${duration} min</small>` : `<small>Duración pendiente</small>`}
       </div>
       <div class="agenda-pro-session-main">
@@ -7086,6 +7100,7 @@ function agendaProCard(session) {
           <span>Micro ${agendaProEscape(nciSessionMicro(session) || "-")}</span>
           <span class="agenda-pro-state"><i>${statusMeta.icon}</i>${statusMeta.label}</span>
           <span class="agenda-pro-priority"><i>${priorityMeta.icon}</i>${priorityMeta.label}</span>
+          ${flexible ? `<span class="agenda-pro-flexible">🌐 Online · flexible</span>` : ""}
           ${conflict ? `<span class="agenda-pro-conflict">⚠ Conflicto</span>` : ""}
         </div>
       </div>
@@ -7114,7 +7129,7 @@ function agendaProHTML() {
     doubleGroups.set(key, (doubleGroups.get(key) || 0) + 1);
   });
   const doubleCount = [...doubleGroups.values()].filter(count => count > 1).length;
-  const withoutTime = weekSessions.filter(session => session.fecha && !String(session.scheduledTime || "").trim()).length;
+  const withoutTime = weekSessions.filter(session => session.fecha && agendaProNeedsTime(session) && !String(session.scheduledTime || "").trim()).length;
   const monthLabel = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short" }).format(weekDays[0]);
   const endLabel = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", year: "numeric" }).format(weekDays[6]);
   const weekNumber = agendaProWeekNumber(weekDays[0]);
@@ -7189,7 +7204,7 @@ function agendaWorkspaceSessionCard(session) {
   const date = session.fecha ? new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${session.fecha}T12:00:00`)) : "Sin fecha";
   return `<button type="button" class="agenda-workspace-session agenda-workspace-status-${status}" data-agenda-workspace-session="${agendaProEscape(session.id)}">
     <span class="agenda-workspace-node">${kind.icon}</span>
-    <span class="agenda-workspace-copy"><strong>Sesión ${agendaProEscape(nciDisplayNumber(session))}</strong><small>${agendaProEscape(kind.label)} · Micro ${agendaProEscape(nciSessionMicro(session) || "-")}</small><em>${agendaProEscape(date)}${session.scheduledTime ? ` · ${agendaProEscape(session.scheduledTime)}` : " · Sin hora"}</em></span>
+    <span class="agenda-workspace-copy"><strong>Sesión ${agendaProEscape(nciDisplayNumber(session))}</strong><small>${agendaProEscape(kind.label)} · Micro ${agendaProEscape(nciSessionMicro(session) || "-")}</small><em>${agendaProEscape(date)}${agendaProIsFlexible(session) ? " · Horario flexible" : (session.scheduledTime ? ` · ${agendaProEscape(session.scheduledTime)}` : " · Sin hora")}</em></span>
     <span class="agenda-workspace-state"><i>${meta.icon}</i>${agendaProEscape(meta.label)}<small>${priority.icon} ${agendaProEscape(priority.label)}</small></span>
     <b>›</b>
   </button>`;
@@ -7205,7 +7220,7 @@ function agendaWorkspaceRender() {
   const completed = all.filter(item => agendaProStatus(item) === "completed");
   const pending = all.filter(item => !["completed", "cancelled"].includes(agendaProStatus(item)));
   const cancelled = all.filter(item => agendaProStatus(item) === "cancelled");
-  const noTime = pending.filter(item => !String(item.scheduledTime || "").trim()).length;
+  const noTime = pending.filter(item => agendaProNeedsTime(item) && !String(item.scheduledTime || "").trim()).length;
   const compliance = all.length ? Math.round((completed.length / Math.max(1, completed.length + pending.length)) * 100) : 0;
   const next = pending.slice().sort((a,b) => agendaProSessionDateTime(a)-agendaProSessionDateTime(b))[0];
   const currentMicro = all.reduce((max,item)=>Math.max(max,nciSessionMicro(item)||0),0);
@@ -7227,7 +7242,7 @@ function agendaWorkspaceRender() {
       <article><span>📈</span><div><small>Cumplimiento</small><strong>${compliance}%</strong></div></article>
     </section>
     <section class="agenda-workspace-focus">
-      <div class="agenda-workspace-next-copy"><p class="eyebrow">PRÓXIMA SESIÓN</p>${next?`<h3>${nciSessionKindMeta(next).icon} Sesión ${agendaProEscape(nciDisplayNumber(next))}</h3><p>${agendaProEscape(next.fecha || "Sin fecha")} · ${agendaProEscape(next.scheduledTime || "Sin hora")} · Micro ${agendaProEscape(nciSessionMicro(next)||"-")}</p><button class="agenda-workspace-open-next" type="button" data-agenda-workspace-session="${agendaProEscape(next.id)}"><span>↗</span> Abrir sesión</button>`:`<h3>Sin sesiones pendientes</h3><p>El cliente no tiene una próxima sesión programada.</p>`}</div>
+      <div class="agenda-workspace-next-copy"><p class="eyebrow">PRÓXIMA SESIÓN</p>${next?`<h3>${nciSessionKindMeta(next).icon} Sesión ${agendaProEscape(nciDisplayNumber(next))}</h3><p>${agendaProEscape(next.fecha || "Sin fecha")} · ${agendaProEscape(agendaProIsFlexible(next) ? "Horario flexible" : (next.scheduledTime || "Sin hora"))} · Micro ${agendaProEscape(nciSessionMicro(next)||"-")}</p><button class="agenda-workspace-open-next" type="button" data-agenda-workspace-session="${agendaProEscape(next.id)}"><span>↗</span> Abrir sesión</button>`:`<h3>Sin sesiones pendientes</h3><p>El cliente no tiene una próxima sesión programada.</p>`}</div>
       <div class="agenda-workspace-flags"><span>${cancelled.length} canceladas</span><span>${noTime} sin hora</span></div>
     </section>
     <section class="agenda-workspace-body"><div class="agenda-workspace-title"><div><p class="eyebrow">LÍNEA TEMPORAL</p><h3>Plan completo del cliente</h3></div><span>${all.length} registros</span></div>${timeline || `<div class="agenda-workspace-empty"><span>📭</span><h3>Sin sesiones</h3><p>Crea la primera sesión para este cliente.</p></div>`}</section>`;
@@ -7295,12 +7310,12 @@ function agendaProRenderWeek() {
       todayBox.classList.remove("is-empty");
       const scheduledFocus = focusSessions.filter(session => agendaProStatus(session) === "scheduled").length;
       const cancelledFocus = focusSessions.filter(session => agendaProStatus(session) === "cancelled").length;
-      const noTimeFocus = focusSessions.filter(session => !String(session.scheduledTime || "").trim()).length;
+      const noTimeFocus = focusSessions.filter(session => agendaProNeedsTime(session) && !String(session.scheduledTime || "").trim()).length;
       todayBox.innerHTML = `<div><small>OBJETIVO DEL DÍA</small><strong>${completedFocus} de ${focusSessions.length} sesiones completadas</strong><span>${scheduledFocus} preparadas · ${cancelledFocus} canceladas · ${noTimeFocus} sin hora</span></div><div class="agenda-pro-progress"><i style="width:${progress}%"></i></div><b>${progress}%</b>`;
     }
   }
 
-  const withoutTime = filtered.filter(session => session.fecha && !String(session.scheduledTime || "").trim()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || agendaProSort(a, b));
+  const withoutTime = filtered.filter(session => session.fecha && agendaProNeedsTime(session) && !String(session.scheduledTime || "").trim()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || agendaProSort(a, b));
   unassigned.innerHTML = `<div class="agenda-pro-section-head"><div><p class="eyebrow">BANDEJA DE PROGRAMACIÓN</p><h3>Sesiones sin hora</h3><p>Asigna hora y duración para completar la agenda.</p></div><strong>${withoutTime.length}</strong></div>
     <div class="agenda-pro-unassigned-grid">${withoutTime.length ? withoutTime.map(agendaProCard).join("") : `<div class="agenda-pro-all-scheduled">✓ Todas las sesiones tienen hora asignada.</div>`}</div>`;
 }
@@ -7392,14 +7407,15 @@ function agendaProOpenEditor(sessionId) {
     <section class="agenda-master-quick">
       <article><small>Sesión anterior</small>${timeline.previous ? `<strong>${agendaProEscape(nciDisplayNumber(timeline.previous))}</strong><span>${agendaProEscape(timeline.previous.fecha || "Sin fecha")}</span>` : `<strong>—</strong><span>Sin sesión anterior</span>`}</article>
       <article><small>Sesión siguiente</small>${timeline.next ? `<strong>${agendaProEscape(nciDisplayNumber(timeline.next))}</strong><span>${agendaProEscape(timeline.next.fecha || "Sin fecha")}</span>` : `<strong>—</strong><span>Sin sesión siguiente</span>`}</article>
-      <article><small>Programación</small><strong>${agendaProEscape(session.scheduledTime || "Sin hora")}</strong><span>${Math.max(0, Number(session.durationMinutes || 0)) || "—"} min</span></article>
+      <article><small>Programación</small><strong>${agendaProEscape(agendaProIsFlexible(session) ? "Horario flexible" : (session.scheduledTime || "Sin hora"))}</strong><span>${Math.max(0, Number(session.durationMinutes || 0)) || "—"} min</span></article>
     </section>
 
     <form id="agendaProForm" class="agenda-master-form">
       <div class="agenda-master-section-head"><div><small>PLANIFICACIÓN</small><h4>Datos de agenda</h4></div></div>
       <div class="agenda-master-fields">
         <label>Fecha<input type="date" id="agendaProDate" required value="${agendaProEscape(session.fecha || "")}"></label>
-        <label>Hora<input type="time" id="agendaProTime" value="${agendaProEscape(session.scheduledTime || "")}"></label>
+        <label>Modalidad de agenda<select id="agendaProScheduleMode"><option value="scheduled" ${agendaProScheduleMode(session) === "scheduled" ? "selected" : ""}>🕒 Con hora</option><option value="flexible" ${agendaProScheduleMode(session) === "flexible" ? "selected" : ""}>🌐 Online · horario flexible</option></select></label>
+        <label id="agendaProTimeLabel">Hora<input type="time" id="agendaProTime" value="${agendaProEscape(session.scheduledTime || "")}"></label>
         <label>Duración (min)<input type="number" id="agendaProDuration" min="0" step="5" value="${agendaProEscape(session.durationMinutes || 60)}"></label>
         <label>Actividad<select id="agendaProKind">${Object.entries(PPF_SESSION_KINDS).map(([key, meta]) => `<option value="${key}" ${nciSessionKind(session) === key ? "selected" : ""}>${meta.icon} ${meta.label}</option>`).join("")}</select></label>
         <label>Estado<select id="agendaProAgendaStatus"><option value="scheduled" ${String(session.agendaStatus || "scheduled") === "scheduled" ? "selected" : ""}>Preparada</option><option value="cancelled" ${String(session.agendaStatus || "") === "cancelled" ? "selected" : ""}>Cancelada</option></select></label>
@@ -7435,6 +7451,11 @@ function agendaProOpenEditor(sessionId) {
   document.getElementById("agendaProNotifyClient")?.addEventListener("click", () => agendaProNotifyClient(session.id));
   document.getElementById("agendaProDeleteSession")?.addEventListener("click", () => agendaProDeleteSession(session.id));
   document.getElementById("agendaProForm")?.addEventListener("submit", agendaProSaveEditor);
+  const scheduleModeSelect = document.getElementById("agendaProScheduleMode");
+  const timeInput = document.getElementById("agendaProTime");
+  const syncScheduleModeUI = () => { const flexible = scheduleModeSelect?.value === "flexible"; if (timeInput) { timeInput.disabled = flexible; if (flexible) timeInput.value = ""; } document.getElementById("agendaProTimeLabel")?.classList.toggle("is-disabled", flexible); };
+  scheduleModeSelect?.addEventListener("change", syncScheduleModeUI);
+  syncScheduleModeUI();
 }
 
 async function agendaProCreateDuplicateNotification(session) {
@@ -7540,7 +7561,9 @@ async function agendaProSaveEditor(event) {
   if (!session) return;
   const oldPatient = session.patientNickname;
   session.fecha = document.getElementById("agendaProDate")?.value || session.fecha;
-  session.scheduledTime = document.getElementById("agendaProTime")?.value || "";
+  session.scheduleMode = document.getElementById("agendaProScheduleMode")?.value || "scheduled";
+  session.flexibleSchedule = session.scheduleMode === "flexible";
+  session.scheduledTime = session.flexibleSchedule ? "" : (document.getElementById("agendaProTime")?.value || "");
   session.durationMinutes = Math.max(0, Number(document.getElementById("agendaProDuration")?.value || 0));
   session.sessionKind = document.getElementById("agendaProKind")?.value || session.sessionKind || "gym";
   session.agendaStatus = document.getElementById("agendaProAgendaStatus")?.value || "scheduled";
