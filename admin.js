@@ -8585,28 +8585,39 @@ window.addEventListener("storage", event => {
   syncVisualClock();
 })();
 
-/* Agenda PRO v4.2.1 · Modalidad visible + migración flexible */
-const PPF_FLEXIBLE_MIGRATION_VERSION = "agenda-flexible-v4.2.1";
+/* Agenda PRO v4.2.2 · Migración flexible forzada */
+const PPF_FLEXIBLE_MIGRATION_VERSION = "agenda-flexible-v4.2.2";
+
+function agendaProSessionIsCompletedForMigration(session = {}, completedIds = nciCompletedSessionIds()) {
+  if (!session || typeof session !== "object") return false;
+  const status = String(session.agendaStatus || session.status || session.estado || "").toLowerCase();
+  return nciIsCompleted(session, completedIds) || status === "completed" || status === "terminada" || status === "terminado" || session.completed === true || session.terminada === true;
+}
 
 function agendaProShouldAutoMigrateFlexible(session = {}, completedIds = nciCompletedSessionIds()) {
   if (!session || typeof session !== "object") return false;
   if (agendaProIsFlexible(session)) return false;
-  if (String(session.scheduledTime || "").trim()) return false;
-  const cancelled = String(session.agendaStatus || "").toLowerCase() === "cancelled";
-  return cancelled || nciIsCompleted(session, completedIds);
+  if (String(session.scheduledTime || session.time || "").trim()) return false;
+  const status = String(session.agendaStatus || session.status || session.estado || "").toLowerCase();
+  const cancelled = status === "cancelled" || status === "cancelada" || status === "cancelado";
+  return cancelled || agendaProSessionIsCompletedForMigration(session, completedIds);
+}
+
+function agendaProReadSyncedSessions() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("sessions") || "[]");
+    if (Array.isArray(stored)) return stored;
+  } catch (_) {}
+  return Array.isArray(window.sessions) ? window.sessions : (Array.isArray(sessions) ? sessions : []);
 }
 
 async function agendaProMigrateHistoricalFlexibleSessions(options = {}) {
   const force = options.force === true;
-  try {
-    const stored = JSON.parse(localStorage.getItem("sessions") || "[]");
-    if (Array.isArray(stored)) {
-      sessions = stored;
-      window.sessions = sessions;
-    }
-  } catch (_) {}
+  const source = agendaProReadSyncedSessions();
+  if (!Array.isArray(source) || !source.length) return { changed: 0, total: 0 };
 
-  if (!Array.isArray(sessions) || !sessions.length) return { changed: 0 };
+  sessions = source;
+  window.sessions = sessions;
 
   const completedIds = nciCompletedSessionIds();
   let changed = 0;
@@ -8618,15 +8629,15 @@ async function agendaProMigrateHistoricalFlexibleSessions(options = {}) {
     session.agendaScheduleMode = "flexible";
     session.flexibleSchedule = true;
     session.scheduledTime = "";
-    session.updatedAt = session.updatedAt || now;
+    session.updatedAt = now;
     if (typeof agendaProAddHistory === "function") {
-      agendaProAddHistory(session, "updated", "Convertida automáticamente a horario flexible");
+      agendaProAddHistory(session, "updated", "Migración automática: sesión finalizada sin hora convertida a horario flexible");
     }
     changed += 1;
   });
 
   const marker = localStorage.getItem(PPF_FLEXIBLE_MIGRATION_VERSION);
-  if (!changed && marker && !force) return { changed: 0 };
+  if (!changed && marker && !force) return { changed: 0, total: sessions.length };
 
   localStorage.setItem("sessions", JSON.stringify(sessions));
   localStorage.setItem(PPF_FLEXIBLE_MIGRATION_VERSION, now);
@@ -8634,41 +8645,58 @@ async function agendaProMigrateHistoricalFlexibleSessions(options = {}) {
   if (changed) {
     try {
       if (window.PPF_SUPABASE?.pushValue) {
-        await window.PPF_SUPABASE.pushValue("sessions", sessions);
+        const pushed = await window.PPF_SUPABASE.pushValue("sessions", sessions);
+        if (pushed === false) throw new Error("Supabase rechazó la actualización de sessions");
       } else if (window.PPF_SUPABASE?.pushKey) {
-        await window.PPF_SUPABASE.pushKey("sessions");
+        const pushed = await window.PPF_SUPABASE.pushKey("sessions");
+        if (pushed === false) throw new Error("Supabase rechazó la actualización de sessions");
       }
     } catch (error) {
       console.warn("Agenda PRO no pudo confirmar la migración flexible en Supabase:", error);
     }
-
-    const activeSection = document.querySelector(".nav-item.active")?.dataset.section;
-    if (activeSection === "agenda" && typeof renderSection === "function") {
-      renderSection("agenda");
-    }
   }
 
-  return { changed };
+  const activeSection = document.querySelector(".nav-item.active")?.dataset.section;
+  if (activeSection === "agenda" && typeof renderSection === "function") {
+    renderSection("agenda");
+  }
+
+  window.dispatchEvent(new CustomEvent("ppf:agenda-flexible-migrated", { detail: { changed, total: sessions.length } }));
+  return { changed, total: sessions.length };
 }
 
 window.agendaProMigrateHistoricalFlexibleSessions = agendaProMigrateHistoricalFlexibleSessions;
 
 async function agendaProRunFlexibleMigrationAfterSync() {
   try {
-    if (window.PPF_SUPABASE?.pull) await window.PPF_SUPABASE.pull();
+    if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
+      await window.PPF_SUPABASE_READY;
+    } else if (window.PPF_SUPABASE?.pull) {
+      await window.PPF_SUPABASE.pull();
+    }
   } catch (error) {
     console.warn("Agenda PRO: la migración flexible continuará con los datos locales:", error);
   }
-  await agendaProMigrateHistoricalFlexibleSessions();
+  return agendaProMigrateHistoricalFlexibleSessions({ force: true });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  setTimeout(agendaProRunFlexibleMigrationAfterSync, 1200);
-  setTimeout(() => agendaProMigrateHistoricalFlexibleSessions(), 3500);
+function agendaProScheduleForcedFlexibleMigration() {
+  [400, 1200, 3000, 6000].forEach((delay, index) => {
+    setTimeout(() => {
+      (index === 0 ? agendaProRunFlexibleMigrationAfterSync() : agendaProMigrateHistoricalFlexibleSessions({ force: true }))
+        .catch(error => console.warn("Agenda PRO: reintento de migración flexible fallido:", error));
+    }, delay);
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", agendaProScheduleForcedFlexibleMigration, { once: true });
+} else {
+  agendaProScheduleForcedFlexibleMigration();
+}
+
+window.addEventListener("storage", event => {
+  if (event.key === "completedSessions" || event.key === "sessions") {
+    setTimeout(() => agendaProMigrateHistoricalFlexibleSessions({ force: true }), 250);
+  }
 });
-
-if (window.PPF_SUPABASE_READY && typeof window.PPF_SUPABASE_READY.then === "function") {
-  window.PPF_SUPABASE_READY
-    .then(agendaProRunFlexibleMigrationAfterSync)
-    .catch(() => agendaProMigrateHistoricalFlexibleSessions());
-}
