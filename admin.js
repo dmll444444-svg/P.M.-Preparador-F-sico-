@@ -333,6 +333,7 @@ function setTodayIfEmpty(id) {
 function persistAppData() {
   localStorage.setItem("patients", JSON.stringify(patients));
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   localStorage.setItem("histories", JSON.stringify(histories));
   localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
   localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
@@ -497,18 +498,9 @@ function ppfPatientPresence(patient = {}) {
 }
 
 function ppfPatientSessionSummary(patient = {}) {
-  const truth = window.PPF_SESSION_TRUTH;
-  if (truth) {
-    const stats = truth.statsForPatient(patient.nickname);
-    return { pending: stats.pending, done: stats.completed };
-  }
-  const agenda = pmSessionAgenda();
-  const key = pmNormalizeNickname(patient.nickname);
-  const belongs = item => pmNormalizeNickname(pmSessionPatientKey(item.session || {})) === key;
-  return {
-    pending: agenda.pending.filter(belongs).length,
-    done: agenda.done.filter(belongs).length
-  };
+  const stats = window.PPF_CORE?.summary?.(patient.nickname);
+  if (stats) return { pending: stats.pending, done: stats.completed, cancelled: stats.cancelled, compliance: stats.compliance };
+  return { pending: 0, done: 0, cancelled: 0, compliance: 0 };
 }
 
 function ppfPatientInitials(name = "") {
@@ -792,6 +784,7 @@ function deletePatient(nickname) {
   localStorage.setItem("histories", JSON.stringify(histories));
   localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
   updateCounters();
   renderPatientList();
@@ -1152,6 +1145,7 @@ function bindPatientForm() {
     localStorage.setItem("histories", JSON.stringify(histories));
     localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
     localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
     currentPhoto = "";
     resetPatientFormState();
@@ -1714,6 +1708,7 @@ const archivosHTML = `
 
 function persistSessionsOnly() {
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 }
 
 function getSelectedPatientBySearch(value) {
@@ -1907,6 +1902,7 @@ function nciRenumberAllSessions(options = {}) {
   if (changed) {
     window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   }
   return { changed, notificationsChanged };
 }
@@ -2098,6 +2094,7 @@ async function moveSessionWithinSubsessions(sessionId, direction) {
   group[target].subsessionOrder = sourceOrder;
   const result = nciRenumberPatientSessions(session.patientNickname, { touchUpdatedAt: true, rebuildOrder: false });
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   if (window.PPF_SUPABASE?.pushKey) {
     await window.PPF_SUPABASE.pushKey("sessions");
     if (result.notificationsChanged) await window.PPF_SUPABASE.pushKey("notifications");
@@ -2915,6 +2912,7 @@ function bindSessionsForm() {
 
     window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
     let cloudConfirmed = false;
     if (window.PPF_SUPABASE?.pushValue) {
@@ -3214,50 +3212,24 @@ function pmSessionMicroLabel(session = {}) {
 }
 
 function pmSessionAgenda() {
-  const allSessions = pmReadJson("sessions", []);
-  const completed = pmReadJson("completedSessions", []);
-  const notifications = pmReadJson("notifications", []);
-  const patientByNickname = new Map(
-    patients.map(patient => [pmNormalizeNickname(patient.nickname), patient])
-  );
-
-  // Cada sesión es una unidad independiente. Nunca se agrupa por paciente ni
-  // se conserva únicamente la última: un cliente puede tener varias pendientes.
-  const seen = new Set();
-  const rows = (Array.isArray(allSessions) ? allSessions : [])
-    .map((session, index) => ({ session, index }))
-    .filter(({ session, index }) => {
-      const key = pmSessionStableKey(session, index);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .map(({ session }) => {
-      const nickname = pmSessionPatientKey(session);
-      const patient = patientByNickname.get(pmNormalizeNickname(nickname));
-      return {
-        patient: patient || { nombre: session.patientName || session.nombrePaciente || nickname || "Paciente", nickname },
-        session
-      };
-    });
-
-  const sortRowsLatest = list => list.slice().sort((a, b) => {
-    const fa = String(a.session?.fecha || "");
-    const fb = String(b.session?.fecha || "");
-    if (fa !== fb) return fb.localeCompare(fa);
-    return pmSessionNumber(b.session) - pmSessionNumber(a.session);
-  });
-
-  const statusOf = session => window.PPF_SESSION_TRUTH
-    ? window.PPF_SESSION_TRUTH.lifecycleStatus(session, completed)
-    : (pmIsSessionCompleted(session, completed, notifications) ? "completed" : "pending");
-  const pending = sortRowsLatest(rows.filter(item => statusOf(item.session) === "pending"));
-  const done = sortRowsLatest(rows.filter(item => statusOf(item.session) === "completed"));
-  const cancelled = sortRowsLatest(rows.filter(item => statusOf(item.session) === "cancelled"));
-
-  return { pending, done, cancelled };
+  const coreAgenda = window.PPF_CORE?.agenda?.();
+  if (!coreAgenda) return { pending: [], done: [], cancelled: [], overdue: [], withoutTime: [] };
+  const patientByNickname = new Map(patients.map(patient => [pmNormalizeNickname(patient.nickname), patient]));
+  const wrap = session => {
+    const nickname = window.PPF_CORE.patient(session);
+    return {
+      patient: patientByNickname.get(nickname) || { nombre: session.patientName || session.nombrePaciente || session.patientNickname || "Paciente", nickname },
+      session
+    };
+  };
+  return {
+    pending: coreAgenda.pending.map(wrap),
+    done: coreAgenda.done.map(wrap),
+    cancelled: coreAgenda.cancelled.map(wrap),
+    overdue: coreAgenda.overdue.map(wrap),
+    withoutTime: coreAgenda.withoutTime.map(wrap)
+  };
 }
-
 
 function pmUserStatKey(value = "") {
   return String(value || "").trim().toLowerCase();
@@ -4796,6 +4768,7 @@ async function deleteSession(sessionId) {
   const result = nciRenumberPatientSessions(patientNickname, { touchUpdatedAt: true });
   window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   if (window.PPF_SUPABASE?.pushKey) {
     try { await window.PPF_SUPABASE.pushKey("sessions"); } catch (error) { console.warn(error); }
     if (result.notificationsChanged) {
@@ -4827,6 +4800,7 @@ async function deleteSelectedSessions() {
   });
   window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   if (window.PPF_SUPABASE?.pushKey) {
     try { await window.PPF_SUPABASE.pushKey("sessions"); } catch (error) { console.warn(error); }
     if (notificationsChanged) {
@@ -4920,6 +4894,7 @@ function normalizeSessionMicrocycles(patientNickname = "") {
   if (changed) {
     window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
     if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
       window.PPF_SUPABASE.pushKey("sessions").catch(error =>
@@ -5497,6 +5472,7 @@ function applyLocalBackupData(backup) {
 
   localStorage.setItem("patients", JSON.stringify(patients));
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   localStorage.setItem("histories", JSON.stringify(histories));
   localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
   localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
@@ -6883,12 +6859,7 @@ function agendaProIsClosedWithoutTime(session = {}) {
 }
 
 function agendaProScheduleMode(session = {}) {
-  const value = String(session.scheduleMode || session.agendaScheduleMode || "").toLowerCase();
-  if (value === "flexible" || session.flexibleSchedule === true) return "flexible";
-  // Regla defensiva: una sesión ya cerrada sin hora nunca vuelve a ser una
-  // incidencia de planificación, aunque un registro histórico no se haya
-  // podido migrar todavía en Supabase.
-  return agendaProIsClosedWithoutTime(session) ? "flexible" : "scheduled";
+  return window.PPF_CORE?.flexible?.(session, window.PPF_CORE.array("completedSessions")) ? "flexible" : "scheduled";
 }
 
 function agendaProIsFlexible(session = {}) {
@@ -6896,25 +6867,17 @@ function agendaProIsFlexible(session = {}) {
 }
 
 function agendaProNeedsTime(session = {}) {
-  // Solo las sesiones activas y presenciales/dirigidas necesitan hora.
-  // Terminadas, canceladas y flexibles quedan fuera de KPI, avisos y bandeja.
-  return !agendaProIsFlexible(session) && !agendaProIsClosedWithoutTime(session);
+  return window.PPF_CORE?.needsTime?.(session, window.PPF_CORE.array("completedSessions")) ?? true;
 }
 
 function agendaProStatus(session = {}) {
-  if (window.PPF_SESSION_TRUTH) {
-    const central = window.PPF_SESSION_TRUTH.lifecycleStatus(
-      session,
-      window.PPF_SESSION_TRUTH.readArray("completedSessions")
-    );
-    if (central === "cancelled") return "cancelled";
-    if (central === "completed") return "completed";
-  } else {
-    if (String(session.agendaStatus || "").toLowerCase() === "cancelled") return "cancelled";
-    if (nciIsCompleted(session)) return "completed";
+  const core = window.PPF_CORE;
+  if (core) {
+    const state = core.lifecycle(session, core.array("completedSessions"));
+    if (state === "cancelled" || state === "completed") return state;
+    if (core.isOverdue(session, core.array("completedSessions"))) return "late";
+    return "scheduled";
   }
-  const stamp = agendaProSessionDateTime(session);
-  if (stamp && stamp < Date.now() && String(session.fecha || "") < agendaProIsoDate(new Date())) return "late";
   return "scheduled";
 }
 
@@ -6949,7 +6912,8 @@ function agendaProFilteredSessions() {
   const kind = document.getElementById("agendaProKindFilter")?.value || "";
   const status = document.getElementById("agendaProStatusFilter")?.value || "";
   const query = String(document.getElementById("agendaProSearch")?.value || "").trim().toLowerCase();
-  return sessions.filter(session => {
+  const source = window.PPF_CORE?.normalizedContext?.().sessions || sessions;
+  return source.filter(session => {
     if (patient && nciSessionPatient(session) !== nciNickname(patient)) return false;
     if (kind && nciSessionKind(session) !== kind) return false;
     if (status && agendaProStatus(session) !== status) return false;
@@ -7036,11 +7000,7 @@ function agendaProTargetFromPoint(x, y) {
 }
 
 function agendaProConflict(session = {}) {
-  const date = String(session.fecha || "");
-  const time = String(session.scheduledTime || "").trim();
-  if (!date || !time || agendaProIsFlexible(session) || agendaProStatus(session) === "cancelled") return false;
-  const key = nciSessionPatient(session);
-  return sessions.some(other => String(other.id) !== String(session.id) && nciSessionPatient(other) === key && String(other.fecha || "") === date && String(other.scheduledTime || "").trim() === time && agendaProStatus(other) !== "cancelled");
+  return window.PPF_CORE?.conflict?.(session) || false;
 }
 
 
@@ -7258,13 +7218,8 @@ function agendaWorkspacePatientKey() {
 }
 
 function agendaWorkspaceSessions(patientKey) {
-  return sessions.filter(session => nciSessionPatient(session) === patientKey).sort((a, b) => {
-    const date = String(a.fecha || "").localeCompare(String(b.fecha || ""));
-    if (date !== 0) return date;
-    const micro = nciSessionMicro(a) - nciSessionMicro(b);
-    if (micro !== 0) return micro;
-    return Number(a.subsessionOrder || a.dayOrder || 1) - Number(b.subsessionOrder || b.dayOrder || 1);
-  });
+  const core = window.PPF_CORE;
+  return core ? core.forPatient(patientKey).sort(core.chronological) : [];
 }
 
 function agendaWorkspaceSessionCard(session) {
@@ -7287,14 +7242,15 @@ function agendaWorkspaceRender() {
   const key = agendaWorkspacePatientKey();
   agendaProWorkspacePatient = key;
   const patient = patients.find(item => nciNickname(item.nickname) === key) || { nombre: "Selecciona cliente", nickname: "" };
-  const all = agendaWorkspaceSessions(key);
-  const completed = all.filter(item => agendaProStatus(item) === "completed");
-  const pending = all.filter(item => !["completed", "cancelled"].includes(agendaProStatus(item)));
-  const cancelled = all.filter(item => agendaProStatus(item) === "cancelled");
-  const noTime = pending.filter(item => agendaProNeedsTime(item) && !String(item.scheduledTime || "").trim()).length;
-  const compliance = all.length ? Math.round((completed.length / Math.max(1, completed.length + pending.length)) * 100) : 0;
-  const next = pending.slice().sort((a,b) => agendaProSessionDateTime(a)-agendaProSessionDateTime(b))[0];
-  const currentMicro = all.reduce((max,item)=>Math.max(max,nciSessionMicro(item)||0),0);
+  const coreSummary = window.PPF_CORE?.summary?.(key) || { sessions: [], completedSessions: [], pendingSessions: [], cancelledSessions: [], withoutTime: 0, compliance: 0, nextSession: null, currentMicro: 0 };
+  const all = coreSummary.sessions;
+  const completed = coreSummary.completedSessions;
+  const pending = coreSummary.pendingSessions;
+  const cancelled = coreSummary.cancelledSessions;
+  const noTime = coreSummary.withoutTime;
+  const compliance = coreSummary.compliance;
+  const next = coreSummary.nextSession;
+  const currentMicro = coreSummary.currentMicro;
   const grouped = new Map();
   all.forEach(session => {
     const micro = nciSessionMicro(session) || 0;
@@ -7587,6 +7543,7 @@ async function agendaProDuplicateSession(sessionId) {
   const created = sessions.find(item => String(item.id) === String(clone.id)) || clone;
   window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
   try {
     if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
@@ -7614,6 +7571,7 @@ async function agendaProDeleteSession(sessionId) {
   const renumberResult = nciRenumberPatientSessions(nickname, { touchUpdatedAt: true });
   window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
   try {
     if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
@@ -8751,6 +8709,7 @@ async function agendaProMigrateHistoricalFlexibleSessions(options = {}) {
   if (!changed && marker && !force) return { changed: 0, total: sessions.length };
 
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   // Algunas instalaciones antiguas conservan objetos completos también en
   // completedSessions. Si existen, se normalizan para que ningún consumidor
   // secundario vuelva a presentar "Sin hora" como incidencia.

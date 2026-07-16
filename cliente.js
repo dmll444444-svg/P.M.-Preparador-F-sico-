@@ -737,30 +737,14 @@ function sortSessionsOldestFirst(list = []) {
 
 function getClientCompletedSessions() {
   refreshCompletedSessions();
-  return sortSessionsNewestFirst(
-    sessions.filter(session =>
-      sessionBelongsToCurrentClient(session) &&
-      isSessionCompleted(session.id)
-    )
-  );
+  const summary = window.PPF_CORE?.summary?.(currentPatient.nickname);
+  return summary ? summary.completedSessions : [];
 }
 
 function getClientPendingSessions() {
   refreshCompletedSessions();
-  return sessions
-    .filter(session =>
-      sessionBelongsToCurrentClient(session) &&
-      !isSessionCompleted(session.id)
-    )
-    .sort((a, b) => {
-      const dateA = a.fecha || "";
-      const dateB = b.fecha || "";
-      if (dateA !== dateB) return dateA.localeCompare(dateB);
-      const microA = Number(a.microciclo || a.sessionBaseNumber || 0);
-      const microB = Number(b.microciclo || b.sessionBaseNumber || 0);
-      if (microA !== microB) return microA - microB;
-      return Number(a.subsessionOrder || a.dayOrder || 1) - Number(b.subsessionOrder || b.dayOrder || 1);
-    });
+  const summary = window.PPF_CORE?.summary?.(currentPatient.nickname);
+  return summary ? summary.pendingSessions : [];
 }
 
 function completeClientSession(sessionId) {
@@ -781,6 +765,7 @@ function completeClientSession(sessionId) {
 });
 
   localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
+  window.PPF_CORE?.emit?.("completedSessions");
 
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
   window.PPF_SUPABASE.pushKey("completedSessions");
@@ -866,6 +851,7 @@ function isSessionCompletedForClient(session) {
 
 function persistCompletedSessionsAndCloud() {
   localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
+  window.PPF_CORE?.emit?.("completedSessions");
 
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
     window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
