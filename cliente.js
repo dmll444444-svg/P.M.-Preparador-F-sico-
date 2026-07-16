@@ -709,20 +709,12 @@ function sessionBelongsToCurrentClient(session = {}) {
 }
 
 function isSessionCompleted(sessionId) {
+  const session = sessions.find(item => String(item.id || item.sessionId || "") === String(sessionId || ""));
+  if (window.PPF_SESSION_TRUTH && session) {
+    return window.PPF_SESSION_TRUTH.isCompleted(session, completedSessions);
+  }
   const sid = String(sessionId || "");
-  let notifications = [];
-  try { notifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
-
-  const latestPreparedAt = (Array.isArray(notifications) ? notifications : [])
-    .filter(item => item?.type === "prepared_session" && String(item?.sessionId || "") === sid)
-    .reduce((latest, item) => Math.max(latest, Date.parse(item?.createdAt || "") || 0), 0);
-
-  return completedSessions.some(item => {
-    if (String(item.sessionId || item.id || "") !== sid) return false;
-    if (normalizeClientIdentity(item.patientNickname || item.nickname || item.patient || "") !== normalizeClientIdentity(currentPatient?.nickname || "")) return false;
-    const completedAt = Date.parse(item.completedAt || item.fechaCompletada || "") || 0;
-    return !(latestPreparedAt && latestPreparedAt > completedAt);
-  });
+  return completedSessions.some(item => String(item.sessionId || item.id || "") === sid);
 }
 
 function sortSessionsNewestFirst(list = []) {
@@ -861,15 +853,14 @@ function normalizeSessionNumber(session) {
 }
 
 function isSessionCompletedForClient(session) {
+  if (window.PPF_SESSION_TRUTH) return window.PPF_SESSION_TRUTH.isCompleted(session, completedSessions);
   const sessionNumber = normalizeSessionNumber(session);
   const patientNickname = session?.patientNickname || currentClient?.nickname || currentClient?.id || "";
-
   return completedSessions.some(item => {
     const sameId = item.sessionId && session.id && String(item.sessionId) === String(session.id);
     const samePatient = String(item.patientNickname || "") === String(patientNickname || "");
     const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
-    const sameNumber = samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber;
-    return sameId || sameNumber;
+    return sameId || (samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber);
   });
 }
 

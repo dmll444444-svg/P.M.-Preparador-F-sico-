@@ -497,6 +497,11 @@ function ppfPatientPresence(patient = {}) {
 }
 
 function ppfPatientSessionSummary(patient = {}) {
+  const truth = window.PPF_SESSION_TRUTH;
+  if (truth) {
+    const stats = truth.statsForPatient(patient.nickname);
+    return { pending: stats.pending, done: stats.completed };
+  }
   const agenda = pmSessionAgenda();
   const key = pmNormalizeNickname(patient.nickname);
   const belongs = item => pmNormalizeNickname(pmSessionPatientKey(item.session || {})) === key;
@@ -3190,6 +3195,7 @@ function pmCompletionForSession(session = {}, completed = [], notifications = []
 }
 
 function pmIsSessionCompleted(session = {}, completed = [], notifications = []) {
+  if (window.PPF_SESSION_TRUTH) return window.PPF_SESSION_TRUTH.isCompleted(session, completed);
   return Boolean(pmCompletionForSession(session, completed, notifications));
 }
 
@@ -3242,14 +3248,14 @@ function pmSessionAgenda() {
     return pmSessionNumber(b.session) - pmSessionNumber(a.session);
   });
 
-  const pending = sortRowsLatest(
-    rows.filter(item => !pmIsSessionCompleted(item.session, completed, notifications))
-  );
-  const done = sortRowsLatest(
-    rows.filter(item => pmIsSessionCompleted(item.session, completed, notifications))
-  );
+  const statusOf = session => window.PPF_SESSION_TRUTH
+    ? window.PPF_SESSION_TRUTH.lifecycleStatus(session, completed)
+    : (pmIsSessionCompleted(session, completed, notifications) ? "completed" : "pending");
+  const pending = sortRowsLatest(rows.filter(item => statusOf(item.session) === "pending"));
+  const done = sortRowsLatest(rows.filter(item => statusOf(item.session) === "completed"));
+  const cancelled = sortRowsLatest(rows.filter(item => statusOf(item.session) === "cancelled"));
 
-  return { pending, done };
+  return { pending, done, cancelled };
 }
 
 
@@ -6896,8 +6902,17 @@ function agendaProNeedsTime(session = {}) {
 }
 
 function agendaProStatus(session = {}) {
-  if (String(session.agendaStatus || "").toLowerCase() === "cancelled") return "cancelled";
-  if (nciIsCompleted(session)) return "completed";
+  if (window.PPF_SESSION_TRUTH) {
+    const central = window.PPF_SESSION_TRUTH.lifecycleStatus(
+      session,
+      window.PPF_SESSION_TRUTH.readArray("completedSessions")
+    );
+    if (central === "cancelled") return "cancelled";
+    if (central === "completed") return "completed";
+  } else {
+    if (String(session.agendaStatus || "").toLowerCase() === "cancelled") return "cancelled";
+    if (nciIsCompleted(session)) return "completed";
+  }
   const stamp = agendaProSessionDateTime(session);
   if (stamp && stamp < Date.now() && String(session.fecha || "") < agendaProIsoDate(new Date())) return "late";
   return "scheduled";

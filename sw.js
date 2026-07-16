@@ -1,7 +1,7 @@
-const PM_CACHE = "pm-online-v1.27-agenda-kpi-retrasadas-v4-3";
+const PM_CACHE = "pm-online-v1.28-session-truth-v1";
 const PM_ASSETS = [
   "./", "./index.html", "./admin.html", "./cliente.html", "./style.css",
-  "./app.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",
+  "./app.js", "./session-truth.js", "./admin.js", "./cliente.js", "./notifications.js", "./pwa-register.js", "./supabase-config.js", "./supabase-sync.js",
   "./manifest.webmanifest", "./favicon.ico", "./favicon.svg", "./apple-touch-icon.png",
   "./icons/icon-192.png", "./icons/icon-512.png"
 ];
