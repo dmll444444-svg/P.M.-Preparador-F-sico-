@@ -4064,7 +4064,8 @@ function getWeeklyVolumeData(patientNickname = "") {
       sessionsInMicro: 0,
       sessions: 0,
       tonnage: 0,
-      dates: []
+      dates: [],
+      sessionDetails: []
     };
   }
 
@@ -4074,13 +4075,27 @@ function getWeeklyVolumeData(patientNickname = "") {
     if (session.fecha && !grouped[key].dates.includes(session.fecha)) {
       grouped[key].dates.push(session.fecha);
     }
+    grouped[key].sessionDetails.push({
+      date: session.fecha || "",
+      time: session.scheduledTime || session.hora || "",
+      order: Number(session.microSequenceOrder || session.subsessionOrder || session.dayOrder || 0),
+      number: (typeof nciDisplayNumber === "function" ? nciDisplayNumber(session) : (session.displaySessionNumber || session.numero || ""))
+    });
     grouped[key].tonnage += getSessionTonnage(session);
   });
 
   const ordered = Object.values(grouped).sort((a, b) => a.micro - b.micro);
   ordered.forEach(item => {
-  item.sessions = item.sessionsInMicro;
-});
+    item.sessions = item.sessionsInMicro;
+    item.dates = [...(item.dates || [])].sort((a, b) => String(a).localeCompare(String(b)));
+    item.sessionDetails = [...(item.sessionDetails || [])].sort((a, b) => {
+      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
+      if (dateCompare !== 0) return dateCompare;
+      const timeCompare = String(a.time || "23:59").localeCompare(String(b.time || "23:59"));
+      if (timeCompare !== 0) return timeCompare;
+      return Number(a.order || 0) - Number(b.order || 0);
+    });
+  });
 
 
   return ordered;
@@ -4103,7 +4118,8 @@ function getPlyometricVolumeData(patientNickname = "") {
       exercises: 0,
       sessionsInMicro: item.sessionsInMicro || 0,
       sessions: item.sessions || 0,
-      dates: item.dates || []
+      dates: item.dates || [],
+      sessionDetails: item.sessionDetails || []
     };
   });
 
@@ -4129,7 +4145,8 @@ function getPlyometricVolumeData(patientNickname = "") {
           exercises: 0,
           sessionsInMicro: 0,
           sessions: 0,
-          dates: []
+          dates: [],
+          sessionDetails: []
         };
       }
 
@@ -4287,8 +4304,25 @@ function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay
     const value = item[valueKey] || 0;
     const height = Math.max((value / maxValue) * 100, 6);
     const realSessions = Number(item.sessionsInMicro || item.sessions || 0);
-    const sessionDates = (item.dates || []).filter(Boolean);
+    const sessionDates = [...(item.dates || [])].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b)));
     const sessionDatesLabel = sessionDates.length ? sessionDates.join(" · ") : "Sin fechas registradas";
+    const orderedSessionDetails = [...(item.sessionDetails || [])].sort((a, b) => {
+      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
+      if (dateCompare !== 0) return dateCompare;
+      const timeCompare = String(a.time || "23:59").localeCompare(String(b.time || "23:59"));
+      if (timeCompare !== 0) return timeCompare;
+      return Number(a.order || 0) - Number(b.order || 0);
+    });
+    const formatTooltipDate = (value) => {
+      if (!value) return "Sin fecha";
+      const [year, month, day] = String(value).split("-").map(Number);
+      if (!year || !month || !day) return String(value);
+      return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short" }).format(new Date(year, month - 1, day));
+    };
+    const sessionTimeline = orderedSessionDetails.map((detail, index) => {
+      const sessionNumber = detail.number || `${item.micro}.${index + 1}`;
+      return `• ${formatTooltipDate(detail.date)} · Sesión ${sessionNumber}`;
+    });
 
     const tooltipLines = [
       item.label,
@@ -4296,8 +4330,9 @@ function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay
       `Ejercicios: ${item.exercises ?? 0}`,
       `Series: ${item.series ?? 0}`,
       Number(item.tonnage || 0) ? `Tonelaje: ${Math.round(item.tonnage)} kg` : "",
-      sessionDates.length ? `Fechas: ${sessionDates.join(" · ")}` : ""
-    ].filter(Boolean);
+      sessionTimeline.length ? "" : (sessionDates.length ? `Fechas: ${sessionDates.map(formatTooltipDate).join(" · ")}` : ""),
+      ...sessionTimeline
+    ].filter(line => line !== undefined && line !== null);
 
     const tooltipText = tooltipLines.join("\n");
     const tooltipTitle = tooltipLines.join(" | ");
@@ -4319,10 +4354,7 @@ function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay
             <span class="${valueClass}">${shownValue}</span>
           </div>
         </div>
-        <strong>${currentLabel}${item.label}</strong>
-        <small>
-          ${isCurrentMicro ? " · " : ""}${realSessions} sesión${realSessions === 1 ? "" : "es"}
-        </small>
+        <strong class="periodicity-micro-summary" aria-label="${item.label}, ${realSessions} sesión${realSessions === 1 ? "" : "es"}">${currentLabel}${item.label}<span aria-hidden="true">×${realSessions}</span></strong>
       </div>
     `;
   }).join("");
@@ -4701,113 +4733,572 @@ function renderPeriodicityPatientCard(patientNickname = "") {
   `;
 }
 
+
+const PPF_PERIODICITY_META_KEY = "periodicityPlans";
+let periodicitySelectedMicro = null;
+
+function periodicityReadPlans() {
+  try { const value = JSON.parse(localStorage.getItem(PPF_PERIODICITY_META_KEY) || "{}"); return value && typeof value === "object" ? value : {}; }
+  catch (_) { return {}; }
+}
+function periodicityPlanKey(nickname, year, micro) { return `${nciNickname(nickname)}::${year}::${micro}`; }
+function periodicityMeta(nickname, year, micro) { return periodicityReadPlans()[periodicityPlanKey(nickname, year, micro)] || {}; }
+async function periodicitySaveMeta(nickname, year, micro, patch) {
+  const plans = periodicityReadPlans();
+  const key = periodicityPlanKey(nickname, year, micro);
+  plans[key] = { ...(plans[key] || {}), ...patch, updatedAt: new Date().toISOString() };
+  localStorage.setItem(PPF_PERIODICITY_META_KEY, JSON.stringify(plans));
+  if (window.PPF_SUPABASE?.pushKey) { try { await window.PPF_SUPABASE.pushKey(PPF_PERIODICITY_META_KEY); } catch (error) { console.warn(error); } }
+}
+function periodicityEsc(value) { return String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])); }
+function periodicityDateLabel(value) {
+  if (!value) return "Sin fecha";
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("es-ES", { day:"numeric", month:"short", year:"numeric" }).format(date);
+}
+function periodicityPatientMicroGroups(nickname, year) {
+  const core = window.PPF_CORE;
+  if (!core || !nickname) return [];
+  const summary = core.summary(nickname);
+  const groups = new Map();
+  summary.sessions.forEach(session => {
+    const date = core.date(session);
+    if (year && date && Number(date.slice(0,4)) !== Number(year)) return;
+    const micro = core.micro(session);
+    if (!micro) return;
+    if (!groups.has(micro)) groups.set(micro, []);
+    groups.get(micro).push(session);
+  });
+  const today = new Date().toISOString().slice(0,10);
+  return [...groups.entries()].sort((a,b)=>a[0]-b[0]).map(([micro, list]) => {
+    const ordered = list.slice().sort(core.chronological);
+    const dates = ordered.map(core.date).filter(Boolean).sort();
+    const completed = ordered.filter(item => core.lifecycle(item) === "completed").length;
+    const pending = ordered.filter(item => core.lifecycle(item) === "pending").length;
+    const cancelled = ordered.filter(item => core.lifecycle(item) === "cancelled").length;
+    const start = dates[0] || ""; const end = dates[dates.length-1] || start;
+    let state = "future";
+    if (pending === 0 && completed > 0) state = "completed";
+    else if (start && end && start <= today && end >= today) state = "active";
+    else if (end && end < today && pending > 0) state = "incomplete";
+    const kinds = {};
+    ordered.forEach(item => { const meta=nciSessionKindMeta(item); kinds[meta.icon+" "+meta.label]=(kinds[meta.icon+" "+meta.label]||0)+1; });
+    return { micro, sessions: ordered, start, end, completed, pending, cancelled, total: ordered.length, compliance: (completed+pending) ? Math.round(completed/(completed+pending)*100) : 0, state, kinds };
+  });
+}
+function periodicityWeeklyRange(group, meta = {}) {
+  const mode = meta.scheduleMode === "manual" ? "manual" : "weekly";
+  if (mode === "manual") {
+    return { mode, start: meta.startDate || group.start, end: meta.endDate || group.end };
+  }
+  return { mode, start: ppfWeekStartIso(group.start), end: ppfWeekEndIso(group.start) };
+}
+
+const PPF_CHRONOLOGY_REBUILD_VERSION = 123;
+const PPF_CHRONOLOGY_REBUILD_KEY = "ppfChronologicalRebuildVersion";
+let ppfChronologyRebuildRunning = false;
+let ppfChronologyRebuildTimer = null;
+
+function periodicityPlanEntriesFor(nickname, year, plans = periodicityReadPlans()) {
+  const key = nciNickname(nickname);
+  const prefix = `${key}::${Number(year)}::`;
+  return Object.entries(plans).filter(([planKey]) => String(planKey).startsWith(prefix));
+}
+
+function periodicityResetManualSeason(nickname, year) {
+  const patientKey = nciNickname(nickname);
+  const seasonYear = Number(year);
+  if (!patientKey || !seasonYear) return false;
+
+  const plans = periodicityReadPlans();
+  let plansChanged = false;
+  periodicityPlanEntriesFor(patientKey, seasonYear, plans).forEach(([planKey, meta]) => {
+    if (meta?.scheduleMode === "manual" || meta?.startDate || meta?.endDate) {
+      plans[planKey] = {
+        ...(meta || {}),
+        scheduleMode: "weekly",
+        startDate: "",
+        endDate: "",
+        updatedAt: new Date().toISOString()
+      };
+      plansChanged = true;
+    }
+  });
+
+  let sessionsChanged = false;
+  sessions.forEach(session => {
+    if (nciSessionPatient(session) !== patientKey) return;
+    const value = nciSessionDate(session);
+    if (!value || Number(value.slice(0, 4)) !== seasonYear) return;
+    if (session.microManual || session.microcicloManual) {
+      session.microManual = false;
+      session.microcicloManual = false;
+      session.updatedAt = new Date().toISOString();
+      sessionsChanged = true;
+    }
+  });
+
+  if (plansChanged) localStorage.setItem(PPF_PERIODICITY_META_KEY, JSON.stringify(plans));
+  if (sessionsChanged) {
+    window.sessions = sessions;
+    localStorage.setItem("sessions", JSON.stringify(sessions));
+  }
+  return plansChanged || sessionsChanged;
+}
+
+function periodicityChronologyNeedsRebuild(nickname, year, plans = periodicityReadPlans()) {
+  const core = window.PPF_CORE;
+  if (!core?.chronologicalSeasonPlan) return false;
+  const plan = core.chronologicalSeasonPlan(nickname, { year, plans });
+  return plan.blocks.some(block =>
+    block.sessions.some(session => nciSessionMicro(session) !== block.targetMicro) ||
+    block.sessions.some((session, index) => Number(session.microSequenceOrder || 0) !== index + 1)
+  );
+}
+
+async function periodicityChronologicalRebuildV12({
+  force = false,
+  patientNickname = "",
+  year = 0,
+  reason = "manual"
+} = {}) {
+  if (ppfChronologyRebuildRunning || !window.PPF_CORE?.chronologicalSeasonPlan) {
+    return { changed: false, patients: 0 };
+  }
+
+  if (window.PPF_SUPABASE_READY?.then) {
+    try { await window.PPF_SUPABASE_READY; } catch (_) {}
+  }
+
+  let loaded = [];
+  try { loaded = JSON.parse(localStorage.getItem("sessions") || "[]"); } catch (_) {}
+  if (Array.isArray(loaded)) {
+    sessions = loaded;
+    window.sessions = sessions;
+  }
+  if (!Array.isArray(sessions) || !sessions.length) return { changed: false, patients: 0 };
+
+  ppfChronologyRebuildRunning = true;
+  try {
+    const plans = periodicityReadPlans();
+    const requestedPatient = nciNickname(patientNickname);
+    const patientKeys = requestedPatient
+      ? [requestedPatient]
+      : [...new Set(sessions.map(nciSessionPatient).filter(Boolean))];
+
+    let changed = false;
+    let notificationsChanged = false;
+    let affectedPatients = 0;
+    const nextPlans = { ...plans };
+    const nowIso = new Date().toISOString();
+
+    for (const patientKey of patientKeys) {
+      const years = year
+        ? [Number(year)]
+        : [...new Set(
+            sessions
+              .filter(item => nciSessionPatient(item) === patientKey)
+              .map(item => Number(nciSessionDate(item).slice(0, 4)))
+              .filter(Boolean)
+          )].sort((a, b) => a - b);
+
+      let patientChanged = false;
+
+      for (const seasonYear of years) {
+        // IMPORTANTE: el plan debe trabajar sobre las MISMAS referencias de
+        // `sessions` que después persistimos. Antes PPF CORE volvía a leer y
+        // parsear localStorage, creando objetos distintos: el orden calculado
+        // era correcto, pero las mutaciones se aplicaban sobre copias y nunca
+        // llegaban al array real. Chronological Sort + Global Renumber usa un
+        // contexto explícito para que fecha, reindexado y persistencia actúen
+        // sobre una única colección.
+        const seasonContext = {
+          sessions,
+          completedRecords: (() => {
+            try {
+              const rows = JSON.parse(localStorage.getItem("completedSessions") || "[]");
+              return Array.isArray(rows) ? rows : [];
+            } catch (_) { return []; }
+          })()
+        };
+        const seasonPlan = window.PPF_CORE.chronologicalSeasonPlan(patientKey, {
+          year: seasonYear,
+          plans,
+          context: seasonContext
+        });
+        if (!seasonPlan.blocks.length) continue;
+
+        // Auditoría previa: el CORE debe entregar una secuencia 1..N exacta.
+        const validSequence = seasonPlan.blocks.every((block, index) => block.targetMicro === index + 1);
+        if (!validSequence) throw new Error(`Secuencia no válida para ${patientKey} ${seasonYear}`);
+
+        // Capturamos primero todos los metadatos de origen. Después eliminamos
+        // las claves antiguas y finalmente escribimos las nuevas. Así evitamos
+        // colisiones como M13 -> M2 mientras todavía existe un M2 antiguo.
+        const sourcePlanKeys = new Set();
+        const rebuiltPlanEntries = [];
+
+        seasonPlan.blocks.forEach((block, index) => {
+          const target = index + 1;
+          const sourceMetas = block.oldMicros
+            .map(oldMicro => {
+              const sourceKey = periodicityPlanKey(patientKey, seasonYear, oldMicro);
+              sourcePlanKeys.add(sourceKey);
+              return plans[sourceKey];
+            })
+            .filter(Boolean);
+
+          const preferredMeta = sourceMetas.find(meta => meta?.scheduleMode === "manual")
+            || sourceMetas.find(meta => meta && Object.values(meta).some(Boolean))
+            || {};
+
+          rebuiltPlanEntries.push({
+            key: periodicityPlanKey(patientKey, seasonYear, target),
+            value: {
+              ...preferredMeta,
+              scheduleMode: block.mode,
+              startDate: block.mode === "manual" ? (preferredMeta.startDate || block.start) : "",
+              endDate: block.mode === "manual" ? (preferredMeta.endDate || block.end) : "",
+              updatedAt: nowIso
+            }
+          });
+
+          block.sessions.forEach(session => {
+            const targetLabel = block.mode === "manual"
+              ? `Micro ${target} · ${block.start} — ${block.end} · Manual`
+              : `Micro ${target} · ${block.start} — ${block.end}`;
+
+            const needsUpdate =
+              nciSessionMicro(session) !== target ||
+              Number(session.sessionBaseNumber || 0) !== target ||
+              session.microcicloLabel !== targetLabel ||
+              Boolean(session.microManual || session.microcicloManual) !== (block.mode === "manual");
+
+            if (needsUpdate || force) {
+              session.microciclo = target;
+              session.micro = target;
+              session.microcycle = target;
+              session.sessionBaseNumber = target;
+              session.microcicloLabel = targetLabel;
+              session.microManual = block.mode === "manual";
+              session.microcicloManual = block.mode === "manual";
+              session.updatedAt = nowIso;
+              patientChanged = patientChanged || needsUpdate;
+            }
+          });
+        });
+
+        // Limpiamos TODAS las claves del paciente/año para impedir restos como
+        // M13, M14... y escribimos exclusivamente M1..MN.
+        periodicityPlanEntriesFor(patientKey, seasonYear, nextPlans)
+          .forEach(([planKey]) => delete nextPlans[planKey]);
+        sourcePlanKeys.forEach(planKey => delete nextPlans[planKey]);
+        rebuiltPlanEntries.forEach(({ key, value }) => { nextPlans[key] = value; });
+      }
+
+      // NCI se ejecuta después del reindexado completo, nunca bloque a bloque.
+      const result = nciRenumberPatientSessions(patientKey, {
+        touchUpdatedAt: true,
+        rebuildOrder: true
+      });
+      notificationsChanged = notificationsChanged || Boolean(result?.notificationsChanged);
+      if (patientChanged || result?.changed) {
+        changed = true;
+        affectedPatients += 1;
+      }
+    }
+
+    // Auditoría final: por paciente/año, los micros deben ser exactamente 1..N
+    // y las sesiones de cada micro deben ser X.1, X.2, X.3... sin huecos.
+    for (const patientKey of patientKeys) {
+      const patientSessions = sessions.filter(item => nciSessionPatient(item) === patientKey && nciSessionDate(item));
+      const patientYears = [...new Set(patientSessions.map(item => Number(nciSessionDate(item).slice(0, 4))).filter(Boolean))];
+      for (const seasonYear of patientYears) {
+        const yearSessions = patientSessions.filter(item => Number(nciSessionDate(item).slice(0, 4)) === seasonYear);
+        const micros = [...new Set(yearSessions.map(nciSessionMicro).filter(Boolean))].sort((a, b) => a - b);
+        if (!micros.every((value, index) => value === index + 1)) {
+          throw new Error(`Auditoría fallida: micros no secuenciales en ${patientKey} ${seasonYear}: ${micros.join(",")}`);
+        }
+        for (const microNumber of micros) {
+          const ordered = yearSessions.filter(item => nciSessionMicro(item) === microNumber).sort(window.PPF_CORE.chronological);
+          const valid = ordered.every((item, index) =>
+            Number(item.microSequenceOrder || 0) === index + 1 &&
+            String(nciDisplayNumber(item)) === `${microNumber}.${index + 1}`
+          );
+          if (!valid) throw new Error(`Auditoría NCI fallida en ${patientKey} M${microNumber}`);
+        }
+      }
+    }
+
+    const plansChanged = JSON.stringify(nextPlans) !== JSON.stringify(plans);
+    if (plansChanged) localStorage.setItem(PPF_PERIODICITY_META_KEY, JSON.stringify(nextPlans));
+    if (changed || force) {
+      window.sessions = sessions;
+      localStorage.setItem("sessions", JSON.stringify(sessions));
+    }
+
+    if (changed || plansChanged || force) {
+      if (window.PPF_SUPABASE?.pushValue) {
+        await window.PPF_SUPABASE.pushValue("sessions", sessions);
+        if (plansChanged) await window.PPF_SUPABASE.pushValue(PPF_PERIODICITY_META_KEY, nextPlans);
+      } else if (window.PPF_SUPABASE?.pushKey) {
+        await window.PPF_SUPABASE.pushKey("sessions");
+        if (plansChanged) await window.PPF_SUPABASE.pushKey(PPF_PERIODICITY_META_KEY);
+      }
+      if (notificationsChanged && window.PPF_SUPABASE?.pushKey) {
+        await window.PPF_SUPABASE.pushKey("notifications");
+      }
+
+      localStorage.setItem(PPF_CHRONOLOGY_REBUILD_KEY, String(PPF_CHRONOLOGY_REBUILD_VERSION));
+      window.PPF_CORE.emit("chronological-sort-global-renumber");
+      window.dispatchEvent(new CustomEvent("ppf:chronology-rebuilt", {
+        detail: { reason, patients: affectedPatients, engine: "chronological-sort-global-renumber" }
+      }));
+    }
+
+    return { changed: changed || plansChanged || force, patients: affectedPatients };
+  } catch (error) {
+    console.warn("Chronological Sort + Global Renumber no pudo completar la reconstrucción:", error);
+    return { changed: false, patients: 0, error };
+  } finally {
+    ppfChronologyRebuildRunning = false;
+  }
+}
+
+function periodicityScheduleChronologicalRebuild(reason = "sessions") {
+  if (ppfChronologyRebuildRunning) return;
+  clearTimeout(ppfChronologyRebuildTimer);
+  ppfChronologyRebuildTimer = setTimeout(() => {
+    periodicityChronologicalRebuildV12({ reason }).catch(error => console.warn(error));
+  }, 260);
+}
+
+window.PPF_CHRONOLOGY = {
+  version: PPF_CHRONOLOGY_REBUILD_VERSION,
+  rebuild: periodicityChronologicalRebuildV12,
+  schedule: periodicityScheduleChronologicalRebuild,
+  needsRebuild: periodicityChronologyNeedsRebuild
+};
+
+window.addEventListener("ppf:core-updated", event => {
+  if (event?.detail?.reason === "sessions") periodicityScheduleChronologicalRebuild("sessions-updated");
+});
+
+function periodicityStateMeta(state) {
+  return ({ active:{label:"Activo",icon:"●"}, completed:{label:"Completado",icon:"✓"}, incomplete:{label:"Incompleto",icon:"!"}, future:{label:"Futuro",icon:"○"} })[state] || {label:state,icon:"○"};
+}
+function periodicityRenderV1(nickname, year) {
+  const overview=document.getElementById("periodicitySeasonOverview");
+  const timeline=document.getElementById("periodicityMicroTimeline");
+  const detail=document.getElementById("periodicityMicroDetail");
+  if (!overview || !timeline || !detail) return;
+  if (!nickname) {
+    overview.innerHTML=`<div class="periodicity-pro-empty"><span>📆</span><h3>Selecciona un cliente</h3><p>Construiremos su temporada a partir de los microciclos reales ya existentes.</p></div>`;
+    timeline.innerHTML=""; detail.innerHTML=""; return;
+  }
+  const patient=patients.find(item=>nciNickname(item.nickname)===nciNickname(nickname)) || {nombre:nickname,nickname};
+  const groups=periodicityPatientMicroGroups(nickname, year);
+  const all=groups.flatMap(group=>group.sessions);
+  const completed=groups.reduce((sum,g)=>sum+g.completed,0), pending=groups.reduce((sum,g)=>sum+g.pending,0);
+  const seasonStart=groups.map(g=>g.start).filter(Boolean).sort()[0] || `${year}-01-01`;
+  const seasonEnd=groups.map(g=>g.end).filter(Boolean).sort().at(-1) || `${year}-12-31`;
+  const current=groups.find(g=>g.state==="active") || groups.filter(g=>g.state==="incomplete").at(-1) || groups.at(-1);
+  if (periodicitySelectedMicro == null || !groups.some(g=>g.micro===periodicitySelectedMicro)) periodicitySelectedMicro=current?.micro ?? groups[0]?.micro ?? null;
+  overview.innerHTML=`<div class="periodicity-season-card">
+    <div class="periodicity-season-person"><span>${periodicityEsc((patient.nombre||"?").charAt(0).toUpperCase())}</span><div><p class="eyebrow">TEMPORADA ${periodicityEsc(year)}</p><h3>${periodicityEsc(patient.nombre||nickname)}</h3><small>@${periodicityEsc(patient.nickname||nickname)} · ${periodicityDateLabel(seasonStart)} — ${periodicityDateLabel(seasonEnd)}</small></div></div>
+    <div class="periodicity-season-kpis"><article><small>Microciclos</small><strong>${groups.length}</strong></article><article><small>Sesiones</small><strong>${all.length}</strong></article><article><small>Terminadas</small><strong>${completed}</strong></article><article><small>Pendientes</small><strong>${pending}</strong></article></div>
+  </div>`;
+  timeline.innerHTML=groups.length ? `<div class="periodicity-timeline-head"><div><p class="eyebrow">MAPA DE TEMPORADA</p><h3>Microciclos semanales</h3></div><span>${groups.length} bloques</span></div><div class="periodicity-timeline-track">${groups.map(group=>{const meta=periodicityMeta(nickname,year,group.micro), state=periodicityStateMeta(group.state), range=periodicityWeeklyRange(group,meta); return `<button type="button" class="periodicity-micro-block state-${group.state} ${group.micro===periodicitySelectedMicro?"is-selected":""}" data-periodicity-micro="${group.micro}"><span class="periodicity-micro-number">M${group.micro}</span><strong>${periodicityEsc(meta.name||`Micro ${group.micro}`)}</strong><small>${periodicityDateLabel(range.start)} — ${periodicityDateLabel(range.end)}</small><div class="periodicity-micro-progress"><i style="width:${group.compliance}%"></i></div><footer><span>${range.mode==="manual"?"✍️ Manual":state.icon+" "+state.label}</span><b>${group.completed}/${group.total}</b></footer></button>`}).join("")}</div>` : `<div class="periodicity-pro-empty"><span>🧭</span><h3>Sin microciclos en ${year}</h3><p>Las sesiones que crees para este cliente aparecerán aquí automáticamente.</p></div>`;
+  timeline.querySelectorAll("[data-periodicity-micro]").forEach(button=>button.addEventListener("click",()=>{periodicitySelectedMicro=Number(button.dataset.periodicityMicro); periodicityRenderV1(nickname,year);}));
+  const selected=groups.find(g=>g.micro===periodicitySelectedMicro);
+  if (!selected) { detail.innerHTML=""; return; }
+  const meta=periodicityMeta(nickname,year,selected.micro), state=periodicityStateMeta(selected.state), range=periodicityWeeklyRange(selected,meta);
+  const kinds=Object.entries(selected.kinds).map(([label,count])=>`<span>${periodicityEsc(label)} ×${count}</span>`).join("");
+  detail.innerHTML=`<article class="periodicity-micro-inspector">
+    <header><div><p class="eyebrow">MICRO ${selected.micro}</p><h3>${periodicityEsc(meta.name||`Micro ${selected.micro}`)}</h3><small>${periodicityDateLabel(range.start)} — ${periodicityDateLabel(range.end)} · Semana ${window.PPF_CORE?.isoWeekNumber?.(range.start) || "-"}</small></div><span class="periodicity-state state-${selected.state}">${range.mode==="manual"?"✍️ Manual":state.icon+" "+state.label}</span></header>
+    <section class="periodicity-micro-metrics"><article><small>Sesiones</small><strong>${selected.total}</strong></article><article><small>Terminadas</small><strong>${selected.completed}</strong></article><article><small>Pendientes</small><strong>${selected.pending}</strong></article><article><small>Cumplimiento</small><strong>${selected.compliance}%</strong></article></section>
+    <div class="periodicity-micro-kinds">${kinds || "<span>Sin actividad registrada</span>"}</div>
+    <div class="periodicity-micro-form">
+      <label>Modo del micro<select id="periodicityMicroMode"><option value="weekly" ${range.mode==="weekly"?"selected":""}>📅 Semanal automático · lunes a domingo</option><option value="manual" ${range.mode==="manual"?"selected":""}>✍️ Rango manual</option></select></label>
+      <div class="periodicity-range-fields"><label>Inicio<input type="date" id="periodicityMicroStart" value="${periodicityEsc(range.start)}" ${range.mode==="weekly"?"disabled":""}></label><label>Fin<input type="date" id="periodicityMicroEnd" value="${periodicityEsc(range.end)}" ${range.mode==="weekly"?"disabled":""}></label></div>
+      <label>Nombre del micro<input id="periodicityMicroName" value="${periodicityEsc(meta.name||"")}" placeholder="Ej. Fuerza máxima"></label><label>Objetivo<textarea id="periodicityMicroObjective" placeholder="Objetivo principal del microciclo">${periodicityEsc(meta.objective||"")}</textarea></label><label>Observaciones<textarea id="periodicityMicroNotes" placeholder="Notas estratégicas">${periodicityEsc(meta.notes||"")}</textarea></label></div>
+    <footer class="periodicity-action-row"><button type="button" class="primary-btn periodicity-action-save" id="periodicitySaveMicro">💾 Guardar planificación</button><button type="button" class="periodicity-action-btn periodicity-action-agenda" id="periodicityOpenAgenda"><span>📅</span><strong>Abrir Agenda</strong></button><button type="button" class="periodicity-action-btn periodicity-action-workspace" id="periodicityOpenWorkspace"><span>👤</span><strong>Abrir Workspace</strong></button></footer>
+  </article>`;
+  const modeSelect=document.getElementById("periodicityMicroMode");
+  modeSelect?.addEventListener("change",()=>{const manual=modeSelect.value==="manual"; document.getElementById("periodicityMicroStart").disabled=!manual; document.getElementById("periodicityMicroEnd").disabled=!manual;});
+  document.getElementById("periodicitySaveMicro")?.addEventListener("click", async()=>{
+    const mode=modeSelect?.value||"weekly";
+    await periodicitySaveMeta(nickname,year,selected.micro,{scheduleMode:mode,startDate:mode==="manual"?(document.getElementById("periodicityMicroStart")?.value||selected.start):"",endDate:mode==="manual"?(document.getElementById("periodicityMicroEnd")?.value||selected.end):"",name:document.getElementById("periodicityMicroName")?.value.trim()||"",objective:document.getElementById("periodicityMicroObjective")?.value.trim()||"",notes:document.getElementById("periodicityMicroNotes")?.value.trim()||""});
+
+    // Manual Reset Engine: cuando todos los micros activos de la temporada
+    // están en automático, eliminamos cualquier resto manual histórico antes
+    // de reconstruir. Así un paciente de pruebas no continúa en M19, M20...
+    if (mode === "weekly") {
+      const activeGroups = periodicityPatientMicroGroups(nickname, year);
+      const latestPlans = periodicityReadPlans();
+      const hasActiveManual = activeGroups.some(group =>
+        latestPlans[periodicityPlanKey(nickname, year, group.micro)]?.scheduleMode === "manual"
+      );
+      if (!hasActiveManual) periodicityResetManualSeason(nickname, year);
+    }
+
+    await periodicityChronologicalRebuildV12({force:true,patientNickname:nickname,year,reason:"periodicity-save"});
+    periodicitySelectedMicro=null;
+    periodicityRenderV1(nickname,year);
+  });
+  document.getElementById("periodicityOpenAgenda")?.addEventListener("click",()=>{agendaProWorkspacePatient=nickname; agendaProViewMode="calendar"; pmNavigateAdmin("agenda"); setTimeout(()=>{const filter=document.getElementById("agendaProPatientFilter"); if(filter){filter.value=nickname; filter.dispatchEvent(new Event("change",{bubbles:true}));}},0);});
+  document.getElementById("periodicityOpenWorkspace")?.addEventListener("click",()=>{agendaProWorkspacePatient=nickname; agendaProViewMode="client"; pmNavigateAdmin("agenda");});
+}
+
 function bindPeriodicityPanel() {
-  const filter = document.getElementById("periodicityPatientFilter");
-  if (!filter) return;
+  const filter=document.getElementById("periodicityPatientFilter");
+  const season=document.getElementById("periodicitySeasonYear");
+  if (!filter || !season) return;
+  const years=new Set([new Date().getFullYear()]);
+  window.PPF_CORE?.normalizedContext?.().sessions.forEach(session=>{const d=window.PPF_CORE.date(session); if(d) years.add(Number(d.slice(0,4)));});
+  season.innerHTML=[...years].filter(Boolean).sort((a,b)=>b-a).map(year=>`<option value="${year}">${year}</option>`).join("");
 
-  const getPeriodicityNickname = () => {
-    const value = String(filter.value || "").trim();
-    const selectedText = String(filter.options?.[filter.selectedIndex]?.textContent || "").trim();
+  // Periodicidad es estratégica: siempre entra limpia y exige selección explícita.
+  filter.value="";
+  periodicitySelectedMicro=null;
 
-    const patient =
-      patients.find(p => String(p.nickname || "") === value) ||
-      patients.find(p => String(p.nombre || "") === value) ||
-      patients.find(p => String(p.nickname || "") === selectedText) ||
-      patients.find(p => String(p.nombre || "") === selectedText);
-
-    return patient ? patient.nickname : value;
+  const run=()=>{
+    const nickname=filter.value||"";
+    const year=Number(season.value)||new Date().getFullYear();
+    periodicityRenderV1(nickname,year);
+    renderPeriodicityPatientCard(nickname);
+    if(nickname) renderWeeklyVolumeChart(nickname);
   };
+  filter.addEventListener("change",()=>{periodicitySelectedMicro=null;run();});
+  season.addEventListener("change",()=>{periodicitySelectedMicro=null;run();});
+  document.querySelector(".periodicity-analysis-details")?.addEventListener("toggle",event=>{if(event.currentTarget.open) setTimeout(run,20);});
 
-  const clearPeriodicity = () => {
-    ["weeklyVolumeChart", "plyometricVolumeChart", "tonnageChart", "distributionChart"].forEach(id => {
-      const element = document.getElementById(id);
-      if (element) element.innerHTML = `<p class="empty-chart-message">Selecciona un paciente para ver las gráficas.</p>`;
-    });
-
-    ["weeklyVolumeTableBody", "plyometricVolumeTableBody", "tonnageTableBody"].forEach(id => {
-      const element = document.getElementById(id);
-      if (element) element.innerHTML = `<tr><td colspan="4">Selecciona un paciente para ver datos.</td></tr>`;
-    });
+  const normalizeAndRender=async()=>{
+    await periodicityChronologicalRebuildV12({ reason: "periodicity-open" });
+    // La migración puede introducir años nuevos; reconstruimos el selector.
+    const refreshedYears=new Set([new Date().getFullYear()]);
+    window.PPF_CORE?.normalizedContext?.().sessions.forEach(session=>{const d=window.PPF_CORE.date(session); if(d) refreshedYears.add(Number(d.slice(0,4)));});
+    const selectedYear=Number(season.value)||new Date().getFullYear();
+    season.innerHTML=[...refreshedYears].filter(Boolean).sort((a,b)=>b-a).map(year=>`<option value="${year}" ${year===selectedYear?"selected":""}>${year}</option>`).join("");
+    filter.value="";
+    run();
   };
-
-  const run = () => {
-    const nickname = getPeriodicityNickname();
-
-    if (typeof renderPeriodicityPatientCard === "function") {
-      renderPeriodicityPatientCard(nickname);
-    }
-
-    if (!nickname) {
-      clearPeriodicity();
-      return;
-    }
-
-    renderWeeklyVolumeChart(nickname);
-
-    if (typeof updatePeriodicityDistributionChart === "function") {
-      updatePeriodicityDistributionChart(nickname);
-    }
-  };
-
-  filter.addEventListener("change", run);
-  run();
+  if (window.PPF_SUPABASE_READY?.then) window.PPF_SUPABASE_READY.then(normalizeAndRender).catch(normalizeAndRender);
+  else setTimeout(normalizeAndRender, 250);
 }
 
 
+function ppfSessionStableId(item = {}) {
+  return String(item?.id ?? item?.sessionId ?? "").trim();
+}
 
+function ppfRemoveSessionReferences(sessionIds = []) {
+  const ids = new Set(sessionIds.map(value => String(value ?? "").trim()).filter(Boolean));
+  if (!ids.size) return { completedChanged: false, notificationsChanged: false };
 
-async function deleteSession(sessionId) {
-  const session = sessions.find(item => item.id === sessionId);
-  if (!session) return;
+  let completed = [];
+  try { completed = JSON.parse(localStorage.getItem("completedSessions") || "[]"); } catch (_) {}
+  const nextCompleted = Array.isArray(completed)
+    ? completed.filter(item => !ids.has(ppfSessionStableId(item)))
+    : [];
+  const completedChanged = nextCompleted.length !== (Array.isArray(completed) ? completed.length : 0);
+  if (completedChanged) localStorage.setItem("completedSessions", JSON.stringify(nextCompleted));
 
-  const confirmed = confirm(`¿Eliminar la sesión ${nciDisplayNumber(session)}?`);
-  if (!confirmed) return;
+  let notifications = [];
+  try { notifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
+  const nextNotifications = Array.isArray(notifications)
+    ? notifications.filter(item => !ids.has(String(item?.sessionId ?? "").trim()))
+    : [];
+  const notificationsChanged = nextNotifications.length !== (Array.isArray(notifications) ? notifications.length : 0);
+  if (notificationsChanged) localStorage.setItem("notifications", JSON.stringify(nextNotifications));
 
-  const patientNickname = session.patientNickname;
-  sessions = sessions.filter(item => item.id !== sessionId);
-  const result = nciRenumberPatientSessions(patientNickname, { touchUpdatedAt: true });
+  // Tombstones locales: impiden que una sincronización posterior vuelva a
+  // introducir una sesión eliminada antes de que Supabase reciba el cambio.
+  let deletedIds = [];
+  try { deletedIds = JSON.parse(localStorage.getItem("deletedSessionIds") || "[]"); } catch (_) {}
+  const mergedDeleted = [...new Set([...(Array.isArray(deletedIds) ? deletedIds : []), ...ids])];
+  localStorage.setItem("deletedSessionIds", JSON.stringify(mergedDeleted));
+
+  return { completedChanged, notificationsChanged };
+}
+
+async function ppfDeleteSessionsByIds(sessionIds = [], { confirmation = true } = {}) {
+  const ids = new Set(sessionIds.map(value => String(value ?? "").trim()).filter(Boolean));
+  if (!ids.size) return { deleted: 0 };
+
+  const targets = sessions.filter(item => ids.has(ppfSessionStableId(item)));
+  if (!targets.length) return { deleted: 0 };
+
+  if (confirmation) {
+    const label = targets.length === 1
+      ? `la sesión ${nciDisplayNumber(targets[0])}`
+      : `${targets.length} sesiones seleccionadas`;
+    if (!confirm(`¿Eliminar definitivamente ${label}?\n\nEsta acción no se puede deshacer.`)) return { deleted: 0 };
+  }
+
+  const affectedPatients = [...new Set(targets.map(nciSessionPatient).filter(Boolean))];
+  sessions = sessions.filter(item => !ids.has(ppfSessionStableId(item)));
+  const refs = ppfRemoveSessionReferences([...ids]);
+
+  let notificationsChanged = refs.notificationsChanged;
+  affectedPatients.forEach(patientKey => {
+    const result = nciRenumberPatientSessions(patientKey, { touchUpdatedAt: true, rebuildOrder: true });
+    notificationsChanged = notificationsChanged || Boolean(result?.notificationsChanged);
+  });
+
   window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
   window.PPF_CORE?.emit?.("sessions");
-  if (window.PPF_SUPABASE?.pushKey) {
-    try { await window.PPF_SUPABASE.pushKey("sessions"); } catch (error) { console.warn(error); }
-    if (result.notificationsChanged) {
-      try { await window.PPF_SUPABASE.pushKey("notifications"); } catch (error) { console.warn(error); }
+
+  // Reconstruimos la cronología después del borrado para compactar M1..Mn y
+  // X.1..X.n sin referencias fantasma.
+  if (window.PPF_CHRONOLOGY?.rebuild) {
+    for (const patientKey of affectedPatients) {
+      try { await window.PPF_CHRONOLOGY.rebuild({ force: true, patientNickname: patientKey, reason: "delete-engine" }); }
+      catch (error) { console.warn("No se pudo reconstruir tras eliminar:", error); }
     }
   }
-  renderSection("sesiones");
+
+  if (window.PPF_SUPABASE?.pushValue) {
+    try {
+      await window.PPF_SUPABASE.pushValue("sessions", sessions);
+      if (refs.completedChanged) {
+        const completed = JSON.parse(localStorage.getItem("completedSessions") || "[]");
+        await window.PPF_SUPABASE.pushValue("completedSessions", completed);
+      }
+      if (notificationsChanged) {
+        const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
+        await window.PPF_SUPABASE.pushValue("notifications", notifications);
+      }
+    } catch (error) { console.warn("Supabase no confirmó toda la eliminación:", error); }
+  } else if (window.PPF_SUPABASE?.pushKey) {
+    try {
+      await window.PPF_SUPABASE.pushKey("sessions");
+      if (refs.completedChanged) await window.PPF_SUPABASE.pushKey("completedSessions");
+      if (notificationsChanged) await window.PPF_SUPABASE.pushKey("notifications");
+    } catch (error) { console.warn("Supabase no confirmó toda la eliminación:", error); }
+  }
+
+  return { deleted: targets.length, affectedPatients };
+}
+
+async function deleteSession(sessionId) {
+  const result = await ppfDeleteSessionsByIds([sessionId]);
+  if (result.deleted) renderSection("sesiones");
 }
 
 async function deleteSelectedSessions() {
-  const selected = [...document.querySelectorAll(".session-select:checked")].map(input => input.value);
+  const selected = [...document.querySelectorAll(".session-select:checked")]
+    .map(input => String(input.value ?? "").trim())
+    .filter(Boolean);
 
-  if (selected.length === 0) {
+  if (!selected.length) {
     alert("Selecciona al menos una sesión.");
     return;
   }
 
-  const confirmed = confirm(`¿Eliminar ${selected.length} sesión${selected.length === 1 ? "" : "es"} seleccionada${selected.length === 1 ? "" : "s"}?`);
-  if (!confirmed) return;
-
-  const affectedPatients = Array.from(new Set(
-    sessions.filter(item => selected.includes(item.id)).map(item => item.patientNickname).filter(Boolean)
-  ));
-  sessions = sessions.filter(item => !selected.includes(item.id));
-  let notificationsChanged = false;
-  affectedPatients.forEach(nickname => {
-    const result = nciRenumberPatientSessions(nickname, { touchUpdatedAt: true });
-    notificationsChanged = notificationsChanged || result.notificationsChanged;
-  });
-  window.sessions = sessions;
-  localStorage.setItem("sessions", JSON.stringify(sessions));
-  window.PPF_CORE?.emit?.("sessions");
-  if (window.PPF_SUPABASE?.pushKey) {
-    try { await window.PPF_SUPABASE.pushKey("sessions"); } catch (error) { console.warn(error); }
-    if (notificationsChanged) {
-      try { await window.PPF_SUPABASE.pushKey("notifications"); } catch (error) { console.warn(error); }
-    }
-  }
-  renderSection("sesiones");
+  const result = await ppfDeleteSessionsByIds(selected);
+  if (result.deleted) renderSection("sesiones");
 }
 
 function toggleAllSessionsSelection(checked) {
@@ -4825,14 +5316,29 @@ function getPatientSortedSessionDates(patientNickname) {
   )].sort();
 }
 
+function ppfWeekStartIso(value) {
+  return window.PPF_CORE?.weekStartIso?.(value) || "";
+}
+
+function ppfWeekEndIso(value) {
+  return window.PPF_CORE?.weekEndIso?.(value) || "";
+}
+
 function getComputedMicrocycleNumber(patientNickname, date) {
   if (!patientNickname || !date) return "-";
+  const weekStart = ppfWeekStartIso(date);
+  const patientSessions = sessions.filter(session => session.patientNickname === patientNickname);
 
-  const dates = getPatientSortedSessionDates(patientNickname);
-  if (!dates.includes(date)) dates.push(date);
-  dates.sort();
+  // Regla Periodicidad PRO v1.2: si ya existe un micro automático en esa
+  // semana (lunes-domingo), cualquier sesión nueva reutiliza su número X.
+  const sameWeek = patientSessions.find(session => {
+    const manual = Boolean(session.microManual || session.microcicloManual || String(session.microcicloLabel || "").toLowerCase().includes("manual"));
+    return !manual && Number(session.microciclo) > 0 && ppfWeekStartIso(session.fecha) === weekStart;
+  });
+  if (sameWeek) return Number(sameWeek.microciclo);
 
-  return dates.indexOf(date) + 1;
+  const maxMicro = patientSessions.reduce((max, session) => Math.max(max, Number(session.microciclo) || 0), 0);
+  return maxMicro + 1 || 1;
 }
 
 function normalizeSessionMicrocycles(patientNickname = "") {
@@ -7257,7 +7763,7 @@ function agendaWorkspaceRender() {
     if (!grouped.has(micro)) grouped.set(micro, []);
     grouped.get(micro).push(session);
   });
-  const timeline = [...grouped.entries()].sort((a,b)=>b[0]-a[0]).map(([micro, list]) => `<section class="agenda-workspace-micro"><header><span>MICRO ${agendaProEscape(micro || "-")}</span><small>${list.length} sesión${list.length===1?"":"es"}</small></header><div>${list.slice().sort((a,b)=>agendaProSessionDateTime(b)-agendaProSessionDateTime(a) || Number(b.subsessionOrder||1)-Number(a.subsessionOrder||1)).map(agendaWorkspaceSessionCard).join("")}</div></section>`).join("");
+  const timeline = [...grouped.entries()].sort((a,b)=>b[0]-a[0]).map(([micro, list]) => `<section class="agenda-workspace-micro"><header class="agenda-workspace-micro-badge" aria-label="Micro ${agendaProEscape(micro || "-")}, ${list.length} sesión${list.length===1?"":"es"}"><span>M${agendaProEscape(micro || "-")}</span><small>×${list.length}</small></header><div>${list.slice().sort((a,b)=>agendaProSessionDateTime(b)-agendaProSessionDateTime(a) || Number(b.subsessionOrder||1)-Number(a.subsessionOrder||1)).map(agendaWorkspaceSessionCard).join("")}</div></section>`).join("");
   mount.innerHTML = `<div class="agenda-workspace-head">
       <div class="agenda-workspace-person"><span>${agendaProEscape((patient.nombre || patient.nickname || "?").trim().charAt(0).toUpperCase())}</span><div><p class="eyebrow">CLIENT WORKSPACE</p><h2>${agendaProEscape(patient.nombre || "Selecciona cliente")}</h2><small>@${agendaProEscape(patient.nickname || "")} · Micro actual ${agendaProEscape(currentMicro || "-")}</small></div></div>
       <div class="agenda-workspace-selector"><label>Cliente<select id="agendaWorkspacePatient">${patients.map(item=>`<option value="${agendaProEscape(item.nickname)}" ${nciNickname(item.nickname)===key?"selected":""}>${agendaProEscape(item.nombre)}</option>`).join("")}</select></label><button type="button" id="agendaWorkspaceNewSession">＋ Nueva sesión</button></div>
@@ -7560,28 +8066,8 @@ async function agendaProDuplicateSession(sessionId) {
 }
 
 async function agendaProDeleteSession(sessionId) {
-  const session = sessions.find(item => String(item.id) === String(sessionId));
-  if (!session) return;
-  const patient = agendaProPatient(session);
-  const confirmed = confirm(`¿Eliminar definitivamente la sesión ${nciDisplayNumber(session)} de ${patient.nombre}?\n\nEsta acción no se puede deshacer.`);
-  if (!confirmed) return;
-
-  const nickname = session.patientNickname;
-  sessions = sessions.filter(item => String(item.id) !== String(sessionId));
-  const renumberResult = nciRenumberPatientSessions(nickname, { touchUpdatedAt: true });
-  window.sessions = sessions;
-  localStorage.setItem("sessions", JSON.stringify(sessions));
-  window.PPF_CORE?.emit?.("sessions");
-
-  try {
-    if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
-    else if (window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("sessions");
-    if (renumberResult.notificationsChanged && window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("notifications");
-  } catch (error) {
-    console.error("Agenda PRO no pudo confirmar la eliminación en Supabase:", error);
-    alert("La sesión se eliminó en este dispositivo, pero Supabase no confirmó la sincronización.");
-  }
-  renderSection("agenda");
+  const result = await ppfDeleteSessionsByIds([sessionId]);
+  if (result.deleted) renderSection("agenda");
 }
 
 async function agendaProSaveEditor(event) {
@@ -7958,118 +8444,69 @@ const sections = {
     afterRender: bindSessionsForm
   },
   periodicidad: {
-    title: "Periodicidad",
+    title: "Periodicidad PRO",
     html: `
-      <h2>Periodicidad PRO</h2>
-      <p>Control de volumen, ejercicios, pliometría, distribución y tonelaje por microciclo.</p>
+      <div class="periodicity-pro-v1" id="periodicityProRoot">
+        <section class="periodicity-pro-hero">
+          <div>
+            <p class="eyebrow">PLANIFICACIÓN ESTRATÉGICA</p>
+            <h2>📆 Periodicidad PRO</h2>
+            <p>Lee la temporada real del deportista a partir de sus microciclos y sesiones existentes.</p>
+          </div>
+          <div class="periodicity-pro-controls">
+            <label>Cliente
+              <select id="periodicityPatientFilter">
+                <option value="" selected>Selecciona paciente</option>
+                ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
+              </select>
+            </label>
+            <label>Temporada
+              <select id="periodicitySeasonYear"></select>
+            </label>
+          </div>
+        </section>
 
-      <div class="patient-form" style="margin-top:24px;">
-        <label for="periodicityPatientFilter">Filtrar por paciente</label>
-        <select id="periodicityPatientFilter">
-          <option value="" selected disabled>Selecciona paciente</option>
-          ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
-        </select>
+        <section id="periodicitySeasonOverview" class="periodicity-season-overview"></section>
+        <section id="periodicityMicroTimeline" class="periodicity-micro-timeline"></section>
+        <section id="periodicityMicroDetail" class="periodicity-micro-detail"></section>
+
+        <details class="periodicity-analysis-details">
+          <summary><span>📊</span><div><strong>Análisis avanzado del entrenamiento</strong><small>Volumen, pliometría, tonelaje y distribución</small></div><b>⌄</b></summary>
+          <div class="periodicity-analysis-content">
+            <div id="periodicityPatientCard"></div>
+            <section class="periodicity-kpi-grid" id="periodicityKpis"></section>
+
+            <section class="periodicity-dashboard">
+              <article class="periodicity-card">
+                <div class="module-panel-header"><div><p class="eyebrow">Volumen semanal</p><h3>Series por microciclo</h3></div><span>M1 · M2 · M3...</span></div>
+                <div class="volume-chart" id="weeklyVolumeChart"></div>
+              </article>
+              <article class="periodicity-card">
+                <div class="module-panel-header"><div><p class="eyebrow">Resumen total</p><h3>Detalle por microciclo</h3></div></div>
+                <div class="volume-table-wrap"><table class="volume-table"><thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Series</th></tr></thead><tbody id="weeklyVolumeTableBody"></tbody></table></div>
+              </article>
+            </section>
+
+            <section class="periodicity-dashboard">
+              <article class="periodicity-card">
+                <div class="module-panel-header"><div><p class="eyebrow">Volumen pliometría</p><h3>Series de pliometría por microciclo</h3></div><span>Plyo Extensiva · Plyo Intensiva · Pliometría</span></div>
+                <div class="volume-chart plyo-chart" id="plyometricVolumeChart"></div>
+              </article>
+              <article class="periodicity-card">
+                <div class="module-panel-header"><div><p class="eyebrow">Resumen pliometría</p><h3>Detalle pliométrico anual</h3></div></div>
+                <div class="volume-table-wrap"><table class="volume-table"><thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios Plyo</th><th>Series Plyo</th></tr></thead><tbody id="plyometricVolumeTableBody"></tbody></table></div>
+              </article>
+            </section>
+
+            <section class="periodicity-dashboard kg-dashboard-row">
+              <article class="periodicity-card"><div class="module-panel-header"><div><p class="eyebrow">Tonelaje</p><h3>Kg totales por microciclo</h3></div><span>Series × Reps × Kg</span></div><div class="volume-chart tonnage-chart" id="tonnageChart"></div></article>
+              <article class="periodicity-card"><div class="module-panel-header"><div><p class="eyebrow">Resumen tonelaje</p><h3>Detalle de carga externa</h3></div></div><div class="volume-table-wrap"><table class="volume-table"><thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Tonelaje Kg</th></tr></thead><tbody id="tonnageTableBody"></tbody></table></div></article>
+            </section>
+
+            <section class="periodicity-dashboard distribution-dashboard-row"><article class="periodicity-card distribution-wide-card"><div class="module-panel-header"><div><p class="eyebrow">Distribución</p><h3>TS · TI · Core · Plyo</h3></div></div><div class="distribution-chart" id="distributionChart"></div></article></section>
+          </div>
+        </details>
       </div>
-
-      <div id="periodicityPatientCard"></div>
-
-      <section class="periodicity-kpi-grid" id="periodicityKpis"></section>
-
-      <section class="periodicity-dashboard">
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Volumen semanal</p>
-              <h3>Series por microciclo</h3>
-            </div>
-            <span>M1 · M2 · M3...</span>
-          </div>
-          <div class="volume-chart" id="weeklyVolumeChart"></div>
-        </article>
-
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Resumen total</p>
-              <h3>Detalle por microciclo</h3>
-            </div>
-          </div>
-          <div class="volume-table-wrap">
-            <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Series</th></tr></thead>
-              <tbody id="weeklyVolumeTableBody"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <section class="periodicity-dashboard">
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Volumen pliometría</p>
-              <h3>Series de pliometría por microciclo</h3>
-            </div>
-            <span>Plyo Extensiva · Plyo Intensiva · Pliometría</span>
-          </div>
-          <div class="volume-chart plyo-chart" id="plyometricVolumeChart"></div>
-        </article>
-
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Resumen pliometría</p>
-              <h3>Detalle pliométrico anual</h3>
-            </div>
-          </div>
-          <div class="volume-table-wrap">
-            <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios Plyo</th><th>Series Plyo</th></tr></thead>
-              <tbody id="plyometricVolumeTableBody"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <section class="periodicity-dashboard kg-dashboard-row">
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Tonelaje</p>
-              <h3>Kg totales por microciclo</h3>
-            </div>
-            <span>Series × Reps × Kg</span>
-          </div>
-          <div class="volume-chart tonnage-chart" id="tonnageChart"></div>
-        </article>
-
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Resumen tonelaje</p>
-              <h3>Detalle de carga externa</h3>
-            </div>
-          </div>
-          <div class="volume-table-wrap">
-            <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Tonelaje Kg</th></tr></thead>
-              <tbody id="tonnageTableBody"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <section class="periodicity-dashboard distribution-dashboard-row">
-        <article class="periodicity-card distribution-wide-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Distribución</p>
-              <h3>TS · TI · Core · Plyo</h3>
-            </div>
-          </div>
-          <div class="distribution-chart" id="distributionChart"></div>
-        </article>
-      </section>
     `,
     afterRender: bindPeriodicityPanel
   },
@@ -8283,13 +8720,15 @@ function renderSection(key) {
   const section = sections[key] || sections.inicio;
   const isHome = key === "inicio";
   const isAgenda = key === "agenda";
+  const isPeriodicity = key === "periodicidad";
   document.body.classList.toggle("admin-home-active", isHome);
   document.body.classList.toggle("admin-agenda-active", isAgenda);
+  document.body.classList.toggle("admin-periodicity-active", isPeriodicity);
   sectionTitle.textContent = section.title;
   contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-  if (!isHome) pmSetDashboardKpis(key);
+  if (!isHome && !isPeriodicity) pmSetDashboardKpis(key);
   if (section.afterRender) section.afterRender();
-  if (!isHome) pmSetDashboardKpis(key);
+  if (!isHome && !isPeriodicity) pmSetDashboardKpis(key);
 }
 
 navItems.forEach(item => {

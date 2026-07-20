@@ -154,14 +154,157 @@
     ctx.sessions.forEach(session => { const key = patient(session); if (key && !summaries[key]) summaries[key] = summary(key, ctx); });
     return { ...ctx, agenda: agenda(ctx), summaries };
   }
+
+  function weekStartIso(value) {
+    if (!value) return "";
+    const parsed = new Date(`${value}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return "";
+    const day = parsed.getDay() || 7;
+    parsed.setDate(parsed.getDate() - day + 1);
+    return parsed.toISOString().slice(0, 10);
+  }
+  function weekEndIso(value) {
+    const start = weekStartIso(value);
+    if (!start) return "";
+    const parsed = new Date(`${start}T12:00:00`);
+    parsed.setDate(parsed.getDate() + 6);
+    return parsed.toISOString().slice(0, 10);
+  }
+  function weekKey(value) { return weekStartIso(value); }
+  function isoWeekNumber(value) {
+    const start = weekStartIso(value);
+    if (!start) return 0;
+    const dateValue = new Date(`${start}T12:00:00`);
+    const thursday = new Date(dateValue);
+    thursday.setDate(thursday.getDate() + 3);
+    const yearStart = new Date(thursday.getFullYear(), 0, 1);
+    return Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7);
+  }
+  function weeklyGroups(identityValue, options = {}) {
+    const context = options.context || normalizedContext();
+    const year = Number(options.year || 0);
+    const groups = new Map();
+    forPatient(identityValue, context).forEach(session => {
+      const value = date(session);
+      if (!value) return;
+      const start = weekStartIso(value);
+      if (!start) return;
+      if (year && Number(start.slice(0, 4)) !== year && Number(value.slice(0, 4)) !== year) return;
+      if (!groups.has(start)) groups.set(start, []);
+      groups.get(start).push(session);
+    });
+    return [...groups.entries()].sort((a,b) => a[0].localeCompare(b[0])).map(([start, items]) => ({
+      weekStart: start,
+      weekEnd: weekEndIso(start),
+      weekNumber: isoWeekNumber(start),
+      sessions: items.slice().sort(chronological)
+    }));
+  }
+
+  function microGroups(identityValue, options = {}) {
+    const context = options.context || normalizedContext();
+    const year = Number(options.year || 0);
+    const groups = new Map();
+    forPatient(identityValue, context).forEach(session => {
+      const value = date(session);
+      if (year && value && Number(value.slice(0, 4)) !== year) return;
+      const number = micro(session);
+      if (!number) return;
+      if (!groups.has(number)) groups.set(number, []);
+      groups.get(number).push(session);
+    });
+    return [...groups.entries()].sort((a,b) => a[0] - b[0]).map(([number, items]) => ({
+      micro: number,
+      sessions: items.slice().sort(chronological),
+      summary: {
+        total: items.length,
+        completed: items.filter(item => lifecycle(item, context.completedRecords) === "completed").length,
+        pending: items.filter(item => lifecycle(item, context.completedRecords) === "pending").length,
+        cancelled: items.filter(item => lifecycle(item, context.completedRecords) === "cancelled").length
+      }
+    }));
+  }
+
+  function chronologicalSeasonPlan(identityValue, options = {}) {
+    const context = options.context || normalizedContext();
+    const year = Number(options.year || 0);
+    const plans = options.plans && typeof options.plans === "object" ? options.plans : {};
+    const key = identity(identityValue);
+    const owned = forPatient(key, context).filter(session => {
+      const value = date(session);
+      return value && (!year || Number(value.slice(0, 4)) === year);
+    });
+    if (!owned.length) return { patient: key, year, baseMicro: 1, blocks: [] };
+
+    const resolvedYear = year || Number(date(owned[0]).slice(0, 4));
+    const planMeta = microNumber => plans[`${key}::${resolvedYear}::${microNumber}`] || {};
+
+    const blocks = new Map();
+    owned.forEach(session => {
+      const oldMicro = micro(session) || 1;
+      const meta = planMeta(oldMicro);
+      const isManual = meta?.scheduleMode === "manual";
+      const blockKey = isManual ? `manual:${oldMicro}` : `weekly:${weekStartIso(date(session))}`;
+      if (!blocks.has(blockKey)) {
+        blocks.set(blockKey, {
+          key: blockKey,
+          mode: isManual ? "manual" : "weekly",
+          oldMicros: new Set(),
+          sessions: [],
+          meta: isManual ? { ...meta } : {},
+          start: isManual ? (meta.startDate || date(session)) : weekStartIso(date(session)),
+          end: isManual ? (meta.endDate || date(session)) : weekEndIso(date(session))
+        });
+      }
+      const block = blocks.get(blockKey);
+      block.oldMicros.add(oldMicro);
+      block.sessions.push(session);
+      if (block.mode === "manual") {
+        const dates = block.sessions.map(date).filter(Boolean).sort();
+        block.start = block.meta.startDate || dates[0] || block.start;
+        block.end = block.meta.endDate || dates[dates.length - 1] || block.end;
+      }
+    });
+
+    const normalizeIso = value => {
+      const raw = String(value || "").trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      const parsed = new Date(raw);
+      return Number.isNaN(parsed.getTime()) ? "9999-12-31" : parsed.toISOString().slice(0, 10);
+    };
+
+    const list = [...blocks.values()].map(block => {
+      block.sessions.sort(chronological);
+      block.oldMicros = [...block.oldMicros].sort((a,b) => a-b);
+      block.minOldMicro = block.oldMicros[0] || 1;
+      block.start = normalizeIso(block.start);
+      block.end = normalizeIso(block.end);
+      return block;
+    }).sort((a,b) =>
+      a.start.localeCompare(b.start) ||
+      a.end.localeCompare(b.end) ||
+      a.minOldMicro - b.minOldMicro
+    );
+
+    // Full Sequential Reindex: la numeración visible nunca depende del número
+    // anterior. La fecha manda y la temporada siempre queda M1, M2, M3...
+    const baseMicro = 1;
+    list.forEach((block, index) => {
+      block.targetMicro = index + 1;
+      block.weekNumber = isoWeekNumber(block.start);
+    });
+
+    return { patient: key, year: resolvedYear, baseMicro, blocks: list };
+  }
+
   function emit(reason = "update") {
     window.dispatchEvent(new CustomEvent("ppf:core-updated", { detail: { reason, snapshot: snapshot() } }));
   }
 
   const CORE = Object.freeze({
-    version: "1.0.0", read, array, identity, id, patient, statusValue, date, time, micro, sequence, displayNumber,
+    version: "1.4.2", read, array, identity, id, patient, statusValue, date, time, micro, sequence, displayNumber,
     scheduleMode, completed, cancelled, lifecycle, flexible, needsTime, isOverdue, normalizedContext,
-    chronological, adminDescending, forPatient, summary, agenda, conflict, snapshot, emit
+    chronological, adminDescending, forPatient, summary, weekStartIso, weekEndIso, weekKey, isoWeekNumber, weeklyGroups, microGroups, chronologicalSeasonPlan, agenda, conflict, snapshot, emit
   });
   window.PPF_CORE = CORE;
 })();

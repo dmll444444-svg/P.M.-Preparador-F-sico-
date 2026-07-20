@@ -17,7 +17,8 @@ const PPF_SYNC_KEYS = [
   "completedSessions",
   "valoraciones",
   "notifications",
-  "userStats"
+  "userStats",
+  "periodicityPlans"
 ];
 
 window.__PPF_VOLATILE_STORAGE__ = window.__PPF_VOLATILE_STORAGE__ || {};
