@@ -5453,6 +5453,9 @@ Animación Dashboard Distribución
 .ppf-notification-item:hover { background: rgba(148,163,184,.1); }
 .ppf-notification-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: rgba(34,197,94,.16); }
 .ppf-notification-item strong, .ppf-notification-item small, .ppf-notification-item time { display: block; }
+.ppf-notification-item > span:last-child { min-width: 0; width: 100%; }
+.ppf-notification-item strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.25; }
+.ppf-notification-item small { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .ppf-notification-item small { margin-top: 3px; color: #cbd5e1; line-height: 1.35; }
 .ppf-notification-item time { margin-top: 7px; color: #64748b; font-size: 11px; }
 .ppf-notification-empty { padding: 24px 16px; text-align: center; color: #94a3b8; }

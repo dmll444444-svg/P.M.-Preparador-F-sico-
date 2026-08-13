@@ -5,7 +5,7 @@
   const STORAGE_KEY = "notifications";
   const CLEANUP_MIGRATION_KEY = "ppf_notification_cleanup_b2142_done";
   const TRUTH_RECONCILIATION_KEY = "ppf_notification_truth_b2143_done";
-  const LIFECYCLE_VERSION = "3.4.1";
+  const LIFECYCLE_VERSION = "3.4.2";
   const POLL_MS = 15000;
   let currentNickname = "";
   let initialized = false;
@@ -288,7 +288,7 @@
     if (!list) return;
     list.innerHTML = items.length ? items.slice(0, 20).map(item => `
       <button type="button" class="ppf-notification-item ${isRead(item) ? "is-read" : "is-unread"}" data-notification-id="${escapeHtml(item.id)}">
-        <span class="ppf-notification-icon">🏋️</span>
+        <span class="ppf-notification-icon">${item.type === "microcycle_plan" ? "📅" : "🏋️"}</span>
         <span><strong>${escapeHtml(item.title || "Nueva sesión preparada")}</strong><small>${escapeHtml(item.body || "Ya tienes una nueva sesión disponible.")}</small><time>${formatDate(item.createdAt)}</time></span>
       </button>`).join("") : `<p class="ppf-notification-empty">No tienes notificaciones.</p>`;
   }

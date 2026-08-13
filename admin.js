@@ -3611,17 +3611,29 @@ function bindSessionsForm() {
     try { list = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
     if (!Array.isArray(list)) list = [];
     const dates = created.map(item => item.fecha).filter(Boolean).sort();
-    const firstDate = dates[0] || "";
-    const lastDate = dates[dates.length-1] || firstDate;
-    const dateText = firstDate && lastDate && firstDate !== lastDate ? ` entre ${firstDate} y ${lastDate}` : (firstDate ? ` el ${firstDate}` : "");
+    const uniqueDates = [...new Set(dates)];
+    const firstDate = uniqueDates[0] || "";
+    const lastDate = uniqueDates[uniqueDates.length-1] || firstDate;
+    const sessionsByDate = dates.reduce((acc, date) => { acc[date] = (acc[date] || 0) + 1; return acc; }, {});
+    const doubleSessionDates = Object.entries(sessionsByDate).filter(([, count]) => count > 1).map(([date]) => date);
+    const sessionNumbers = created.map(item => String(item.numero || "").trim()).filter(Boolean);
+    const sessionText = `${created.length} ${created.length === 1 ? "sesión" : "sesiones"}`;
+    const dayText = `${uniqueDates.length} ${uniqueDates.length === 1 ? "día" : "días"}`;
+    const rangeText = firstDate && lastDate && firstDate !== lastDate ? ` · ${firstDate} → ${lastDate}` : (firstDate ? ` · ${firstDate}` : "");
+    const doubleText = doubleSessionDates.length ? ` · ${doubleSessionDates.length === 1 ? "doble sesión" : `${doubleSessionDates.length} días con doble sesión`}` : "";
+    const numbersText = sessionNumbers.length ? ` · Sesiones ${sessionNumbers.join(", ")}` : "";
     const notification = {
       id: phase34Uuid("micro-notification"),
       type: "microcycle_plan",
       recipient: String(operation.targetPatient.nickname || "").trim().toLowerCase(),
       recipientName: operation.targetPatient.nombre || operation.targetPatient.nickname,
-      title: "Nueva planificación disponible",
-      body: `Tu preparador ha actualizado el Micro ${operation.targetMicro}. Tienes ${created.length} ${created.length===1?"nueva sesión":"nuevas sesiones"}${dateText}.`,
+      title: `Nuevo microciclo · M${operation.targetMicro}`,
+      body: `${sessionText} · ${dayText}${rangeText}${doubleText}${numbersText}`,
       microcycle: operation.targetMicro,
+      sessionCount: created.length,
+      trainingDayCount: uniqueDates.length,
+      sessionNumbers,
+      doubleSessionDates,
       sessionIds: created.map(item => item.id),
       sessionDates: dates,
       cloneOperationId: operation.id,
