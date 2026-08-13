@@ -3,6 +3,9 @@
   "use strict";
 
   const STORAGE_KEY = "notifications";
+  const CLEANUP_MIGRATION_KEY = "ppf_notification_cleanup_b2142_done";
+  const TRUTH_RECONCILIATION_KEY = "ppf_notification_truth_b2143_done";
+  const LIFECYCLE_VERSION = "3.4.1";
   const POLL_MS = 15000;
   let currentNickname = "";
   let initialized = false;
@@ -76,6 +79,145 @@
     return items;
   }
 
+
+  function cleanupRecoveredHistoricalNotificationsOnce() {
+    try {
+      if (localStorage.getItem(CLEANUP_MIGRATION_KEY) === "1") return false;
+
+      const items = readNotifications();
+      const cleaned = items.filter(item => {
+        if (!item) return false;
+
+        // Retiramos únicamente avisos artificiales creados por el
+        // antiguo mecanismo de recuperación histórica.
+        if (item.recovered === true) return false;
+        if (String(item.id || "").startsWith("recovered-")) return false;
+
+        return true;
+      });
+
+      if (cleaned.length !== items.length) writeLocalOnly(cleaned);
+      localStorage.setItem(CLEANUP_MIGRATION_KEY, "1");
+      return cleaned.length !== items.length;
+    } catch (_) {
+      return false;
+    }
+  }
+
+
+  async function reconcileNotificationTruthOnce() {
+    try {
+      if (localStorage.getItem(TRUTH_RECONCILIATION_KEY) === "1") return false;
+
+      // B.2.1.4.3:
+      // El historial prepared_session quedó contaminado por el antiguo recovery.
+      // Las notificaciones son avisos efímeros, no Session Truth.
+      // Hacemos un reset controlado de ese tipo, preservando cualquier otro aviso.
+      const current = readNotifications();
+      const cleaned = current.filter(item => item?.type !== "prepared_session");
+
+      writeLocalOnly(cleaned);
+
+      // Fundamental: sustituimos el valor remoto de forma EXACTA.
+      // Un merge aditivo volvería a resucitar las notificaciones eliminadas.
+      let cloudConfirmed = true;
+      if (window.PPF_SUPABASE?.replaceValue) {
+        cloudConfirmed = await window.PPF_SUPABASE.replaceValue(STORAGE_KEY, cleaned);
+      }
+
+      if (!cloudConfirmed) {
+        console.warn("PPF Notification Truth: Supabase no confirmó la reconciliación.");
+        return false;
+      }
+
+      localStorage.setItem(TRUTH_RECONCILIATION_KEY, "1");
+      knownIds = new Set(cleaned.map(item => String(item?.id || "")).filter(Boolean));
+      renderUI();
+      return true;
+    } catch (error) {
+      console.warn("PPF Notification Truth reconciliation error:", error);
+      return false;
+    }
+  }
+
+  function readCompletedSessions() {
+    try {
+      const value = JSON.parse(localStorage.getItem("completedSessions") || "[]");
+      return Array.isArray(value) ? value : [];
+    } catch (_) { return []; }
+  }
+
+  function notificationSession(item, sessions = readSessions()) {
+    const sid = String(item?.sessionId || "").trim();
+    if (!sid) return null;
+    return sessions.find(session => String(session?.id || session?.sessionId || "").trim() === sid) || null;
+  }
+
+  function readDeletedSessionIds() {
+    try {
+      const value = JSON.parse(localStorage.getItem("deletedSessionIds") || "[]");
+      return new Set((Array.isArray(value) ? value : []).map(v => String(v || "").trim()).filter(Boolean));
+    } catch (_) { return new Set(); }
+  }
+
+  function isNotificationExpired(item, sessions, completed, deletedIds = readDeletedSessionIds()) {
+    const sid = String(item?.sessionId || "").trim();
+    const groupedIds = Array.isArray(item?.sessionIds)
+      ? item.sessionIds.map(v => String(v || "").trim()).filter(Boolean)
+      : [];
+
+    // v3.4.1: los tombstones mandan. Sirve tanto para prepared_session como
+    // para la notificación agrupada microcycle_plan del Deep Clone Engine.
+    if (sid && deletedIds.has(sid)) return true;
+    if (groupedIds.some(id => deletedIds.has(id))) return true;
+
+    if (item?.type !== "prepared_session" || !sid) return false;
+    const session = notificationSession(item, sessions);
+    if (session && window.PPF_SESSION_TRUTH?.isCompleted) {
+      try { return Boolean(window.PPF_SESSION_TRUTH.isCompleted(session, completed)); } catch (_) {}
+    }
+
+    // Fallback estricto por ID estable: nunca inferimos por número de sesión.
+    return completed.some(row => String(row?.sessionId || row?.id || "").trim() === sid);
+  }
+
+  async function reconcileNotificationLifecycle(options = {}) {
+    const { syncCloud = true, forceCloud = false } = options;
+    const current = readNotifications();
+    const sessions = readSessions();
+    const completed = readCompletedSessions();
+    const deletedIds = readDeletedSessionIds();
+    const cleaned = current.filter(item => !isNotificationExpired(item, sessions, completed, deletedIds));
+    if (cleaned.length === current.length) {
+      renderUI();
+      // B.2.1.4.5: si el cliente ya hizo la baja optimista local, todavía
+      // debemos confirmar la sustitución exacta en nube para que el aviso no
+      // reaparezca en el siguiente pull.
+      if (syncCloud && forceCloud && window.PPF_SUPABASE?.replaceValue) {
+        try { await window.PPF_SUPABASE.replaceValue(STORAGE_KEY, cleaned); } catch (error) {
+          console.warn(`PPF ${LIFECYCLE_VERSION}: no se pudo confirmar la baja optimista:`, error);
+        }
+      }
+      return false;
+    }
+
+    writeLocalOnly(cleaned);
+    knownIds = new Set(cleaned.map(item => String(item?.id || "")).filter(Boolean));
+    renderUI();
+
+    // B.2.1.4.4: la baja de una notificación es destructiva; pushKey hace merge
+    // y podría resucitarla. Por eso sustituimos exactamente el valor remoto.
+    if (syncCloud && window.PPF_SUPABASE?.replaceValue) {
+      try {
+        const confirmed = await window.PPF_SUPABASE.replaceValue(STORAGE_KEY, cleaned);
+        if (!confirmed) console.warn(`PPF ${LIFECYCLE_VERSION}: Supabase no confirmó la limpieza de ciclo de vida.`);
+      } catch (error) {
+        console.warn(`PPF ${LIFECYCLE_VERSION}: error reconciliando ciclo de vida de notificaciones:`, error);
+      }
+    }
+    return true;
+  }
+
   function mine(items = readNotifications()) {
     return items
       .filter(item => normalize(item?.recipient) === currentNickname)
@@ -114,7 +256,8 @@
       event.stopPropagation();
       const panel = document.getElementById("ppfNotificationPanel");
       if (panel) panel.hidden = !panel.hidden;
-      await requestPermissionFromGesture();
+      // Abrir la campana solo abre el centro interno de PPF.
+      // El permiso del navegador no forma parte de esta interacción.
       renderUI();
     });
     document.getElementById("ppfNotificationReadAll")?.addEventListener("click", markAllRead);
@@ -255,7 +398,8 @@
   async function pullAndProcess() {
     const before = new Set(mine().map(item => String(item.id)));
     try { await window.PPF_SUPABASE?.pull?.(); } catch (_) {}
-    const items = repairRecentMissingNotifications();
+    await reconcileNotificationLifecycle({ syncCloud: true });
+    const items = readNotifications();
     const hasNew = mine(items).some(item => !before.has(String(item.id)));
     process(items, hasNew);
   }
@@ -266,8 +410,20 @@
       const cloudItems = payload?.new?.value;
       if (!Array.isArray(cloudItems)) return;
       writeLocalOnly(cloudItems);
-      process(cloudItems, true);
+      reconcileNotificationLifecycle({ syncCloud: true }).then(() => process(readNotifications(), true));
     }) || null;
+  }
+
+  function purgePreparedSessionLocal(sessionId) {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return false;
+    const current = readNotifications();
+    const cleaned = current.filter(item => !(item?.type === "prepared_session" && String(item?.sessionId || "").trim() === sid));
+    if (cleaned.length === current.length) return false;
+    writeLocalOnly(cleaned);
+    knownIds = new Set(cleaned.map(item => String(item?.id || "")).filter(Boolean));
+    renderUI();
+    return true;
   }
 
   async function init() {
@@ -278,24 +434,43 @@
     if (!currentNickname) return;
     initialized = true;
     ensureUI();
+
+    // B.2.1.4.2 · migración única:
+    // limpia los avisos artificiales creados por el antiguo recovery.
+    cleanupRecoveredHistoricalNotificationsOnce();
+
     const initial = readNotifications();
     mine(initial).forEach(item => knownIds.add(String(item.id)));
     renderUI();
     try { if (window.PPF_SUPABASE_READY) await window.PPF_SUPABASE_READY; } catch (_) {}
-    const cloudReadyItems = repairRecentMissingNotifications();
+
+    // B.2.1.4.3 · Notification Truth Reconciliation:
+    // primero recibimos la verdad remota y después eliminamos de local + nube
+    // el histórico prepared_session contaminado.
+    await reconcileNotificationTruthOnce();
+    await reconcileNotificationLifecycle({ syncCloud: true });
+
+    // Integridad: iniciar sesión nunca debe fabricar notificaciones
+    // recorriendo sesiones ya existentes. Solo procesamos las notificaciones
+    // que realmente existen en el almacenamiento/sincronización.
+    const cloudReadyItems = readNotifications();
     renderUI();
-    process(cloudReadyItems, true);
+    process(cloudReadyItems, false);
     subscribe();
     clearInterval(pollTimer);
     pollTimer = setInterval(pullAndProcess, POLL_MS);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) pullAndProcess(); });
-    window.addEventListener("storage", event => { if (event.key === STORAGE_KEY) process(readNotifications(), true); });
+    window.addEventListener("storage", event => {
+      if (event.key === STORAGE_KEY) process(readNotifications(), true);
+      if (event.key === "completedSessions" || event.key === "sessions") reconcileNotificationLifecycle({ syncCloud: false });
+    });
+    window.addEventListener("PPF_NOTIFICATION_LIFECYCLE_RECONCILE", () => reconcileNotificationLifecycle({ syncCloud: true, forceCloud: true }));
     navigator.serviceWorker?.addEventListener?.("message", event => {
       if (event.data?.type === "PPF_OPEN_SESSION") openSession();
     });
   }
 
-  window.PPF_NOTIFICATIONS = { init, render: renderUI, markRead, markAllRead };
+  window.PPF_NOTIFICATIONS = { init, render: renderUI, markRead, markAllRead, requestSystemPermission: requestPermissionFromGesture, reconcileTruth: reconcileNotificationTruthOnce, reconcileLifecycle: reconcileNotificationLifecycle, purgePreparedSessionLocal };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true });
   else init();
 })();

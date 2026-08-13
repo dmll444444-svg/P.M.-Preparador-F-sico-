@@ -17,7 +17,9 @@ const PPF_SYNC_KEYS = [
   "completedSessions",
   "valoraciones",
   "notifications",
-  "userStats"
+  "userStats",
+  "periodicityPlans",
+  "deletedSessionIds"
 ];
 
 window.__PPF_VOLATILE_STORAGE__ = window.__PPF_VOLATILE_STORAGE__ || {};
@@ -273,8 +275,20 @@ async function ppfPullCloudToLocal() {
     return false;
   }
 
+  // Los tombstones se leen antes de procesar sesiones para que el orden de
+  // las filas devueltas por Supabase nunca pueda resucitar una sesión borrada.
+  const deletedRow = (data || []).find(row => row.key === "deletedSessionIds");
+  const cloudDeletedIds = Array.isArray(deletedRow?.value) ? deletedRow.value : [];
+  const localDeletedIds = ppfReadLocalJson("deletedSessionIds");
+  const mergedDeletedIds = [...new Set([
+    ...(Array.isArray(localDeletedIds) ? localDeletedIds : []),
+    ...cloudDeletedIds
+  ].map(value => String(value ?? "").trim()).filter(Boolean))];
+  ppfWriteLocalJson("deletedSessionIds", mergedDeletedIds);
+
   (data || []).forEach(row => {
     if (!PPF_SYNC_KEYS.includes(row.key)) return;
+    if (row.key === "deletedSessionIds") return;
 
     if (row.key === "userStats") {
       const localStats = ppfReadLocalJson("userStats") || {};
@@ -287,7 +301,8 @@ async function ppfPullCloudToLocal() {
     if (row.key === "sessions") {
       const mergedSessions = ppfMergeSessions(
         ppfReadLocalJson("sessions"),
-        row.value || []
+        row.value || [],
+        mergedDeletedIds
       );
       ppfWriteLocalJson("sessions", mergedSessions);
       window.sessions = mergedSessions;
@@ -299,7 +314,18 @@ async function ppfPullCloudToLocal() {
         ppfReadLocalJson("notifications"),
         row.value || []
       );
-      ppfWriteLocalJson("notifications", mergedNotifications);
+      // v3.4.1 · Session Lifecycle Sync: un pull remoto nunca puede
+      // resucitar avisos vinculados a IDs de sesión ya eliminados.
+      const deletedSet = new Set(mergedDeletedIds);
+      const liveNotifications = mergedNotifications.filter(item => {
+        const directId = String(item?.sessionId || "").trim();
+        if (directId && deletedSet.has(directId)) return false;
+        const groupedIds = Array.isArray(item?.sessionIds)
+          ? item.sessionIds.map(v => String(v || "").trim()).filter(Boolean)
+          : [];
+        return !groupedIds.some(id => deletedSet.has(id));
+      });
+      ppfWriteLocalJson("notifications", liveNotifications);
       return;
     }
 
@@ -313,15 +339,24 @@ async function ppfPullCloudToLocal() {
 
 
 
-function ppfMergeSessions(left = [], right = []) {
+function ppfDeletedSessionIdSet(extra = []) {
+  const localDeleted = ppfReadLocalJson("deletedSessionIds");
+  return new Set([
+    ...(Array.isArray(localDeleted) ? localDeleted : []),
+    ...(Array.isArray(extra) ? extra : [])
+  ].map(value => String(value ?? "").trim()).filter(Boolean));
+}
+
+function ppfMergeSessions(left = [], right = [], extraDeletedIds = []) {
   const byId = new Map();
+  const deletedIds = ppfDeletedSessionIdSet(extraDeletedIds);
 
   [...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])].forEach(item => {
     if (!item || typeof item !== "object") return;
 
     const fallbackId = `${item.patientNickname || item.nickname || ""}:${item.numero || item.sessionNumber || ""}`;
     const id = String(item.id || item.sessionId || fallbackId).trim();
-    if (!id) return;
+    if (!id || deletedIds.has(id)) return;
 
     const previous = byId.get(id);
     if (!previous) {
@@ -406,7 +441,9 @@ async function ppfPushValueToCloud(key, value) {
   }
 
   if (key === "sessions") {
-    value = ppfMergeSessions(cloudValue || [], value || []);
+    const deletedCloud = await ppfGetCloudKey("deletedSessionIds");
+    const cloudDeletedIds = Array.isArray(deletedCloud?.value) ? deletedCloud.value : [];
+    value = ppfMergeSessions(cloudValue || [], value || [], cloudDeletedIds);
     ppfWriteLocalJson("sessions", value);
     window.sessions = value;
   }
@@ -443,6 +480,31 @@ async function ppfPushValueToCloud(key, value) {
 
 async function ppfPushKeyToCloud(key) {
   return ppfPushValueToCloud(key, ppfReadLocalJson(key));
+}
+
+
+async function ppfReplaceValueToCloud(key, value) {
+  const client = ppfCreateClient();
+  if (!client || !PPF_SYNC_KEYS.includes(key)) return false;
+
+  value = ppfSanitizeValueForCloud(key, value);
+  ppfWriteLocalJson(key, value);
+
+  const { error } = await client
+    .from("app_state")
+    .upsert({
+      key,
+      value: value || [],
+      updated_at: new Date().toISOString()
+    }, { onConflict: "key" });
+
+  if (error) {
+    console.warn("Supabase exact replace error:", key, error.message);
+    return false;
+  }
+
+  ppfSafeSetItem("ppfSupabaseLastPush", new Date().toISOString());
+  return true;
 }
 
 async function ppfPushAllToCloud() {
@@ -529,6 +591,7 @@ window.PPF_SUPABASE = {
   push: ppfPushAllToCloud,
   pushKey: ppfPushKeyToCloud,
   pushValue: ppfPushValueToCloud,
+  replaceValue: ppfReplaceValueToCloud,
   subscribeKey: ppfSubscribeKey,
   status: () => window.PPF_SUPABASE_STATUS || "disabled",
   keys: PPF_SYNC_KEYS

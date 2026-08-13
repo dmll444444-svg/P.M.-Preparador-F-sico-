@@ -333,6 +333,7 @@ function setTodayIfEmpty(id) {
 function persistAppData() {
   localStorage.setItem("patients", JSON.stringify(patients));
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   localStorage.setItem("histories", JSON.stringify(histories));
   localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
   localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
@@ -468,7 +469,7 @@ function patientOptions() {
 
   const sortedPatients = [...patients].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
-  return `<option value="">Selecciona paciente</option>` + sortedPatients.map(patient => `
+  return `<option value="">Selecciona deportista destino</option>` + sortedPatients.map(patient => `
     <option value="${patient.nickname}">${patient.nombre}</option>
   `).join("");
 }
@@ -497,13 +498,9 @@ function ppfPatientPresence(patient = {}) {
 }
 
 function ppfPatientSessionSummary(patient = {}) {
-  const agenda = pmSessionAgenda();
-  const key = pmNormalizeNickname(patient.nickname);
-  const belongs = item => pmNormalizeNickname(pmSessionPatientKey(item.session || {})) === key;
-  return {
-    pending: agenda.pending.filter(belongs).length,
-    done: agenda.done.filter(belongs).length
-  };
+  const stats = window.PPF_CORE?.summary?.(patient.nickname);
+  if (stats) return { pending: stats.pending, done: stats.completed, cancelled: stats.cancelled, compliance: stats.compliance };
+  return { pending: 0, done: 0, cancelled: 0, compliance: 0 };
 }
 
 function ppfPatientInitials(name = "") {
@@ -787,6 +784,7 @@ function deletePatient(nickname) {
   localStorage.setItem("histories", JSON.stringify(histories));
   localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
   updateCounters();
   renderPatientList();
@@ -1147,6 +1145,7 @@ function bindPatientForm() {
     localStorage.setItem("histories", JSON.stringify(histories));
     localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
     localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
     currentPhoto = "";
     resetPatientFormState();
@@ -1212,9 +1211,6 @@ function bindHistoryForm() {
         }))
       };
 
-      while (safePrincipal.blocks[blockKey].exercises.length < 4) {
-        safePrincipal.blocks[blockKey].exercises.push(defaultExercise("F. ppal. TS"));
-      }
     });
 
     return safePrincipal;
@@ -1236,9 +1232,9 @@ function bindHistoryForm() {
     const currentBlock = moduleData.principal.blocks[blockKey] || defaultPrincipalBlock();
     const notesValue = activePrincipalBlock === blockKey && principalBlockNotes ? principalBlockNotes.value.trim() : (currentBlock.notes || "");
 
-    const exercises = Array.from({ length: 4 }, (_, index) => {
+    const sourceExercises = (currentBlock.exercises?.length ? currentBlock.exercises : [defaultExercise("F. ppal. TS")]);
+    const exercises = sourceExercises.map((existingItem, index) => {
       const num = index + 1;
-      const existingItem = currentBlock.exercises?.[index] || defaultExercise("F. ppal. TS");
 
       const nameInput = document.getElementById(`${prefix}_nombre_${num}`);
       const seriesInput = document.getElementById(`${prefix}_series_${num}`);
@@ -1328,9 +1324,6 @@ function bindHistoryForm() {
         };
       }
 
-      while (merged.blocks[blockKey].exercises.length < 4) {
-        merged.blocks[blockKey].exercises.push(defaultExercise("F. ppal. TS"));
-      }
     });
 
     return merged;
@@ -1709,6 +1702,7 @@ const archivosHTML = `
 
 function persistSessionsOnly() {
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 }
 
 function getSelectedPatientBySearch(value) {
@@ -1728,10 +1722,19 @@ const PPF_SESSION_KINDS = {
   recovery: { icon: "🧘", label: "Recuperación" },
   testing: { icon: "📊", label: "Test / Valoración" },
   competition: { icon: "🏆", label: "Competición" },
+  running: { icon: "🏃", label: "Carrera" },
   other: { icon: "🎯", label: "Otra" }
 };
 
 function nciSessionKind(session = {}) {
+  const runningSeries = (session.modules?.carrera || session.carrera || [])
+    .filter(item => item && !item.deleted && (item.nombre || item.series || item.cantidad || item.ritmo || item.rpe || item.fc));
+
+  // FASE 2.2 · Running Session Identity Polish
+  // Si la sesión contiene trabajo de carrera, su identidad visual debe ser Carrera
+  // incluso en sesiones antiguas que quedaron guardadas como "Otra".
+  if (runningSeries.length) return "running";
+
   const key = String(session.sessionKind || session.sessionType || "gym").trim().toLowerCase();
   return PPF_SESSION_KINDS[key] ? key : "other";
 }
@@ -1902,6 +1905,7 @@ function nciRenumberAllSessions(options = {}) {
   if (changed) {
     window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   }
   return { changed, notificationsChanged };
 }
@@ -2093,6 +2097,7 @@ async function moveSessionWithinSubsessions(sessionId, direction) {
   group[target].subsessionOrder = sourceOrder;
   const result = nciRenumberPatientSessions(session.patientNickname, { touchUpdatedAt: true, rebuildOrder: false });
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   if (window.PPF_SUPABASE?.pushKey) {
     await window.PPF_SUPABASE.pushKey("sessions");
     if (result.notificationsChanged) await window.PPF_SUPABASE.pushKey("notifications");
@@ -2167,6 +2172,30 @@ function renderSessionList(filterNickname = "") {
     `;
   }
 
+  function carreraSummary(session) {
+    const series = (session.modules?.carrera || session.carrera || [])
+      .filter(item => !item.deleted && (item.nombre || item.series || item.cantidad || item.ritmo || item.rpe || item.fc));
+
+    return `
+      <div class="session-summary-box session-running-summary">
+        <strong>🏃 Sesiones Carrera</strong>
+        <ul>
+          ${series.length ? series.map(item => {
+            const unitLabel = item.unidad === "min" ? "min" : "m";
+            const details = [
+              item.series ? `${item.series} series` : "",
+              item.cantidad ? `${item.cantidad} ${unitLabel}` : "",
+              item.ritmo ? `${item.ritmo} min/km` : "",
+              item.rpe ? `RPE ${item.rpe}` : "",
+              item.fc ? `FC ${item.fc} ppm` : ""
+            ].filter(Boolean).join(" · ");
+            return `<li>${item.nombre || "Serie de carrera"}${details ? ` · ${details}` : ""}</li>`;
+          }).join("") : "<li>Sin series de carrera escritas</li>"}
+        </ul>
+      </div>
+    `;
+  }
+
   function principalSummary(session) {
     const principal = session.modules?.principal || session.principal;
 
@@ -2231,10 +2260,11 @@ function renderSessionList(filterNickname = "") {
           <button class="secondary-btn copy-session-btn" type="button" onclick="copySessionToClipboard('${session.id}')">📋 Copiar sesión</button>
           <button class="delete-btn" type="button" onclick="deleteSession('${session.id}')">🗑️ Eliminar</button>
         </div>
-        <div class="session-summary session-summary-3">
+        <div class="session-summary session-summary-4">
           ${simpleModuleSummary(session, "movilidad", "Movilidad")}
           ${simpleModuleSummary(session, "activacion", "Activación")}
           ${principalSummary(session)}
+          ${carreraSummary(session)}
         </div>
       </article>
     `;
@@ -2293,6 +2323,7 @@ function bindSessionsForm() {
   const activeModuleTitle = document.getElementById("activeModuleTitle");
   const activeModuleCount = document.getElementById("activeModuleCount");
   const moduleExercises = document.getElementById("moduleExercises");
+  const exerciseTableHead = document.getElementById("exerciseTableHead");
   const saveSessionBtn = document.getElementById("saveSessionBtn");
   const rpeHead = document.getElementById("rpeHead");
   const loadHead = document.getElementById("loadHead");
@@ -2302,13 +2333,53 @@ function bindSessionsForm() {
   const principalBlockNotes = document.getElementById("principalBlockNotes");
   const principalBlockNotesLabel = document.getElementById("principalBlockNotesLabel");
   const saveCurrentBlockBtn = document.getElementById("saveCurrentBlockBtn");
+  const addExerciseBtn = document.getElementById("addExerciseBtn");
+  const dynamicExerciseHint = document.getElementById("dynamicExerciseHint");
   const pasteCopiedSessionBtn = document.getElementById("pasteCopiedSessionBtn");
   const loadLastSessionBtn = document.getElementById("loadLastSessionBtn");
+  const phase3PreviewBtn = document.getElementById("phase3PreviewBtn");
+  const phase3SourcePatient = document.getElementById("phase3SourcePatient");
+  const phase3SourceMicro = document.getElementById("phase3SourceMicro");
+  const phase3Preview = document.getElementById("phase3Preview");
+  const phase3Mapper = document.getElementById("phase3Mapper");
+  const phase3ApplyMapBtn = document.getElementById("phase3ApplyMapBtn");
+  const phase3DestinationPatient = document.getElementById("phase3DestinationPatient");
+  const phase3TargetMicro = document.getElementById("phase3TargetMicro");
+  const phase3TargetStartDate = document.getElementById("phase3TargetStartDate");
+  const phase3ClonePreview = document.getElementById("phase3ClonePreview");
+  const phase3CloneLockedBtn = document.getElementById("phase3CloneLockedBtn");
+  const phase3ResetDatesBtn = document.getElementById("phase3ResetDatesBtn");
+  const phase3SessionDates = Object.create(null);
 
   
   if (!form) return;
 
-  
+  // FASE 2.4.2b · Running Library Autocomplete Safe Wiring
+  // Refresca únicamente los datalist del Session Builder desde la biblioteca
+  // local ya existente. No modifica guardado, Supabase ni la biblioteca.
+  function refreshSessionLibraryDatalists() {
+    try {
+      const storedLibrary = JSON.parse(localStorage.getItem("exerciseLibrary") || "[]");
+      if (Array.isArray(storedLibrary) && storedLibrary.length) {
+        exerciseLibrary = storedLibrary;
+      }
+    } catch (_) {}
+
+    const targets = [
+      ["libraryMovilidadList", "Movilidad"],
+      ["libraryActivacionList", "Activación"],
+      ["libraryPrincipalList", "Sesión Principal"],
+      ["libraryCarreraList", "Sesiones Carrera"]
+    ];
+
+    targets.forEach(([id, category]) => {
+      const list = document.getElementById(id);
+      if (list) list.innerHTML = libraryOptions(category);
+    });
+  }
+
+  refreshSessionLibraryDatalists();
+
   let activeModule = "movilidad";
   let activePrincipalBlock = "bloque1";
 
@@ -2363,11 +2434,39 @@ function bindSessionsForm() {
   const mobilityTypes = ["Movilidad", "Est. Estático", "Fascias"];
 
   const defaultExercise = (tipo = "Movilidad") => ({ nombre: "", series: "", repeticiones: "", carga: "", unidad: "Kg", rpe: "", tipo, url: "", deleted: false });
-  const defaultPrincipalBlock = () => ({ notes: "", exercises: Array.from({ length: 4 }, () => defaultExercise("F. ppal. TS")) });
+  const defaultRunSeries = () => ({ nombre: "", series: "", cantidad: "", unidad: "m", ritmo: "", rpe: "", fc: "", deleted: false });
+  const DYNAMIC_EXERCISE_LIMIT = 10;
+  const defaultPrincipalBlock = () => ({ notes: "", exercises: [defaultExercise("F. ppal. TS")] });
+
+  function hasExerciseContent(item = {}) {
+    return !item.deleted && Boolean(
+      String(item.nombre || "").trim() ||
+      String(item.series || "").trim() ||
+      String(item.repeticiones || "").trim() ||
+      String(item.carga || "").trim() ||
+      String(item.rpe || "").trim() ||
+      String(item.url || "").trim()
+    );
+  }
+
+  function compactExerciseList(list = [], fallbackType = "") {
+    const normalized = (Array.isArray(list) ? list : [])
+      .filter(item => item && !item.deleted)
+      .map(item => normalizeImportedExercise(item, fallbackType));
+
+    let lastContentIndex = -1;
+    normalized.forEach((item, index) => {
+      if (hasExerciseContent(item)) lastContentIndex = index;
+    });
+
+    const compacted = lastContentIndex >= 0 ? normalized.slice(0, lastContentIndex + 1) : [];
+    return (compacted.length ? compacted : [defaultExercise(fallbackType)]).slice(0, DYNAMIC_EXERCISE_LIMIT);
+  }
 
   const moduleData = {
-    movilidad: Array.from({ length: 10 }, () => defaultExercise("Movilidad")),
-    activacion: Array.from({ length: 10 }, () => defaultExercise("T. Superior")),
+    movilidad: [defaultExercise("Movilidad")],
+    activacion: [defaultExercise("T. Superior")],
+    carrera: [defaultRunSeries()],
     principal: { blocks: { bloque1: defaultPrincipalBlock(), bloque2: defaultPrincipalBlock(), bloque3: defaultPrincipalBlock(), bloque4: defaultPrincipalBlock() } }
   };
 
@@ -2384,6 +2483,18 @@ function bindSessionsForm() {
   function currentExerciseList() {
     if (activeModule === "principal") return moduleData.principal.blocks[activePrincipalBlock].exercises;
     return moduleData[activeModule];
+  }
+
+  function hasRunSeriesContent(item = {}) {
+    return !item.deleted && Boolean(String(item.nombre || "").trim() || String(item.series || "").trim() || String(item.cantidad || "").trim() || String(item.ritmo || "").trim() || String(item.rpe || "").trim() || String(item.fc || "").trim());
+  }
+
+  function compactRunSeriesList(list = []) {
+    const normalized = (Array.isArray(list) ? list : []).filter(item => item && !item.deleted).map(normalizeImportedRunSeries);
+    let lastContentIndex = -1;
+    normalized.forEach((item, index) => { if (hasRunSeriesContent(item)) lastContentIndex = index; });
+    const compacted = lastContentIndex >= 0 ? normalized.slice(0, lastContentIndex + 1) : [];
+    return (compacted.length ? compacted : [defaultRunSeries()]).slice(0, DYNAMIC_EXERCISE_LIMIT);
   }
 
 
@@ -2443,6 +2554,26 @@ function bindSessionsForm() {
     const prefix = activeModule;
     const list = currentExerciseList();
 
+    if (activeModule === "carrera") {
+      list.forEach((item, index) => {
+        const num = index + 1;
+        if (item.deleted) return;
+        const nombre = document.getElementById(`carrera_nombre_${num}`);
+        if (!nombre) return;
+        list[index] = {
+          nombre: nombre.value.trim(),
+          series: document.getElementById(`carrera_series_${num}`)?.value.trim() || "",
+          cantidad: document.getElementById(`carrera_cantidad_${num}`)?.value.trim() || "",
+          unidad: document.getElementById(`carrera_unidad_${num}`)?.value || "m",
+          ritmo: document.getElementById(`carrera_ritmo_${num}`)?.value.trim() || "",
+          rpe: document.getElementById(`carrera_rpe_${num}`)?.value.trim() || "",
+          fc: document.getElementById(`carrera_fc_${num}`)?.value.trim() || "",
+          deleted: false
+        };
+      });
+      return;
+    }
+
     list.forEach((item, index) => {
       const num = index + 1;
       if (item.deleted) return;
@@ -2475,6 +2606,21 @@ function bindSessionsForm() {
         deleted: false
       };
     });
+  }
+
+  function runSeriesRow(number, item) {
+    if (item.deleted) return "";
+    return `
+      <div class="exercise-row running-series-row">
+        <button class="remove-exercise-btn" type="button" data-remove-number="${number}">✕ Eliminar</button>
+        <div><label>Serie ${number} · Ejercicio</label><input id="carrera_nombre_${number}" type="text" list="libraryCarreraList" autocomplete="off" placeholder="Ej: Intervalo / Rodaje / Recuperación" value="${escapeHtml(item.nombre || "")}" data-running-exercise-name="carrera_${number}" /></div>
+        <div><label>Nº series</label><input id="carrera_series_${number}" type="number" min="1" placeholder="Ej: 4" value="${escapeHtml(item.series || "")}" /></div>
+        <div><label>Cantidad</label><input id="carrera_cantidad_${number}" type="number" min="0" step="0.01" placeholder="Ej: 1000" value="${escapeHtml(item.cantidad || "")}" /></div>
+        <div><label>Unidad</label><select id="carrera_unidad_${number}"><option value="m" ${item.unidad === "m" ? "selected" : ""}>m · Metros</option><option value="min" ${item.unidad === "min" ? "selected" : ""}>min · Minutos</option></select></div>
+        <div><label>min/km</label><input id="carrera_ritmo_${number}" type="text" inputmode="numeric" placeholder="Ej: 4:15" value="${escapeHtml(item.ritmo || "")}" /></div>
+        <div><label>RPE</label><input id="carrera_rpe_${number}" type="number" min="0" max="10" step="0.5" placeholder="Ej: 7" value="${escapeHtml(item.rpe || "")}" /></div>
+        <div><label>FC</label><input id="carrera_fc_${number}" type="number" min="0" max="250" placeholder="ppm" value="${escapeHtml(item.fc || "")}" /></div>
+      </div>`;
   }
 
   function exerciseRow(module, number, item, prefix) {
@@ -2517,7 +2663,13 @@ function bindSessionsForm() {
       button.addEventListener("click", () => {
         saveActiveModuleToMemory();
         const index = Number(button.dataset.removeNumber) - 1;
-        currentExerciseList()[index].deleted = true;
+        const list = currentExerciseList();
+        if (list.length <= 1) {
+          const fallback = activeModule === "principal" ? "F. ppal. TS" : activeModule === "activacion" ? "T. Superior" : "Movilidad";
+          list[0] = defaultExercise(fallback);
+        } else {
+          list.splice(index, 1);
+        }
         renderModule(activeModule);
       });
     });
@@ -2577,16 +2729,19 @@ function bindSessionsForm() {
   }
 
   function renderModule(module) {
+    refreshSessionLibraryDatalists();
     activeModule = module;
 
     const isPrincipal = module === "principal";
+    const isRunning = module === "carrera";
     if (principalBlocksNav) principalBlocksNav.style.display = isPrincipal ? "grid" : "none";
     if (principalBlockNotesWrap) principalBlockNotesWrap.style.display = isPrincipal ? "grid" : "none";
     if (loadHead) loadHead.style.display = isPrincipal ? "block" : "none";
     if (unitHead) unitHead.style.display = isPrincipal ? "block" : "none";
     if (rpeHead) rpeHead.style.display = (module === "activacion" || isPrincipal) ? "block" : "none";
+    if (exerciseTableHead) exerciseTableHead.style.display = isRunning ? "none" : "grid";
 
-    const title = isPrincipal ? `Sesión Principal · ${activePrincipalBlock.replace("bloque", "Bloque ")}` : (module === "activacion" ? "Activación" : "Movilidad");
+    const title = isPrincipal ? `Sesión Principal · ${activePrincipalBlock.replace("bloque", "Bloque ")}` : (module === "activacion" ? "Activación" : module === "carrera" ? "Sesiones Carrera" : "Movilidad");
     activeModuleTitle.textContent = title;
 
     if (isPrincipal) {
@@ -2597,9 +2752,17 @@ function bindSessionsForm() {
     const prefix = isPrincipal ? `principal_${activePrincipalBlock}` : module;
     const list = currentExerciseList();
 
-    activeModuleCount.textContent = `${list.filter(item => !item.deleted).length} ejercicios`;
+    const visibleCount = list.filter(item => !item.deleted).length;
+    activeModuleCount.textContent = `${visibleCount} ${isRunning ? (visibleCount === 1 ? "serie" : "series") : (visibleCount === 1 ? "ejercicio" : "ejercicios")}`;
 
-    moduleExercises.innerHTML = list.map((item, index) => exerciseRow(module, index + 1, item, prefix)).join("");
+    moduleExercises.innerHTML = list.map((item, index) => isRunning ? runSeriesRow(index + 1, item) : exerciseRow(module, index + 1, item, prefix)).join("");
+    if (addExerciseBtn) {
+      addExerciseBtn.disabled = visibleCount >= DYNAMIC_EXERCISE_LIMIT;
+      addExerciseBtn.textContent = visibleCount >= DYNAMIC_EXERCISE_LIMIT ? (isRunning ? "Máximo de 10 series alcanzado" : "Máximo de 10 ejercicios alcanzado") : (isRunning ? "＋ Añadir serie" : "＋ Añadir ejercicio");
+    }
+    if (dynamicExerciseHint) {
+      dynamicExerciseHint.textContent = `${visibleCount}/${DYNAMIC_EXERCISE_LIMIT} · ${isRunning ? "Añade solo las series que necesitas." : "Solo se muestran los ejercicios que necesitas."}`;
+    }
 
     moduleButtons.forEach(button => button.classList.toggle("active", button.dataset.module === module));
     document.querySelectorAll(".principal-block-btn").forEach(button => button.classList.toggle("active", button.dataset.principalBlock === activePrincipalBlock));
@@ -2663,8 +2826,9 @@ function bindSessionsForm() {
   function resetSessionForm() {
     if (sessionKind) sessionKind.value = "gym";
     form.reset();
-    moduleData.movilidad = Array.from({ length: 10 }, () => defaultExercise("Movilidad"));
-    moduleData.activacion = Array.from({ length: 10 }, () => defaultExercise("T. Superior"));
+    moduleData.movilidad = [defaultExercise("Movilidad")];
+    moduleData.activacion = [defaultExercise("T. Superior")];
+    moduleData.carrera = [defaultRunSeries()];
     moduleData.principal.blocks = { bloque1: defaultPrincipalBlock(), bloque2: defaultPrincipalBlock(), bloque3: defaultPrincipalBlock(), bloque4: defaultPrincipalBlock() };
     editingSessionId = null;
     saveSessionBtn.textContent = "Guardar sesión";
@@ -2693,7 +2857,9 @@ function bindSessionsForm() {
 
   moduleButtons.forEach(button => button.addEventListener("click", () => {
     saveActiveModuleToMemory();
-    renderModule(button.dataset.module);
+    const nextModule = button.dataset.module;
+    if (sessionKind && nextModule === "carrera") sessionKind.value = "running";
+    renderModule(nextModule);
   }));
 
   document.querySelectorAll(".principal-block-btn").forEach(button => button.addEventListener("click", () => {
@@ -2701,6 +2867,21 @@ function bindSessionsForm() {
     activePrincipalBlock = button.dataset.principalBlock;
     renderModule("principal");
   }));
+
+  if (addExerciseBtn) {
+    addExerciseBtn.addEventListener("click", () => {
+      saveActiveModuleToMemory();
+      const list = currentExerciseList();
+      if (list.filter(item => !item.deleted).length >= DYNAMIC_EXERCISE_LIMIT) return;
+      const fallback = activeModule === "principal" ? "F. ppal. TS" : activeModule === "activacion" ? "T. Superior" : "Movilidad";
+      list.push(activeModule === "carrera" ? defaultRunSeries() : defaultExercise(fallback));
+      renderModule(activeModule);
+      requestAnimationFrame(() => {
+        const prefix = activeModule === "principal" ? `principal_${activePrincipalBlock}` : activeModule;
+        document.getElementById(`${prefix}_nombre_${list.length}`)?.focus();
+      });
+    });
+  }
 
   if (saveCurrentBlockBtn) {
     saveCurrentBlockBtn.addEventListener("click", () => {
@@ -2718,8 +2899,880 @@ function bindSessionsForm() {
     const patient = patients.find(item => item.nickname === patientSearch.value) || getSelectedPatientBySearch(patientSearch.value.trim());
     patientHidden.value = patient ? patient.nickname : "";
     refreshSessionInfo();
+    if (phase3SourcePatient && !phase3SourcePatient.value && patientHidden.value) {
+      phase3SourcePatient.value = patientHidden.value;
+      phase3RefreshMicroOptions({ preserve: false });
+    }
+    phase3ResetSessionDates();
+    phase3RefreshDestinationPlanDefaults();
+    phase3RenderClonePreview();
   });
 
+  // FASE 3.1.1 · Origin/Destination UX + Real Content Counter (READ ONLY)
+  // El origen del micro es independiente del deportista destino del formulario habitual.
+  // Solo inspecciona sesiones guardadas: no escribe, copia ni transforma datos todavía.
+  function phase3SessionModules(session = {}) {
+    return session.modules || {
+      movilidad: session.movilidad || [],
+      activacion: session.activacion || [],
+      principal: session.principal || { blocks: {} },
+      carrera: session.carrera || session.running || []
+    };
+  }
+
+  function phase3CountExerciseList(list = []) {
+    return (Array.isArray(list) ? list : []).filter(item => item && hasExerciseContent(item)).length;
+  }
+
+  function phase3CountRunningList(list = []) {
+    return (Array.isArray(list) ? list : []).filter(item => item && hasRunSeriesContent(item)).length;
+  }
+
+  function phase3CountPrincipal(value = {}) {
+    if (!value) return 0;
+    if (Array.isArray(value)) return phase3CountExerciseList(value);
+    if (Array.isArray(value.exercises)) return phase3CountExerciseList(value.exercises);
+    const blocks = value.blocks && typeof value.blocks === "object" ? value.blocks : value;
+    return Object.values(blocks || {}).reduce((sum, block) => {
+      if (!block) return sum;
+      if (Array.isArray(block)) return sum + phase3CountExerciseList(block);
+      if (Array.isArray(block.exercises)) return sum + phase3CountExerciseList(block.exercises);
+      return sum;
+    }, 0);
+  }
+
+  function phase3SourceNickname() {
+    return phase3SourcePatient?.value || "";
+  }
+
+  function phase3RefreshSourcePatients() {
+    if (!phase3SourcePatient) return;
+    const current = phase3SourcePatient.value;
+    phase3SourcePatient.innerHTML = `<option value="">Selecciona deportista origen</option>${patients.map(patient => `<option value="${escapeHtml(patient.nickname)}">${escapeHtml(patient.nombre || patient.nickname)}</option>`).join("")}`;
+    if (patients.some(patient => patient.nickname === current)) {
+      phase3SourcePatient.value = current;
+    } else if (!current && patientHidden?.value && patients.some(patient => patient.nickname === patientHidden.value)) {
+      // Comodidad inicial: si ya hay destino seleccionado, lo proponemos también como origen,
+      // pero desde aquí ambos selectores quedan completamente independientes.
+      phase3SourcePatient.value = patientHidden.value;
+    }
+  }
+
+  function phase3MicrosForSource() {
+    const nickname = phase3SourceNickname();
+    if (!nickname) return [];
+    return [...new Set(sessions
+      .filter(item => item.patientNickname === nickname)
+      .map(item => nciSessionMicro(item))
+      .filter(Boolean))].sort((a,b) => b-a);
+  }
+
+  function phase3RefreshMicroOptions({ preserve = true } = {}) {
+    if (!phase3SourceMicro) return;
+    const micros = phase3MicrosForSource();
+    const current = preserve ? phase3SourceMicro.value : "";
+    phase3SourceMicro.innerHTML = `<option value="">Selecciona micro origen</option>${micros.map(m => `<option value="${m}">Micro ${m}</option>`).join("")}`;
+    if (micros.map(String).includes(String(current))) phase3SourceMicro.value = current;
+  }
+
+  const PHASE3_BLOCKS = [
+    { key: "movilidad", icon: "🧘", label: "Movilidad" },
+    { key: "activacion", icon: "⚡", label: "Activación" },
+    { key: "principal", icon: "🏋️", label: "Sesión Principal" },
+    { key: "carrera", icon: "🏃", label: "Sesiones Carrera" }
+  ];
+  const phase3GlobalMap = { movilidad:"movilidad", activacion:"activacion", principal:"principal", carrera:"carrera" };
+  let phase3SessionMaps = {};
+
+  function phase3SourceSessions() {
+    const nickname = phase3SourceNickname();
+    const micro = Number(phase3SourceMicro?.value || 0);
+    if (!nickname || !micro) return [];
+    return sessions.filter(item => item.patientNickname === nickname && nciSessionMicro(item) === micro)
+      .sort((a,b) => nciMicroSequenceOrder(a)-nciMicroSequenceOrder(b) || nciChronologicalCompare(a,b));
+  }
+
+  function phase3BlockCount(session, key) {
+    const mods = phase3SessionModules(session);
+    if (key === "principal") return phase3CountPrincipal(mods.principal);
+    if (key === "carrera") return phase3CountRunningList(mods.carrera);
+    return phase3CountExerciseList(mods[key]);
+  }
+
+  function phase3MapOptions(selected) {
+    const opts = PHASE3_BLOCKS.map(block => `<option value="${block.key}" ${selected===block.key?'selected':''}>${block.icon} ${block.label}</option>`).join("");
+    return `${opts}<option value="skip" ${selected==='skip'?'selected':''}>🚫 No copiar</option>`;
+  }
+
+  function phase3SessionMapKey(session, index) {
+    return String(session.id || session.sessionId || `${nciDisplayNumber(session)}_${session.fecha || index}`);
+  }
+
+  function phase3RenderMapper() {
+    if (!phase3Mapper) return;
+    const source = phase3SourceSessions();
+    if (!source.length) {
+      phase3Mapper.innerHTML = `<div class="phase3-empty">Selecciona un micro origen para activar el Block Mapper.</div>`;
+      return;
+    }
+    const rows = source.map((session, index) => {
+      const skey = phase3SessionMapKey(session,index);
+      if (!phase3SessionMaps[skey]) phase3SessionMaps[skey] = {...phase3GlobalMap};
+      const present = PHASE3_BLOCKS.filter(block => phase3BlockCount(session, block.key) > 0);
+      return `<article class="phase3-map-session" data-map-session="${escapeHtml(skey)}">
+        <div class="phase3-map-session-head"><strong>Sesión ${nciDisplayNumber(session)}</strong><small>${session.fecha || 'Sin fecha'}</small></div>
+        <div class="phase3-map-lines">${present.length ? present.map(block => {
+          const count=phase3BlockCount(session,block.key), selected=phase3SessionMaps[skey][block.key] || block.key;
+          return `<label class="phase3-map-line"><span>${block.icon} ${block.label} <b>${count}</b></span><i>→</i><select data-map-source="${block.key}">${phase3MapOptions(selected)}</select></label>`;
+        }).join('') : '<span class="phase3-map-empty">Sin bloques con contenido real</span>'}</div>
+      </article>`;
+    }).join('');
+    phase3Mapper.innerHTML = `<div class="phase3-map-summary"><span>🧭 <b>Mapa preparado</b> · ${source.length} ${source.length===1?'sesión':'sesiones'}</span><small>Cada sesión puede ajustarse de forma independiente. 🚫 excluye el bloque de la futura copia.</small></div>${rows}<div class="phase3-readonly">🛡️ Simulación segura · El Block Mapper todavía no guarda ni clona sesiones.</div>`;
+    phase3Mapper.querySelectorAll('[data-map-session]').forEach(card => {
+      const skey=card.dataset.mapSession;
+      card.querySelectorAll('select[data-map-source]').forEach(select => select.addEventListener('change',()=>{
+        phase3SessionMaps[skey] = phase3SessionMaps[skey] || {...phase3GlobalMap};
+        phase3SessionMaps[skey][select.dataset.mapSource]=select.value;
+        phase3RenderClonePreview();
+      }));
+    });
+  }
+
+  function phase3ApplyGlobalMap() {
+    const source=phase3SourceSessions();
+    source.forEach((session,index)=>{ phase3SessionMaps[phase3SessionMapKey(session,index)]={...phase3GlobalMap}; });
+    phase3RenderMapper();
+    phase3RenderClonePreview();
+  }
+
+  function phase3RenderPreview() {
+    if (!phase3Preview) return;
+    phase3SessionMaps = {};
+    const nickname = phase3SourceNickname();
+    const micro = Number(phase3SourceMicro?.value || 0);
+    if (!nickname || !micro) {
+      phase3Preview.innerHTML = `<div class="phase3-empty">Selecciona deportista origen y microciclo para preparar la vista previa.</div>`;
+      phase3RenderMapper();
+      return;
+    }
+    const source = sessions.filter(item => item.patientNickname === nickname && nciSessionMicro(item) === micro)
+      .sort((a,b) => nciMicroSequenceOrder(a)-nciMicroSequenceOrder(b) || nciChronologicalCompare(a,b));
+    if (!source.length) {
+      phase3Preview.innerHTML = `<div class="phase3-empty">No hay sesiones guardadas en el Micro ${micro}.</div>`;
+      phase3RenderMapper();
+      return;
+    }
+    const patient = patients.find(item => item.nickname === nickname);
+    const cards = source.map(session => {
+      const mods = phase3SessionModules(session);
+      const counts = [
+        ["🧘","Movilidad",phase3CountExerciseList(mods.movilidad)],
+        ["⚡","Activación",phase3CountExerciseList(mods.activacion)],
+        ["🏋️","Principal",phase3CountPrincipal(mods.principal)],
+        ["🏃","Carrera",phase3CountRunningList(mods.carrera)]
+      ].filter(x => x[2] > 0);
+      return `<article class="phase3-session-card">
+        <div><strong>Sesión ${nciDisplayNumber(session)}</strong><small>${session.fecha || "Sin fecha"} · ${nciSessionKindMeta(session).label}</small></div>
+        <div class="phase3-blocks">${counts.length ? counts.map(([i,l,c]) => `<span>${i} ${l} <b>${c}</b></span>`).join("") : `<span>Sin bloques con contenido real</span>`}</div>
+      </article>`;
+    }).join("");
+    phase3Preview.innerHTML = `<div class="phase3-preview-head"><div><small>MICRO ORIGEN</small><strong>${patient?.nombre || nickname} · Micro ${micro}</strong></div><b>${source.length} ${source.length===1?'sesión':'sesiones'}</b></div>${cards}<div class="phase3-readonly">🔒 Vista previa de solo lectura · Los contadores muestran únicamente ejercicios/series realmente escritos.</div>`;
+    phase3RenderMapper();
+  }
+
+
+  // FASE 3.3 · CLONE PREVIEW / DESTINATION PLAN
+  // Esta capa transforma el mapa en un PLAN VISUAL. No persiste ni modifica sesiones.
+  function phase3RealExercises(list = []) {
+    return (Array.isArray(list) ? list : []).filter(item => item && hasExerciseContent(item));
+  }
+
+  function phase3RealRunning(list = []) {
+    return (Array.isArray(list) ? list : []).filter(item => item && hasRunSeriesContent(item));
+  }
+
+  function phase3PrincipalExercises(value = {}) {
+    if (!value) return [];
+    if (Array.isArray(value)) return phase3RealExercises(value);
+    if (Array.isArray(value.exercises)) return phase3RealExercises(value.exercises);
+    const blocks = value.blocks && typeof value.blocks === "object" ? value.blocks : value;
+    const result = [];
+    Object.entries(blocks || {}).forEach(([blockKey, block]) => {
+      if (!block) return;
+      const exercises = Array.isArray(block) ? block : (Array.isArray(block.exercises) ? block.exercises : []);
+      phase3RealExercises(exercises).forEach(item => result.push({ ...item, __phase3PrincipalBlock: blockKey }));
+    });
+    return result;
+  }
+
+  function phase3SourceBlockItems(session, key) {
+    const mods = phase3SessionModules(session);
+    if (key === "principal") return phase3PrincipalExercises(mods.principal);
+    if (key === "carrera") return phase3RealRunning(mods.carrera);
+    return phase3RealExercises(mods[key]);
+  }
+
+  function phase3TargetPatient() {
+    const nickname = patientHidden?.value || "";
+    return patients.find(item => item.nickname === nickname) || null;
+  }
+
+  function phase3TargetExistingMicros() {
+    const nickname = patientHidden?.value || "";
+    if (!nickname) return [];
+    return [...new Set(sessions
+      .filter(item => item.patientNickname === nickname)
+      .map(item => nciSessionMicro(item))
+      .filter(Boolean))].sort((a,b)=>a-b);
+  }
+
+  function phase3SuggestTargetMicro() {
+    const used = phase3TargetExistingMicros();
+    if (!used.length) return 1;
+    for (let candidate = Math.max(...used) + 1; candidate <= 52; candidate++) {
+      if (!used.includes(candidate)) return candidate;
+    }
+    for (let candidate = 1; candidate <= 52; candidate++) {
+      if (!used.includes(candidate)) return candidate;
+    }
+    return "";
+  }
+
+  function phase3RefreshDestinationPlanDefaults({ forceMicro = false } = {}) {
+    if (phase3DestinationPatient) {
+      const patient = phase3TargetPatient();
+      phase3DestinationPatient.innerHTML = patient
+        ? `<strong>${escapeHtml(patient.nombre || patient.nickname)}</strong><small>@${escapeHtml(patient.nickname)}</small>`
+        : `Selecciona el deportista destino arriba.`;
+      phase3DestinationPatient.classList.toggle("has-patient", Boolean(patient));
+    }
+
+    if (phase3TargetMicro && (forceMicro || !phase3TargetMicro.value)) {
+      const suggested = phase3SuggestTargetMicro();
+      if (suggested) phase3TargetMicro.value = String(suggested);
+    }
+
+    if (phase3TargetStartDate && !phase3TargetStartDate.value) {
+      phase3TargetStartDate.value = phase3MondayOfWeek(date?.value || "") || "";
+    } else {
+      phase3NormalizeWeekBase();
+    }
+  }
+
+  function phase3ParseDate(value) {
+    const text = String(value || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+    const parsed = new Date(`${text}T12:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function phase3FormatDate(parsed) {
+    if (!parsed || Number.isNaN(parsed.getTime())) return "";
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth()+1).padStart(2,"0");
+    const d = String(parsed.getDate()).padStart(2,"0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function phase3DateAddDays(value, days) {
+    const parsed = phase3ParseDate(value);
+    if (!parsed) return "";
+    parsed.setDate(parsed.getDate() + Number(days || 0));
+    return phase3FormatDate(parsed);
+  }
+
+  function phase3MondayOfWeek(value) {
+    const parsed = phase3ParseDate(value);
+    if (!parsed) return "";
+    const day = parsed.getDay(); // 0 domingo, 1 lunes...
+    const diff = day === 0 ? -6 : 1 - day;
+    parsed.setDate(parsed.getDate() + diff);
+    return phase3FormatDate(parsed);
+  }
+
+  function phase3SundayOfWeek(value) {
+    const monday = phase3MondayOfWeek(value);
+    return monday ? phase3DateAddDays(monday, 6) : "";
+  }
+
+  function phase3SourceWeekdayOffset(session) {
+    const parsed = phase3ParseDate(session?.fecha);
+    if (!parsed) return 0;
+    const day = parsed.getDay();
+    return day === 0 ? 6 : day - 1;
+  }
+
+  function phase3AutoTargetDate(session) {
+    const monday = phase3MondayOfWeek(phase3TargetStartDate?.value || "");
+    if (!monday) return "";
+    return phase3DateAddDays(monday, phase3SourceWeekdayOffset(session));
+  }
+
+  function phase3ResetSessionDates() {
+    Object.keys(phase3SessionDates).forEach(key => delete phase3SessionDates[key]);
+  }
+
+  function phase3NormalizeWeekBase() {
+    if (!phase3TargetStartDate?.value) return;
+    const monday = phase3MondayOfWeek(phase3TargetStartDate.value);
+    if (monday && monday !== phase3TargetStartDate.value) {
+      phase3TargetStartDate.value = monday;
+    }
+  }
+
+  function phase3ExistingSessionsOnDate(targetPatient, targetDate, sourceMicro, sourcePatient) {
+    if (!targetPatient || !targetDate) return [];
+    return sessions.filter(item => {
+      if (item.patientNickname !== targetPatient.nickname) return false;
+      if (String(item.fecha || "") !== String(targetDate)) return false;
+      // Si estamos previsualizando sobre el mismo deportista, ignoramos el propio micro origen
+      // porque esta fase nunca lo modifica.
+      if (sourcePatient && targetPatient.nickname === sourcePatient.nickname && nciSessionMicro(item) === sourceMicro) return false;
+      return true;
+    });
+  }
+
+  function phase3ItemLabel(item, isRunning = false) {
+    const name = String(item?.nombre || "").trim() || (isRunning ? "Serie de carrera" : "Ejercicio");
+    if (isRunning) {
+      const detail = [
+        item?.series ? `${item.series} series` : "",
+        item?.cantidad ? `${item.cantidad} ${item.unidad || ""}`.trim() : "",
+        item?.ritmo ? `${item.ritmo} min/km` : "",
+        item?.rpe ? `RPE ${item.rpe}` : "",
+        item?.fc ? `FC ${item.fc}` : ""
+      ].filter(Boolean).join(" · ");
+      return detail ? `${name} · ${detail}` : name;
+    }
+    const detail = [
+      item?.series ? `${item.series} series` : "",
+      item?.repeticiones ? `${item.repeticiones} reps` : "",
+      item?.carga ? `${item.carga} ${item.unidad || ""}`.trim() : "",
+      item?.rpe ? `RPE ${item.rpe}` : ""
+    ].filter(Boolean).join(" · ");
+    return detail ? `${name} · ${detail}` : name;
+  }
+
+  function phase3BuildDestinationSession(sourceSession, index, sourceSessions) {
+    const skey = phase3SessionMapKey(sourceSession,index);
+    const mapping = phase3SessionMaps[skey] || {...phase3GlobalMap};
+    const buckets = { movilidad: [], activacion: [], principal: [], carrera: [] };
+    const provenance = { movilidad: [], activacion: [], principal: [], carrera: [] };
+    const excluded = [];
+    const conflicts = [];
+
+    PHASE3_BLOCKS.forEach(sourceBlock => {
+      const items = phase3SourceBlockItems(sourceSession, sourceBlock.key);
+      if (!items.length) return;
+      const target = mapping[sourceBlock.key] || sourceBlock.key;
+
+      if (target === "skip") {
+        excluded.push({ source: sourceBlock, count: items.length });
+        return;
+      }
+
+      const runningMismatch = (sourceBlock.key === "carrera") !== (target === "carrera");
+      if (runningMismatch) {
+        const targetMeta = PHASE3_BLOCKS.find(block => block.key === target);
+        conflicts.push(`No se puede convertir automáticamente ${sourceBlock.label} → ${targetMeta?.label || target}.`);
+        return;
+      }
+
+      buckets[target].push(...items);
+      provenance[target].push({ source: sourceBlock, count: items.length });
+    });
+
+    const capacityRules = { movilidad: 10, activacion: 10, principal: 40, carrera: 10 };
+    Object.entries(capacityRules).forEach(([targetKey, max]) => {
+      const count = buckets[targetKey]?.length || 0;
+      if (count > max) {
+        const meta = PHASE3_BLOCKS.find(block => block.key === targetKey);
+        conflicts.push(`${meta?.label || targetKey} recibiría ${count} contenidos y admite un máximo de ${max}. Reparte o excluye bloques antes de clonar.`);
+      }
+    });
+
+    const autoTargetDate = phase3AutoTargetDate(sourceSession);
+    const targetDate = phase3SessionDates[skey] || autoTargetDate;
+    const hasContent = PHASE3_BLOCKS.some(block => buckets[block.key].length > 0);
+
+    return { sourceSession, skey, index, mapping, buckets, provenance, excluded, conflicts, targetDate, autoTargetDate, hasContent };
+  }
+
+  function phase3RenderTargetBlock(block, plan) {
+    const items = plan.buckets[block.key] || [];
+    if (!items.length) return "";
+    const sources = (plan.provenance[block.key] || []).map(entry => `${entry.source.icon} ${entry.source.label} ${entry.count}`).join(" + ");
+    return `<div class="phase3-target-block">
+      <div class="phase3-target-block-head">
+        <strong>${block.icon} ${block.label} <b>${items.length}</b></strong>
+        <small>Origen: ${escapeHtml(sources)}</small>
+      </div>
+      <div class="phase3-target-items">${items.map(item => `<span>${escapeHtml(phase3ItemLabel(item, block.key === "carrera"))}</span>`).join("")}</div>
+    </div>`;
+  }
+
+  function phase3RenderClonePreview() {
+    if (!phase3ClonePreview) return;
+    phase3RefreshDestinationPlanDefaults();
+
+    const source = phase3SourceSessions();
+    const sourcePatient = patients.find(item => item.nickname === phase3SourceNickname());
+    const targetPatient = phase3TargetPatient();
+    const targetMicro = Number(phase3TargetMicro?.value || 0);
+    const targetStart = phase3MondayOfWeek(phase3TargetStartDate?.value || "");
+    const targetSunday = phase3SundayOfWeek(targetStart);
+
+    const topConflicts = [];
+    const warnings = [];
+    if (!source.length) topConflicts.push("Selecciona un micro origen con sesiones.");
+    if (!targetPatient) topConflicts.push("Selecciona el deportista destino en Creación de sesiones.");
+    if (!targetMicro) topConflicts.push("Selecciona un micro destino.");
+    if (!targetStart) topConflicts.push("Selecciona la semana base del micro destino.");
+
+    const targetExisting = targetPatient && targetMicro
+      ? sessions.filter(item => item.patientNickname === targetPatient.nickname && nciSessionMicro(item) === targetMicro)
+      : [];
+    if (targetExisting.length) {
+      topConflicts.push(`Micro ${targetMicro} del deportista destino ya contiene ${targetExisting.length} ${targetExisting.length===1?"sesión":"sesiones"}.`);
+    }
+
+    if (targetPatient && sourcePatient && targetPatient.nickname === sourcePatient.nickname && targetMicro === Number(phase3SourceMicro?.value || 0)) {
+      topConflicts.push("Origen y destino apuntan al mismo deportista y al mismo micro. El micro origen debe permanecer intacto.");
+    }
+
+    const plans = source.map((session,index) => phase3BuildDestinationSession(session,index,source));
+    const conversionConflicts = plans.flatMap(plan => plan.conflicts);
+
+    // DATE PLANNER: avisos de calendario (no bloqueantes).
+    const activePlans = plans.filter(plan => plan.hasContent && !plan.conflicts.length);
+    const usedDates = new Map();
+    activePlans.forEach(plan => {
+      if (!plan.targetDate) return;
+      const occupied = phase3ExistingSessionsOnDate(targetPatient, plan.targetDate, Number(phase3SourceMicro?.value || 0), sourcePatient);
+      if (occupied.length) {
+        warnings.push(`La fecha ${plan.targetDate} ya contiene ${occupied.length} ${occupied.length===1?"sesión preparada":"sesiones preparadas"} para ${targetPatient?.nombre || targetPatient?.nickname || "el destino"}.`);
+      }
+      if (targetStart && targetSunday && (plan.targetDate < targetStart || plan.targetDate > targetSunday)) {
+        warnings.push(`La sesión ${nciDisplayNumber(plan.sourceSession)} está fuera de la semana ${targetStart} → ${targetSunday}.`);
+      }
+      if (!usedDates.has(plan.targetDate)) usedDates.set(plan.targetDate, []);
+      usedDates.get(plan.targetDate).push(plan);
+    });
+    usedDates.forEach((sameDatePlans, day) => {
+      if (sameDatePlans.length > 1) {
+        warnings.push(`${sameDatePlans.length} sesiones del nuevo micro están programadas el mismo día (${day}).`);
+      }
+    });
+
+    const conflicts = [...topConflicts, ...conversionConflicts];
+
+    const sessionsToCreate = activePlans;
+    const exerciseCount = sessionsToCreate.reduce((sum,plan) =>
+      sum + plan.buckets.movilidad.length + plan.buckets.activacion.length + plan.buckets.principal.length, 0);
+    const runningCount = sessionsToCreate.reduce((sum,plan) => sum + plan.buckets.carrera.length, 0);
+    const excludedCount = plans.reduce((sum,plan) => sum + plan.excluded.reduce((s,e)=>s+e.count,0), 0);
+    const omittedSessions = plans.filter(plan => !plan.hasContent && !plan.conflicts.length).length;
+    const valid = Boolean(source.length && targetPatient && targetMicro && targetStart && !conflicts.length);
+
+    const sourceMicro = Number(phase3SourceMicro?.value || 0);
+    const header = `<div class="phase3-plan-route">
+      <article><small>ORIGEN</small><strong>${escapeHtml(sourcePatient?.nombre || phase3SourceNickname() || "—")}</strong><span>Micro ${sourceMicro || "—"} · ${source.length} ${source.length===1?"sesión":"sesiones"}</span></article>
+      <i>→</i>
+      <article><small>DESTINO</small><strong>${escapeHtml(targetPatient?.nombre || "Sin seleccionar")}</strong><span>${targetMicro ? `Micro ${targetMicro}` : "Micro pendiente"} · ${targetStart || "Fecha pendiente"}</span></article>
+    </div>`;
+
+    const summary = `<div class="phase3-plan-kpis">
+      <span><small>SESIONES A CREAR</small><b>${sessionsToCreate.length}</b></span>
+      <span><small>EJERCICIOS</small><b>${exerciseCount}</b></span>
+      <span><small>SERIES CARRERA</small><b>${runningCount}</b></span>
+      <span><small>EXCLUIDOS</small><b>${excludedCount}</b></span>
+      <span class="${warnings.length ? "is-warning" : "is-ok"}"><small>AVISOS FECHA</small><b>${warnings.length}</b></span>
+      <span class="${conflicts.length ? "is-conflict" : "is-ok"}"><small>CONFLICTOS</small><b>${conflicts.length}</b></span>
+    </div>`;
+
+    const cards = plans.map((plan,index) => {
+      const targetNumber = targetMicro ? `${targetMicro}.${index+1}` : `—.${index+1}`;
+      const blocksHtml = PHASE3_BLOCKS.map(block => phase3RenderTargetBlock(block,plan)).join("");
+      const excludedHtml = plan.excluded.length
+        ? `<div class="phase3-plan-excluded">🚫 Excluidos: ${plan.excluded.map(e=>`${e.source.label} ${e.count}`).join(" · ")}</div>` : "";
+      const conflictHtml = plan.conflicts.length
+        ? `<div class="phase3-plan-conflict">⚠️ ${plan.conflicts.map(escapeHtml).join("<br>")}</div>` : "";
+      const omitted = !plan.hasContent && !plan.conflicts.length;
+      return `<article class="phase3-plan-session ${omitted ? "is-omitted" : ""}">
+        <div class="phase3-plan-session-head">
+          <div><small>Sesión ${nciDisplayNumber(plan.sourceSession)} →</small><strong>Sesión ${targetNumber}</strong></div>
+          <div class="phase3-session-date-wrap">
+            <label>
+              <span>📅 Fecha destino</span>
+              <input type="date" data-phase3-session-date="${escapeHtml(plan.skey)}" value="${escapeHtml(plan.targetDate || "")}" ${omitted ? "disabled" : ""} />
+            </label>
+            ${!omitted && plan.targetDate === plan.autoTargetDate ? `<small>AUTO · ${escapeHtml(plan.autoTargetDate || "")}</small>` : (!omitted ? `<small>AJUSTADA</small>` : `<small>OMITIDA</small>`)}
+          </div>
+        </div>
+        ${blocksHtml || (omitted ? `<div class="phase3-plan-empty">Todos los contenidos fueron excluidos. Esta sesión no se crearía.</div>` : "")}
+        ${excludedHtml}${conflictHtml}
+      </article>`;
+    }).join("");
+
+    const conflictPanel = conflicts.length
+      ? `<div class="phase3-plan-validation is-conflict"><strong>🟠 REVISAR PLAN · ${conflicts.length} ${conflicts.length===1?"conflicto detectado":"conflictos detectados"}</strong>${conflicts.map(item=>`<span>• ${escapeHtml(item)}</span>`).join("")}</div>`
+      : `<div class="phase3-plan-validation is-valid"><strong>🟢 PLAN VÁLIDO · Preparado para clonación real</strong><span>FASE 3.4 escribirá exactamente este plan: contenido mapeado + fechas individuales del Date Planner.</span></div>`;
+
+    const warningPanel = warnings.length
+      ? `<div class="phase3-plan-validation is-warning"><strong>🟡 AVISOS DE CALENDARIO · ${warnings.length}</strong>${warnings.map(item=>`<span>• ${escapeHtml(item)}</span>`).join("")}<small>Los avisos informan, pero no bloquean la futura clonación.</small></div>`
+      : `<div class="phase3-plan-validation is-date-ok"><strong>📅 CALENDARIO OK</strong><span>Las fechas propuestas no chocan con sesiones existentes y están dentro de la semana base.</span></div>`;
+
+    phase3ClonePreview.innerHTML = `${header}${summary}${conflictPanel}${warningPanel}${cards}${omittedSessions ? `<div class="phase3-plan-note">ℹ️ ${omittedSessions} ${omittedSessions===1?"sesión quedaría omitida":"sesiones quedarían omitidas"} por no contener ningún bloque después del mapeo.</div>` : ""}`;
+
+    phase3ClonePreview.querySelectorAll("[data-phase3-session-date]").forEach(input => input.addEventListener("change", () => {
+      const key = input.dataset.phase3SessionDate;
+      if (!key) return;
+      if (input.value) phase3SessionDates[key] = input.value;
+      else delete phase3SessionDates[key];
+      phase3RenderClonePreview();
+    }));
+    if (phase3CloneLockedBtn) {
+      phase3CloneLockedBtn.disabled = !valid || sessionsToCreate.length === 0;
+      phase3CloneLockedBtn.textContent = valid && sessionsToCreate.length
+        ? `💣 Clonar microciclo · ${sessionsToCreate.length} ${sessionsToCreate.length===1?"sesión":"sesiones"}`
+        : "🔒 Clonar microciclo · revisa el plan";
+      phase3CloneLockedBtn.dataset.planWarnings = String(warnings.length);
+    }
+  }
+
+  // FASE 3.4 · DEEP CLONE ENGINE
+  // Congela el plan 3.3.1, crea identidades nuevas, escribe todas las sesiones
+  // en una única operación lógica y emite una sola notificación de microciclo.
+  function phase34Uuid(prefix = "id") {
+    return crypto.randomUUID ? crypto.randomUUID() : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
+  }
+
+  function phase34DeepCopy(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function phase34EmptyPrincipalBlock() {
+    return { notes: "", exercises: [] };
+  }
+
+  function phase34BuildPrincipal(plan) {
+    const blocks = {
+      bloque1: phase34EmptyPrincipalBlock(),
+      bloque2: phase34EmptyPrincipalBlock(),
+      bloque3: phase34EmptyPrincipalBlock(),
+      bloque4: phase34EmptyPrincipalBlock()
+    };
+    const sourcePrincipal = phase3SessionModules(plan.sourceSession)?.principal;
+    const sourceBlocks = sourcePrincipal?.blocks && typeof sourcePrincipal.blocks === "object" ? sourcePrincipal.blocks : {};
+    const generic = [];
+
+    (plan.buckets.principal || []).forEach(raw => {
+      const item = phase34DeepCopy(raw);
+      const originalBlock = String(item.__phase3PrincipalBlock || "");
+      delete item.__phase3PrincipalBlock;
+      const clean = cloneExerciseForStorage(item, item.tipo || "F. ppal. TS");
+      if (!hasExerciseContent(clean)) return;
+      if (blocks[originalBlock] && blocks[originalBlock].exercises.length < 10) {
+        blocks[originalBlock].exercises.push(clean);
+      } else {
+        generic.push(clean);
+      }
+    });
+
+    // Conservamos notas únicamente cuando el bloque Principal original sigue
+    // llegando a Principal; las notas no se fuerzan sobre conversiones ajenas.
+    if (plan.mapping?.principal === "principal") {
+      Object.keys(blocks).forEach(key => {
+        blocks[key].notes = String(sourceBlocks?.[key]?.notes || "");
+      });
+    }
+
+    generic.forEach(item => {
+      const targetKey = Object.keys(blocks).find(key => blocks[key].exercises.length < 10);
+      if (targetKey) blocks[targetKey].exercises.push(item);
+    });
+    return { blocks };
+  }
+
+  function phase34ModulesFromPlan(plan) {
+    return {
+      movilidad: (plan.buckets.movilidad || []).map(item => cloneExerciseForStorage(phase34DeepCopy(item), "Movilidad")).filter(hasExerciseContent),
+      activacion: (plan.buckets.activacion || []).map(item => cloneExerciseForStorage(phase34DeepCopy(item), "T. Superior")).filter(hasExerciseContent),
+      carrera: (plan.buckets.carrera || []).map(item => cloneRunSeriesForStorage(phase34DeepCopy(item))).filter(hasRunSeriesContent),
+      principal: phase34BuildPrincipal(plan)
+    };
+  }
+
+  function phase34PreparedPlan() {
+    phase3RefreshDestinationPlanDefaults();
+    const source = phase3SourceSessions();
+    const sourcePatient = patients.find(item => item.nickname === phase3SourceNickname());
+    const targetPatient = phase3TargetPatient();
+    const sourceMicro = Number(phase3SourceMicro?.value || 0);
+    const targetMicro = Number(phase3TargetMicro?.value || 0);
+    const targetStart = phase3MondayOfWeek(phase3TargetStartDate?.value || "");
+    const targetSunday = phase3SundayOfWeek(targetStart);
+    const conflicts = [];
+    const warnings = [];
+
+    if (!source.length) conflicts.push("No hay sesiones en el micro origen.");
+    if (!sourcePatient) conflicts.push("No se encuentra el deportista origen.");
+    if (!targetPatient) conflicts.push("No se encuentra el deportista destino.");
+    if (!targetMicro) conflicts.push("No hay micro destino válido.");
+    if (!targetStart) conflicts.push("No hay semana base destino válida.");
+    if (targetPatient && sourcePatient && targetPatient.nickname === sourcePatient.nickname && targetMicro === sourceMicro) conflicts.push("Origen y destino son el mismo micro.");
+
+    const existingTarget = targetPatient && targetMicro ? sessions.filter(item => item.patientNickname === targetPatient.nickname && nciSessionMicro(item) === targetMicro) : [];
+    if (existingTarget.length) conflicts.push(`El Micro ${targetMicro} destino ya contiene ${existingTarget.length} ${existingTarget.length===1?"sesión":"sesiones"}.`);
+
+    const plans = source.map((session,index) => phase3BuildDestinationSession(session,index,source));
+    plans.forEach(plan => conflicts.push(...plan.conflicts));
+    const active = plans.filter(plan => plan.hasContent && !plan.conflicts.length);
+    const usedDates = new Map();
+    active.forEach(plan => {
+      if (!plan.targetDate) { conflicts.push(`La sesión ${nciDisplayNumber(plan.sourceSession)} no tiene fecha destino.`); return; }
+      const occupied = phase3ExistingSessionsOnDate(targetPatient, plan.targetDate, sourceMicro, sourcePatient);
+      if (occupied.length) warnings.push(`${plan.targetDate}: ya existen ${occupied.length} ${occupied.length===1?"sesión":"sesiones"} del deportista destino.`);
+      if (targetStart && targetSunday && (plan.targetDate < targetStart || plan.targetDate > targetSunday)) warnings.push(`${nciDisplayNumber(plan.sourceSession)} queda fuera de la semana base (${plan.targetDate}).`);
+      if (!usedDates.has(plan.targetDate)) usedDates.set(plan.targetDate, 0);
+      usedDates.set(plan.targetDate, usedDates.get(plan.targetDate)+1);
+    });
+    usedDates.forEach((count, day) => { if (count > 1) warnings.push(`${count} sesiones clonadas compartirán la fecha ${day}.`); });
+
+    return { source, sourcePatient, targetPatient, sourceMicro, targetMicro, targetStart, plans, active, conflicts: Array.from(new Set(conflicts)), warnings: Array.from(new Set(warnings)) };
+  }
+
+  function phase34BuildSessionRecord(plan, operation, legacyNumber, order) {
+    const modules = phase34ModulesFromPlan(plan);
+    const nowIso = operation.createdAt;
+    const sourceKind = nciSessionKind(plan.sourceSession);
+    const exerciseTotal = modules.movilidad.length + modules.activacion.length + Object.values(modules.principal.blocks).reduce((sum,b)=>sum+b.exercises.length,0);
+    const sessionKindValue = modules.carrera.length && exerciseTotal === 0 ? "running" : (sourceKind || "gym");
+    return {
+      id: phase34Uuid("session"),
+      patientNickname: operation.targetPatient.nickname,
+      numero: legacyNumber,
+      fecha: plan.targetDate,
+      microciclo: operation.targetMicro,
+      sessionBaseNumber: operation.targetMicro,
+      sessionKind: sessionKindValue,
+      microManual: true,
+      microcicloManual: true,
+      microcicloLabel: `Micro ${operation.targetMicro} · ${plan.targetDate} · Clonado`,
+      modules,
+      movilidad: modules.movilidad.filter(item => item.nombre).map(item => item.nombre),
+      activacion: modules.activacion.filter(item => item.nombre).map(item => item.nombre),
+      carrera: modules.carrera.filter(hasRunSeriesContent),
+      principal: modules.principal,
+      sessionBaseNumber: operation.targetMicro,
+      subsessionOrder: order,
+      dayOrder: order,
+      microSequenceOrder: order,
+      displayOrder: order,
+      displaySessionNumber: `${operation.targetMicro}.${order}`,
+      numberingVersion: PPF_NCI_VERSION,
+      agendaStatus: "scheduled",
+      terminada: false,
+      completed: false,
+      isCompleted: false,
+      completedAt: null,
+      finishedAt: null,
+      lastCompletedAt: null,
+      cloneOperationId: operation.id,
+      clonedFromSessionId: plan.sourceSession.id || null,
+      clonedFromMicro: operation.sourceMicro,
+      clonedFromPatient: operation.sourcePatient.nickname,
+      cloneEngineVersion: "3.4",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      agendaHistory: [{ type: "created", label: `Clonada desde Micro ${operation.sourceMicro}`, at: nowIso, by: currentUser?.nickname || "admin" }]
+    };
+  }
+
+  function phase34VerifyCreated(created = [], operation) {
+    let stored = [];
+    try { stored = JSON.parse(localStorage.getItem("sessions") || "[]"); } catch (_) {}
+    if (!Array.isArray(stored)) return false;
+    return created.every(expected => {
+      const actual = stored.find(item => String(item.id) === String(expected.id));
+      if (!actual) return false;
+      if (actual.patientNickname !== operation.targetPatient.nickname || nciSessionMicro(actual) !== operation.targetMicro || String(actual.fecha) !== String(expected.fecha)) return false;
+      const a = phase3SessionModules(actual);
+      const e = phase3SessionModules(expected);
+      return phase3CountExerciseList(a.movilidad) === phase3CountExerciseList(e.movilidad)
+        && phase3CountExerciseList(a.activacion) === phase3CountExerciseList(e.activacion)
+        && phase3CountPrincipal(a.principal) === phase3CountPrincipal(e.principal)
+        && phase3CountRunningList(a.carrera) === phase3CountRunningList(e.carrera);
+    });
+  }
+
+  async function phase34CreateGroupedNotification(operation, created) {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
+    if (!Array.isArray(list)) list = [];
+    const dates = created.map(item => item.fecha).filter(Boolean).sort();
+    const firstDate = dates[0] || "";
+    const lastDate = dates[dates.length-1] || firstDate;
+    const dateText = firstDate && lastDate && firstDate !== lastDate ? ` entre ${firstDate} y ${lastDate}` : (firstDate ? ` el ${firstDate}` : "");
+    const notification = {
+      id: phase34Uuid("micro-notification"),
+      type: "microcycle_plan",
+      recipient: String(operation.targetPatient.nickname || "").trim().toLowerCase(),
+      recipientName: operation.targetPatient.nombre || operation.targetPatient.nickname,
+      title: "Nueva planificación disponible",
+      body: `Tu preparador ha actualizado el Micro ${operation.targetMicro}. Tienes ${created.length} ${created.length===1?"nueva sesión":"nuevas sesiones"}${dateText}.`,
+      microcycle: operation.targetMicro,
+      sessionIds: created.map(item => item.id),
+      sessionDates: dates,
+      cloneOperationId: operation.id,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser?.nickname || "admin",
+      origin: "admin_microcycle_clone",
+      integrityVersion: 1,
+      readBy: []
+    };
+    list.push(notification);
+    if (list.length > 500) list = list.slice(-500);
+    localStorage.setItem("notifications", JSON.stringify(list));
+    let synced = true;
+    if (window.PPF_SUPABASE?.pushValue) synced = await window.PPF_SUPABASE.pushValue("notifications", list);
+    else if (window.PPF_SUPABASE?.pushKey) synced = await window.PPF_SUPABASE.pushKey("notifications");
+    if (!synced) throw new Error("Supabase no confirmó la notificación agrupada");
+    return notification;
+  }
+
+  async function phase34ExecuteClone() {
+    if (phase3CloneLockedBtn?.dataset.busy === "1") return;
+    const prepared = phase34PreparedPlan();
+    if (prepared.conflicts.length || !prepared.active.length) {
+      phase3RenderClonePreview();
+      alert(`No se puede clonar todavía.\n\n${prepared.conflicts.join("\n") || "El plan no contiene sesiones a crear."}`);
+      return;
+    }
+
+    const dateLines = prepared.active.map((plan,i) => `• ${prepared.targetMicro}.${i+1} · ${plan.targetDate}`).join("\n");
+    const warningText = prepared.warnings.length ? `\n\n⚠️ Avisos:\n${prepared.warnings.map(x=>`• ${x}`).join("\n")}` : "";
+    const confirmed = confirm(`💣 CLONAR MICROCICLO\n\nOrigen: ${prepared.sourcePatient.nombre || prepared.sourcePatient.nickname} · Micro ${prepared.sourceMicro}\nDestino: ${prepared.targetPatient.nombre || prepared.targetPatient.nickname} · Micro ${prepared.targetMicro}\nSesiones nuevas: ${prepared.active.length}\n\n${dateLines}${warningText}\n\nSe crearán sesiones independientes y el deportista recibirá UNA sola notificación. ¿Continuar?`);
+    if (!confirmed) return;
+
+    const beforeSessions = phase34DeepCopy(sessions);
+    let beforeNotifications = [];
+    try { beforeNotifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
+    if (!Array.isArray(beforeNotifications)) beforeNotifications = [];
+
+    const operation = {
+      id: phase34Uuid("clone"),
+      createdAt: new Date().toISOString(),
+      sourcePatient: prepared.sourcePatient,
+      targetPatient: prepared.targetPatient,
+      sourceMicro: prepared.sourceMicro,
+      targetMicro: prepared.targetMicro
+    };
+
+    const baseLegacyNumber = sessions.filter(item => nciSessionPatient(item) === nciNickname(prepared.targetPatient.nickname)).reduce((max,item)=>Math.max(max,Number(item.numero||0)),0);
+    const created = prepared.active.map((plan,index) => phase34BuildSessionRecord(plan, operation, baseLegacyNumber + index + 1, index + 1));
+
+    phase3CloneLockedBtn.dataset.busy = "1";
+    phase3CloneLockedBtn.disabled = true;
+    phase3CloneLockedBtn.textContent = "⏳ Clonando microciclo...";
+
+    try {
+      sessions.push(...created);
+      nciRenumberPatientSessions(prepared.targetPatient.nickname, { touchUpdatedAt: false, rebuildOrder: false });
+      window.sessions = sessions;
+      localStorage.setItem("sessions", JSON.stringify(sessions));
+      window.PPF_CORE?.emit?.("sessions");
+
+      let cloudConfirmed = true;
+      if (window.PPF_SUPABASE?.pushValue) cloudConfirmed = await window.PPF_SUPABASE.pushValue("sessions", sessions);
+      else if (window.PPF_SUPABASE?.pushKey) cloudConfirmed = await window.PPF_SUPABASE.pushKey("sessions");
+      if (!cloudConfirmed) throw new Error("Supabase no confirmó la escritura de las sesiones clonadas");
+
+      // pushValue puede fusionar datos remotos y actualizar window.sessions.
+      // Adoptamos esa verdad antes de verificar.
+      try {
+        const synced = JSON.parse(localStorage.getItem("sessions") || "[]");
+        if (Array.isArray(synced)) { sessions = synced; window.sessions = sessions; }
+      } catch (_) {}
+      if (!phase34VerifyCreated(created, operation)) throw new Error("La verificación posterior no encontró una copia idéntica al plan aprobado");
+
+      let notificationOk = true;
+      try { await phase34CreateGroupedNotification(operation, created); }
+      catch (notifyError) { notificationOk = false; console.error("Deep Clone: notificación agrupada no confirmada:", notifyError); }
+
+      if (typeof syncRuntimeToDB === "function") { try { await syncRuntimeToDB(); } catch (error) { console.warn("Deep Clone: IndexedDB no confirmó sincronización:", error); } }
+      if (typeof pmSetDashboardKpis === "function") { try { pmSetDashboardKpis("sesiones"); } catch (_) {} }
+
+      // Evita una segunda clonación accidental sobre el mismo micro recién creado.
+      phase3RenderClonePreview();
+      if (filter) { filter.value = prepared.targetPatient.nickname; renderSessionList(prepared.targetPatient.nickname); }
+
+      const resultText = `🎉 MICRO CLONADO CON ÉXITO\n\nMicro ${prepared.sourceMicro} → Micro ${prepared.targetMicro}\n${created.length} ${created.length===1?"sesión creada":"sesiones creadas"}\nAgenda PRO sincronizada\n${notificationOk ? "🔔 1 notificación agrupada enviada al deportista" : "⚠️ Sesiones correctas, pero la notificación agrupada no pudo confirmarse"}`;
+      alert(resultText);
+    } catch (error) {
+      console.error("FASE 3.4 Deep Clone rollback:", error);
+      sessions = phase34DeepCopy(beforeSessions);
+      window.sessions = sessions;
+      localStorage.setItem("sessions", JSON.stringify(sessions));
+      localStorage.setItem("notifications", JSON.stringify(beforeNotifications));
+      window.PPF_CORE?.emit?.("sessions");
+      // Rollback remoto best-effort. Usamos replaceValue si está disponible para
+      // retirar también IDs que pudieran haberse subido antes del fallo.
+      try {
+        if (window.PPF_SUPABASE?.replaceValue) await window.PPF_SUPABASE.replaceValue("sessions", sessions);
+        else if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
+      } catch (rollbackError) { console.error("Deep Clone: rollback remoto no confirmado:", rollbackError); }
+      alert(`La clonación se ha cancelado y PPF ha restaurado el estado anterior.\n\nMotivo: ${error?.message || error}`);
+    } finally {
+      delete phase3CloneLockedBtn.dataset.busy;
+      phase3RenderClonePreview();
+    }
+  }
+
+  function phase3PreviewLatestMicro() {
+    const micros = phase3MicrosForSource();
+    if (!phase3SourceNickname()) {
+      phase3Preview.innerHTML = `<div class="phase3-empty">Selecciona primero el deportista origen.</div>`;
+      return;
+    }
+    if (!micros.length) {
+      phase3Preview.innerHTML = `<div class="phase3-empty">El deportista origen no tiene microciclos guardados.</div>`;
+      return;
+    }
+    if (phase3SourceMicro) phase3SourceMicro.value = String(micros[0]);
+    phase3ResetSessionDates();
+    phase3RenderPreview();
+    phase3RenderClonePreview();
+  }
+
+  if (phase3SourcePatient) phase3SourcePatient.addEventListener("change", () => {
+    phase3ResetSessionDates();
+    phase3RefreshMicroOptions({ preserve: false });
+    phase3RenderPreview();
+    phase3RenderClonePreview();
+  });
+  if (phase3PreviewBtn) phase3PreviewBtn.addEventListener("click", phase3PreviewLatestMicro);
+  if (phase3ApplyMapBtn) phase3ApplyMapBtn.addEventListener("click", phase3ApplyGlobalMap);
+  if (phase3SourceMicro) phase3SourceMicro.addEventListener("change", () => {
+    phase3ResetSessionDates();
+    phase3RenderPreview();
+    phase3RenderClonePreview();
+  });
+  if (phase3TargetMicro) phase3TargetMicro.addEventListener("change", phase3RenderClonePreview);
+  if (phase3TargetStartDate) phase3TargetStartDate.addEventListener("change", () => {
+    phase3NormalizeWeekBase();
+    phase3ResetSessionDates();
+    phase3RenderClonePreview();
+  });
+  if (phase3ResetDatesBtn) phase3ResetDatesBtn.addEventListener("click", () => {
+    phase3ResetSessionDates();
+    phase3RenderClonePreview();
+  });
+  if (phase3CloneLockedBtn) phase3CloneLockedBtn.addEventListener("click", phase34ExecuteClone);
+  phase3RefreshSourcePatients();
+  phase3RefreshMicroOptions();
+  phase3RefreshDestinationPlanDefaults({ forceMicro: true });
+  phase3RenderClonePreview();
   if (pasteCopiedSessionBtn) pasteCopiedSessionBtn.addEventListener("click", pasteCopiedSessionIntoForm);
   if (loadLastSessionBtn) loadLastSessionBtn.addEventListener("click", loadLastSessionForSelectedPatient);
   refreshSessionClipboardStatus();
@@ -2752,14 +3805,12 @@ function bindSessionsForm() {
         exercises: (block.exercises || []).map(item => cloneExerciseForStorage(item, "F. ppal. TS"))
       };
 
-      while (principal.blocks[blockKey].exercises.length < 4) {
-        principal.blocks[blockKey].exercises.push(defaultExercise("F. ppal. TS"));
-      }
     });
 
     return {
       movilidad: (moduleData.movilidad || []).map(item => cloneExerciseForStorage(item, "Movilidad")),
       activacion: (moduleData.activacion || []).map(item => cloneExerciseForStorage(item, "T. Superior")),
+      carrera: (moduleData.carrera || []).map(item => cloneRunSeriesForStorage(item)),
       principal
     };
   }
@@ -2778,16 +3829,23 @@ function bindSessionsForm() {
     };
   }
 
+  function cloneRunSeriesForStorage(item = {}) {
+    return { nombre: item?.nombre || "", series: item?.series || "", cantidad: item?.cantidad || "", unidad: item?.unidad || "m", ritmo: item?.ritmo || "", rpe: item?.rpe || "", fc: item?.fc || "", deleted: Boolean(item?.deleted) };
+  }
+
+  function normalizeImportedRunSeries(item = {}) {
+    return cloneRunSeriesForStorage(item);
+  }
+
   function applySessionModulesToForm(modules = {}, sourceLabel = "sesión copiada") {
     const movilidad = Array.isArray(modules.movilidad) ? modules.movilidad : [];
     const activacion = Array.isArray(modules.activacion) ? modules.activacion : [];
     const principalSource = modules.principal || { blocks: {} };
 
-    moduleData.movilidad = movilidad.map(item => normalizeImportedExercise(item, "Movilidad"));
-    while (moduleData.movilidad.length < 10) moduleData.movilidad.push(defaultExercise("Movilidad"));
+    moduleData.movilidad = compactExerciseList(movilidad, "Movilidad");
 
-    moduleData.activacion = activacion.map(item => normalizeImportedExercise(item, "T. Superior"));
-    while (moduleData.activacion.length < 10) moduleData.activacion.push(defaultExercise("T. Superior"));
+    moduleData.activacion = compactExerciseList(activacion, "T. Superior");
+    moduleData.carrera = compactRunSeriesList(modules.carrera || []);
 
     moduleData.principal.blocks = {
       bloque1: defaultPrincipalBlock(),
@@ -2800,12 +3858,8 @@ function bindSessionsForm() {
       const block = principalSource.blocks?.[blockKey] || defaultPrincipalBlock();
       moduleData.principal.blocks[blockKey] = {
         notes: block.notes || "",
-        exercises: (block.exercises || []).map(item => normalizeImportedExercise(item, "F. ppal. TS"))
+        exercises: compactExerciseList(block.exercises || [], "F. ppal. TS")
       };
-
-      while (moduleData.principal.blocks[blockKey].exercises.length < 4) {
-        moduleData.principal.blocks[blockKey].exercises.push(defaultExercise("F. ppal. TS"));
-      }
     });
 
     editingSessionId = null;
@@ -2880,6 +3934,7 @@ function bindSessionsForm() {
     applySessionModulesToForm(lastSession.modules || {
       movilidad: lastSession.movilidad || [],
       activacion: lastSession.activacion || [],
+      carrera: lastSession.carrera || [],
       principal: lastSession.principal || { blocks: {} }
     }, `Última sesión del cliente cargada: sesión nº ${lastSession.numero || "-"}`);
   }
@@ -2910,6 +3965,7 @@ function bindSessionsForm() {
 
     window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
     let cloudConfirmed = false;
     if (window.PPF_SUPABASE?.pushValue) {
@@ -2957,6 +4013,8 @@ function bindSessionsForm() {
       sessionDate: session.fecha || "",
       createdAt: new Date().toISOString(),
       createdBy: currentUser?.nickname || "admin",
+      origin: "admin_session_create",
+      integrityVersion: 1,
       readBy: []
     };
 
@@ -3013,6 +4071,7 @@ function bindSessionsForm() {
       modules: modulesForSave,
       movilidad: modulesForSave.movilidad.filter(item => !item.deleted && item.nombre).map(item => item.nombre),
       activacion: modulesForSave.activacion.filter(item => !item.deleted && item.nombre).map(item => item.nombre),
+      carrera: modulesForSave.carrera.filter(item => !item.deleted && hasRunSeriesContent(item)),
       principal: modulesForSave.principal
     };
 
@@ -3023,6 +4082,15 @@ function bindSessionsForm() {
       console.error("No se pudo guardar la sesión:", error);
       alert("No se pudo guardar la sesión. Revisa la conexión con Supabase y vuelve a intentarlo.");
       return;
+    }
+
+    // B.2.1.4.6 · Instant Pending KPI Sync
+    // La sesión ya está confirmada en el almacenamiento antes de continuar con
+    // la notificación. Repintamos ahora los KPI de Creación sesiones usando el
+    // mismo PPF_CORE que alimenta Agenda, evitando depender de F5.
+    if (typeof pmSetDashboardKpis === "function") {
+      const activeSection = document.querySelector(".nav-item.active")?.dataset?.section;
+      if (activeSection === "sesiones") pmSetDashboardKpis("sesiones");
     }
 
     let notificationConfirmed = true;
@@ -3071,11 +4139,10 @@ function bindSessionsForm() {
     date.value = session.fecha;
     if (sessionKind) sessionKind.value = nciSessionKind(session);
 
-    moduleData.movilidad = (session.modules?.movilidad || []).map(item => ({ nombre: item.nombre || "", series: item.series || "", repeticiones: item.repeticiones || "", carga: item.carga || "", unidad: item.unidad || "Kg", rpe: item.rpe || "", tipo: item.tipo || "Movilidad", url: item.url || "", deleted: Boolean(item.deleted) }));
-    while (moduleData.movilidad.length < 10) moduleData.movilidad.push(defaultExercise("Movilidad"));
+    moduleData.movilidad = compactExerciseList(session.modules?.movilidad || session.movilidad || [], "Movilidad");
 
-    moduleData.activacion = (session.modules?.activacion || []).map(item => ({ nombre: item.nombre || "", series: item.series || "", repeticiones: item.repeticiones || "", carga: item.carga || "", unidad: item.unidad || "Kg", rpe: item.rpe || "", tipo: item.tipo || "T. Superior", url: item.url || "", deleted: Boolean(item.deleted) }));
-    while (moduleData.activacion.length < 10) moduleData.activacion.push(defaultExercise("T. Superior"));
+    moduleData.activacion = compactExerciseList(session.modules?.activacion || session.activacion || [], "T. Superior");
+    moduleData.carrera = compactRunSeriesList(session.modules?.carrera || session.carrera || []);
 
     const p = session.modules?.principal || session.principal;
     moduleData.principal.blocks = { bloque1: defaultPrincipalBlock(), bloque2: defaultPrincipalBlock(), bloque3: defaultPrincipalBlock(), bloque4: defaultPrincipalBlock() };
@@ -3085,16 +4152,37 @@ function bindSessionsForm() {
         const block = p.blocks[key] || defaultPrincipalBlock();
         moduleData.principal.blocks[key] = {
           notes: block.notes || "",
-          exercises: (block.exercises || []).map(item => ({ nombre: item.nombre || "", series: item.series || "", repeticiones: item.repeticiones || "", carga: item.carga || "", unidad: item.unidad || "Kg", rpe: item.rpe || "", tipo: item.tipo || "F. ppal. TS", url: item.url || "", deleted: Boolean(item.deleted) }))
+          exercises: compactExerciseList(block.exercises || [], "F. ppal. TS")
         };
-        while (moduleData.principal.blocks[key].exercises.length < 4) moduleData.principal.blocks[key].exercises.push(defaultExercise("F. ppal. TS"));
       });
     }
 
     saveSessionBtn.textContent = "Actualizar sesión";
     saveSessionBtn.dataset.editing = sessionId;
     activePrincipalBlock = "bloque1";
-    renderModule("movilidad");
+
+    // FASE 2.3 · Smart Edit Entry
+    // Al editar, abrir el primer bloque real de la sesión siguiendo el orden natural:
+    // Movilidad → Activación → Principal → Carrera. El fallback sigue siendo Movilidad.
+    const hasVisibleItems = list => Array.isArray(list) && list.some(item => item && !item.deleted && String(item.nombre || "").trim());
+    const firstPrincipalBlockWithContent = ["bloque1", "bloque2", "bloque3", "bloque4"].find(key => {
+      const block = moduleData.principal.blocks[key];
+      return hasVisibleItems(block?.exercises) || String(block?.notes || "").trim();
+    });
+
+    let editEntryModule = "movilidad";
+    if (hasVisibleItems(moduleData.movilidad)) {
+      editEntryModule = "movilidad";
+    } else if (hasVisibleItems(moduleData.activacion)) {
+      editEntryModule = "activacion";
+    } else if (firstPrincipalBlockWithContent) {
+      activePrincipalBlock = firstPrincipalBlockWithContent;
+      editEntryModule = "principal";
+    } else if (hasVisibleItems(moduleData.carrera)) {
+      editEntryModule = "carrera";
+    }
+
+    renderModule(editEntryModule);
     const { check: editMicroManualCheck, select: editMicroManualSelect } = getMicroManualControls();
 
     if (editMicroManualCheck && editMicroManualSelect) {
@@ -3190,6 +4278,7 @@ function pmCompletionForSession(session = {}, completed = [], notifications = []
 }
 
 function pmIsSessionCompleted(session = {}, completed = [], notifications = []) {
+  if (window.PPF_SESSION_TRUTH) return window.PPF_SESSION_TRUTH.isCompleted(session, completed);
   return Boolean(pmCompletionForSession(session, completed, notifications));
 }
 
@@ -3208,50 +4297,24 @@ function pmSessionMicroLabel(session = {}) {
 }
 
 function pmSessionAgenda() {
-  const allSessions = pmReadJson("sessions", []);
-  const completed = pmReadJson("completedSessions", []);
-  const notifications = pmReadJson("notifications", []);
-  const patientByNickname = new Map(
-    patients.map(patient => [pmNormalizeNickname(patient.nickname), patient])
-  );
-
-  // Cada sesión es una unidad independiente. Nunca se agrupa por paciente ni
-  // se conserva únicamente la última: un cliente puede tener varias pendientes.
-  const seen = new Set();
-  const rows = (Array.isArray(allSessions) ? allSessions : [])
-    .map((session, index) => ({ session, index }))
-    .filter(({ session, index }) => {
-      const key = pmSessionStableKey(session, index);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .map(({ session }) => {
-      const nickname = pmSessionPatientKey(session);
-      const patient = patientByNickname.get(pmNormalizeNickname(nickname));
-      return {
-        patient: patient || { nombre: session.patientName || session.nombrePaciente || nickname || "Paciente", nickname },
-        session
-      };
-    });
-
-  const sortRowsLatest = list => list.slice().sort((a, b) => {
-    const fa = String(a.session?.fecha || "");
-    const fb = String(b.session?.fecha || "");
-    if (fa !== fb) return fb.localeCompare(fa);
-    return pmSessionNumber(b.session) - pmSessionNumber(a.session);
-  });
-
-  const pending = sortRowsLatest(
-    rows.filter(item => !pmIsSessionCompleted(item.session, completed, notifications))
-  );
-  const done = sortRowsLatest(
-    rows.filter(item => pmIsSessionCompleted(item.session, completed, notifications))
-  );
-
-  return { pending, done };
+  const coreAgenda = window.PPF_CORE?.agenda?.();
+  if (!coreAgenda) return { pending: [], done: [], cancelled: [], overdue: [], withoutTime: [] };
+  const patientByNickname = new Map(patients.map(patient => [pmNormalizeNickname(patient.nickname), patient]));
+  const wrap = session => {
+    const nickname = window.PPF_CORE.patient(session);
+    return {
+      patient: patientByNickname.get(nickname) || { nombre: session.patientName || session.nombrePaciente || session.patientNickname || "Paciente", nickname },
+      session
+    };
+  };
+  return {
+    pending: coreAgenda.pending.map(wrap),
+    done: coreAgenda.done.map(wrap),
+    cancelled: coreAgenda.cancelled.map(wrap),
+    overdue: coreAgenda.overdue.map(wrap),
+    withoutTime: coreAgenda.withoutTime.map(wrap)
+  };
 }
-
 
 function pmUserStatKey(value = "") {
   return String(value || "").trim().toLowerCase();
@@ -3496,11 +4559,13 @@ function pmSetDashboardKpis(mode = "paciente") {
     const movilidad = exerciseLibrary.filter(e => libraryHasCategory(e, "Movilidad")).length;
     const activacion = exerciseLibrary.filter(e => libraryHasCategory(e, "Activación")).length;
     const principal = exerciseLibrary.filter(e => libraryHasCategory(e, "Sesión Principal")).length;
+    const carrera = exerciseLibrary.filter(e => libraryHasCategory(e, "Sesiones Carrera")).length;
     setCard(0, "Pacientes activos", patients.length);
     setCard(1, "Ejercicios biblioteca", exerciseLibrary.length, [
       `Movilidad: ${movilidad}`,
       `Activación: ${activacion}`,
-      `Sesión Principal: ${principal}`
+      `Sesión Principal: ${principal}`,
+      `Sesiones Carrera: ${carrera}`
     ]);
 
     const withVideo = exerciseLibrary.filter(item => {
@@ -3624,7 +4689,8 @@ function findLibraryExercise(name, category = "") {
 const LIBRARY_TYPE_OPTIONS = Object.freeze({
   "Movilidad": ["Movilidad", "Est. Estático", "Fascias"],
   "Activación": ["T. Superior", "T. Inferior", "Core", "Pliometría", "Tarea de Campo"],
-  "Sesión Principal": ["F. ppal. TS", "F. ppal. TI", "Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos", "Mov. Olímpicos", "Tarea de Campo"]
+  "Sesión Principal": ["F. ppal. TS", "F. ppal. TI", "Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos", "Mov. Olímpicos", "Tarea de Campo"],
+  "Sesiones Carrera": ["Carrera continua", "Intervalos", "Sprint", "Recuperación", "Técnica de carrera", "Cuestas", "Fartlek"]
 });
 
 function getLibraryTypeOptions() {
@@ -3656,6 +4722,7 @@ const bibliotecaHTML = `
         <span>🤸 Movilidad <b id="libraryMobilityStat">0</b></span>
         <span>🔥 Activación <b id="libraryActivationStat">0</b></span>
         <span>🏋️ Principal <b id="libraryMainStat">0</b></span>
+        <span>🏃 Carrera <b id="libraryRunningStat">0</b></span>
       </div>
     </div>
     <div class="library-pro-hero-stats" aria-label="Resumen de biblioteca">
@@ -3687,6 +4754,7 @@ const bibliotecaHTML = `
           <label><input type="checkbox" name="libraryCategories" value="Movilidad" /><span>🤸 Movilidad</span></label>
           <label><input type="checkbox" name="libraryCategories" value="Activación" /><span>🔥 Activación</span></label>
           <label><input type="checkbox" name="libraryCategories" value="Sesión Principal" /><span>🏋️ Sesión Principal</span></label>
+          <label><input type="checkbox" name="libraryCategories" value="Sesiones Carrera" /><span>🏃 Sesiones Carrera</span></label>
         </div>
         <small class="form-hint">Puedes marcar varias. El ejercicio seguirá apareciendo en todas las categorías seleccionadas.</small>
 
@@ -3732,6 +4800,7 @@ const bibliotecaHTML = `
         <button type="button" data-library-filter="Movilidad">Movilidad</button>
         <button type="button" data-library-filter="Activación">Activación</button>
         <button type="button" data-library-filter="Sesión Principal">Principal</button>
+        <button type="button" data-library-filter="Sesiones Carrera">Carrera</button>
         <button type="button" data-library-video="true">Con vídeo</button>
       </div>
       <input id="libraryFilter" type="hidden" value="" />
@@ -3760,8 +4829,19 @@ function normalizeLibraryItem(item = {}, index = 0) {
 function renderLibraryCard(item, index) {
   try {
     const exercise = normalizeLibraryItem(item, index);
-    const primaryCategory = exercise.categories[0] || "Sin categoría";
-    const icon = primaryCategory === "Movilidad" ? "🤸" : primaryCategory === "Activación" ? "🔥" : primaryCategory === "Sesión Principal" ? "🏋️" : "📌";
+    const categoryIconMap = {
+      "Movilidad": "🤸",
+      "Activación": "🔥",
+      "Sesión Principal": "🏋️",
+      "Sesiones Carrera": "🏃"
+    };
+    const categoryOrder = ["Movilidad", "Activación", "Sesión Principal", "Sesiones Carrera"];
+    const orderedCategories = categoryOrder.filter(category => exercise.categories.includes(category));
+    const extraCategories = exercise.categories.filter(category => !categoryOrder.includes(category));
+    const visibleCategories = [...orderedCategories, ...extraCategories];
+    const icons = visibleCategories.length
+      ? visibleCategories.map(category => `<span title="${libraryEscapeHtml(category)}">${categoryIconMap[category] || "📌"}</span>`).join("")
+      : `<span title="Sin categoría">📌</span>`;
     const encodedId = encodeURIComponent(exercise.id);
     const badges = exercise.categories.length
       ? exercise.categories.map(category => `<span>${libraryEscapeHtml(category)}</span>`).join("")
@@ -3770,7 +4850,7 @@ function renderLibraryCard(item, index) {
     return `
       <article class="library-card library-pro-card" data-library-card-id="${libraryEscapeHtml(exercise.id)}">
         <div class="library-pro-card-top">
-          <div class="library-pro-card-icon">${icon}</div>
+          <div class="library-pro-card-icons" aria-label="Categorías del ejercicio">${icons}</div>
           <div class="library-pro-card-title">
             <h3>${libraryEscapeHtml(exercise.name)}</h3>
             <p>${libraryEscapeHtml(exercise.type || "Tipo sin especificar")}</p>
@@ -3834,13 +4914,15 @@ function renderLibraryList() {
   const statMobility = document.getElementById("libraryMobilityStat");
   const statActivation = document.getElementById("libraryActivationStat");
   const statMain = document.getElementById("libraryMainStat");
+  const statRunning = document.getElementById("libraryRunningStat");
   const visibleCount = document.getElementById("libraryVisibleCount");
   if (statTotal) statTotal.textContent = normalizedLibrary.length;
   if (statTypes) statTypes.textContent = uniqueTypes.size;
-  if (statCategories) statCategories.textContent = categories.size;
+  if (statCategories) statCategories.textContent = Object.keys(LIBRARY_TYPE_OPTIONS).length;
   if (statMobility) statMobility.textContent = categoryCount("Movilidad");
   if (statActivation) statActivation.textContent = categoryCount("Activación");
   if (statMain) statMain.textContent = categoryCount("Sesión Principal");
+  if (statRunning) statRunning.textContent = categoryCount("Sesiones Carrera");
   if (visibleCount) visibleCount.textContent = visible.length;
 
   // El contador y el catálogo se actualizan en la misma operación para evitar estados contradictorios.
@@ -4086,7 +5168,8 @@ function getWeeklyVolumeData(patientNickname = "") {
       sessionsInMicro: 0,
       sessions: 0,
       tonnage: 0,
-      dates: []
+      dates: [],
+      sessionDetails: []
     };
   }
 
@@ -4096,13 +5179,27 @@ function getWeeklyVolumeData(patientNickname = "") {
     if (session.fecha && !grouped[key].dates.includes(session.fecha)) {
       grouped[key].dates.push(session.fecha);
     }
+    grouped[key].sessionDetails.push({
+      date: session.fecha || "",
+      time: session.scheduledTime || session.hora || "",
+      order: Number(session.microSequenceOrder || session.subsessionOrder || session.dayOrder || 0),
+      number: (typeof nciDisplayNumber === "function" ? nciDisplayNumber(session) : (session.displaySessionNumber || session.numero || ""))
+    });
     grouped[key].tonnage += getSessionTonnage(session);
   });
 
   const ordered = Object.values(grouped).sort((a, b) => a.micro - b.micro);
   ordered.forEach(item => {
-  item.sessions = item.sessionsInMicro;
-});
+    item.sessions = item.sessionsInMicro;
+    item.dates = [...(item.dates || [])].sort((a, b) => String(a).localeCompare(String(b)));
+    item.sessionDetails = [...(item.sessionDetails || [])].sort((a, b) => {
+      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
+      if (dateCompare !== 0) return dateCompare;
+      const timeCompare = String(a.time || "23:59").localeCompare(String(b.time || "23:59"));
+      if (timeCompare !== 0) return timeCompare;
+      return Number(a.order || 0) - Number(b.order || 0);
+    });
+  });
 
 
   return ordered;
@@ -4125,7 +5222,8 @@ function getPlyometricVolumeData(patientNickname = "") {
       exercises: 0,
       sessionsInMicro: item.sessionsInMicro || 0,
       sessions: item.sessions || 0,
-      dates: item.dates || []
+      dates: item.dates || [],
+      sessionDetails: item.sessionDetails || []
     };
   });
 
@@ -4151,7 +5249,8 @@ function getPlyometricVolumeData(patientNickname = "") {
           exercises: 0,
           sessionsInMicro: 0,
           sessions: 0,
-          dates: []
+          dates: [],
+          sessionDetails: []
         };
       }
 
@@ -4309,8 +5408,25 @@ function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay
     const value = item[valueKey] || 0;
     const height = Math.max((value / maxValue) * 100, 6);
     const realSessions = Number(item.sessionsInMicro || item.sessions || 0);
-    const sessionDates = (item.dates || []).filter(Boolean);
+    const sessionDates = [...(item.dates || [])].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b)));
     const sessionDatesLabel = sessionDates.length ? sessionDates.join(" · ") : "Sin fechas registradas";
+    const orderedSessionDetails = [...(item.sessionDetails || [])].sort((a, b) => {
+      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
+      if (dateCompare !== 0) return dateCompare;
+      const timeCompare = String(a.time || "23:59").localeCompare(String(b.time || "23:59"));
+      if (timeCompare !== 0) return timeCompare;
+      return Number(a.order || 0) - Number(b.order || 0);
+    });
+    const formatTooltipDate = (value) => {
+      if (!value) return "Sin fecha";
+      const [year, month, day] = String(value).split("-").map(Number);
+      if (!year || !month || !day) return String(value);
+      return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short" }).format(new Date(year, month - 1, day));
+    };
+    const sessionTimeline = orderedSessionDetails.map((detail, index) => {
+      const sessionNumber = detail.number || `${item.micro}.${index + 1}`;
+      return `• ${formatTooltipDate(detail.date)} · Sesión ${sessionNumber}`;
+    });
 
     const tooltipLines = [
       item.label,
@@ -4318,8 +5434,9 @@ function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay
       `Ejercicios: ${item.exercises ?? 0}`,
       `Series: ${item.series ?? 0}`,
       Number(item.tonnage || 0) ? `Tonelaje: ${Math.round(item.tonnage)} kg` : "",
-      sessionDates.length ? `Fechas: ${sessionDates.join(" · ")}` : ""
-    ].filter(Boolean);
+      sessionTimeline.length ? "" : (sessionDates.length ? `Fechas: ${sessionDates.map(formatTooltipDate).join(" · ")}` : ""),
+      ...sessionTimeline
+    ].filter(line => line !== undefined && line !== null);
 
     const tooltipText = tooltipLines.join("\n");
     const tooltipTitle = tooltipLines.join(" | ");
@@ -4341,10 +5458,7 @@ function renderVolumeBarChart(data, chartId, tableBodyId, emptyMessage = "No hay
             <span class="${valueClass}">${shownValue}</span>
           </div>
         </div>
-        <strong>${currentLabel}${item.label}</strong>
-        <small>
-          ${isCurrentMicro ? " · " : ""}${realSessions} sesión${realSessions === 1 ? "" : "es"}
-        </small>
+        <strong class="periodicity-micro-summary" aria-label="${item.label}, ${realSessions} sesión${realSessions === 1 ? "" : "es"}">${currentLabel}${item.label}<span aria-hidden="true">×${realSessions}</span></strong>
       </div>
     `;
   }).join("");
@@ -4723,111 +5837,590 @@ function renderPeriodicityPatientCard(patientNickname = "") {
   `;
 }
 
+
+const PPF_PERIODICITY_META_KEY = "periodicityPlans";
+let periodicitySelectedMicro = null;
+
+function periodicityReadPlans() {
+  try { const value = JSON.parse(localStorage.getItem(PPF_PERIODICITY_META_KEY) || "{}"); return value && typeof value === "object" ? value : {}; }
+  catch (_) { return {}; }
+}
+function periodicityPlanKey(nickname, year, micro) { return `${nciNickname(nickname)}::${year}::${micro}`; }
+function periodicityMeta(nickname, year, micro) { return periodicityReadPlans()[periodicityPlanKey(nickname, year, micro)] || {}; }
+async function periodicitySaveMeta(nickname, year, micro, patch) {
+  const plans = periodicityReadPlans();
+  const key = periodicityPlanKey(nickname, year, micro);
+  plans[key] = { ...(plans[key] || {}), ...patch, updatedAt: new Date().toISOString() };
+  localStorage.setItem(PPF_PERIODICITY_META_KEY, JSON.stringify(plans));
+  if (window.PPF_SUPABASE?.pushKey) { try { await window.PPF_SUPABASE.pushKey(PPF_PERIODICITY_META_KEY); } catch (error) { console.warn(error); } }
+}
+function periodicityEsc(value) { return String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])); }
+function periodicityDateLabel(value) {
+  if (!value) return "Sin fecha";
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("es-ES", { day:"numeric", month:"short", year:"numeric" }).format(date);
+}
+function periodicityPatientMicroGroups(nickname, year) {
+  const core = window.PPF_CORE;
+  if (!core || !nickname) return [];
+  const summary = core.summary(nickname);
+  const groups = new Map();
+  summary.sessions.forEach(session => {
+    const date = core.date(session);
+    if (year && date && Number(date.slice(0,4)) !== Number(year)) return;
+    const micro = core.micro(session);
+    if (!micro) return;
+    if (!groups.has(micro)) groups.set(micro, []);
+    groups.get(micro).push(session);
+  });
+  const today = new Date().toISOString().slice(0,10);
+  return [...groups.entries()].sort((a,b)=>a[0]-b[0]).map(([micro, list]) => {
+    const ordered = list.slice().sort(core.chronological);
+    const dates = ordered.map(core.date).filter(Boolean).sort();
+    const completed = ordered.filter(item => core.lifecycle(item) === "completed").length;
+    const pending = ordered.filter(item => core.lifecycle(item) === "pending").length;
+    const cancelled = ordered.filter(item => core.lifecycle(item) === "cancelled").length;
+    const start = dates[0] || ""; const end = dates[dates.length-1] || start;
+    let state = "future";
+    if (pending === 0 && completed > 0) state = "completed";
+    else if (start && end && start <= today && end >= today) state = "active";
+    else if (end && end < today && pending > 0) state = "incomplete";
+    const kinds = {};
+    ordered.forEach(item => { const meta=nciSessionKindMeta(item); kinds[meta.icon+" "+meta.label]=(kinds[meta.icon+" "+meta.label]||0)+1; });
+    return { micro, sessions: ordered, start, end, completed, pending, cancelled, total: ordered.length, compliance: (completed+pending) ? Math.round(completed/(completed+pending)*100) : 0, state, kinds };
+  });
+}
+function periodicityWeeklyRange(group, meta = {}) {
+  const mode = meta.scheduleMode === "manual" ? "manual" : "weekly";
+  if (mode === "manual") {
+    return { mode, start: meta.startDate || group.start, end: meta.endDate || group.end };
+  }
+  return { mode, start: ppfWeekStartIso(group.start), end: ppfWeekEndIso(group.start) };
+}
+
+const PPF_CHRONOLOGY_REBUILD_VERSION = 123;
+const PPF_CHRONOLOGY_REBUILD_KEY = "ppfChronologicalRebuildVersion";
+let ppfChronologyRebuildRunning = false;
+let ppfChronologyRebuildTimer = null;
+
+function periodicityPlanEntriesFor(nickname, year, plans = periodicityReadPlans()) {
+  const key = nciNickname(nickname);
+  const prefix = `${key}::${Number(year)}::`;
+  return Object.entries(plans).filter(([planKey]) => String(planKey).startsWith(prefix));
+}
+
+function periodicityResetManualSeason(nickname, year) {
+  const patientKey = nciNickname(nickname);
+  const seasonYear = Number(year);
+  if (!patientKey || !seasonYear) return false;
+
+  const plans = periodicityReadPlans();
+  let plansChanged = false;
+  periodicityPlanEntriesFor(patientKey, seasonYear, plans).forEach(([planKey, meta]) => {
+    if (meta?.scheduleMode === "manual" || meta?.startDate || meta?.endDate) {
+      plans[planKey] = {
+        ...(meta || {}),
+        scheduleMode: "weekly",
+        startDate: "",
+        endDate: "",
+        updatedAt: new Date().toISOString()
+      };
+      plansChanged = true;
+    }
+  });
+
+  let sessionsChanged = false;
+  sessions.forEach(session => {
+    if (nciSessionPatient(session) !== patientKey) return;
+    const value = nciSessionDate(session);
+    if (!value || Number(value.slice(0, 4)) !== seasonYear) return;
+    if (session.microManual || session.microcicloManual) {
+      session.microManual = false;
+      session.microcicloManual = false;
+      session.updatedAt = new Date().toISOString();
+      sessionsChanged = true;
+    }
+  });
+
+  if (plansChanged) localStorage.setItem(PPF_PERIODICITY_META_KEY, JSON.stringify(plans));
+  if (sessionsChanged) {
+    window.sessions = sessions;
+    localStorage.setItem("sessions", JSON.stringify(sessions));
+  }
+  return plansChanged || sessionsChanged;
+}
+
+function periodicityChronologyNeedsRebuild(nickname, year, plans = periodicityReadPlans()) {
+  const core = window.PPF_CORE;
+  if (!core?.chronologicalSeasonPlan) return false;
+  const plan = core.chronologicalSeasonPlan(nickname, { year, plans });
+  return plan.blocks.some(block =>
+    block.sessions.some(session => nciSessionMicro(session) !== block.targetMicro) ||
+    block.sessions.some((session, index) => Number(session.microSequenceOrder || 0) !== index + 1)
+  );
+}
+
+async function periodicityChronologicalRebuildV12({
+  force = false,
+  patientNickname = "",
+  year = 0,
+  reason = "manual"
+} = {}) {
+  if (ppfChronologyRebuildRunning || !window.PPF_CORE?.chronologicalSeasonPlan) {
+    return { changed: false, patients: 0 };
+  }
+
+  if (window.PPF_SUPABASE_READY?.then) {
+    try { await window.PPF_SUPABASE_READY; } catch (_) {}
+  }
+
+  let loaded = [];
+  try { loaded = JSON.parse(localStorage.getItem("sessions") || "[]"); } catch (_) {}
+  if (Array.isArray(loaded)) {
+    sessions = loaded;
+    window.sessions = sessions;
+  }
+  if (!Array.isArray(sessions) || !sessions.length) return { changed: false, patients: 0 };
+
+  ppfChronologyRebuildRunning = true;
+  try {
+    const plans = periodicityReadPlans();
+    const requestedPatient = nciNickname(patientNickname);
+    const patientKeys = requestedPatient
+      ? [requestedPatient]
+      : [...new Set(sessions.map(nciSessionPatient).filter(Boolean))];
+
+    let changed = false;
+    let notificationsChanged = false;
+    let affectedPatients = 0;
+    const nextPlans = { ...plans };
+    const nowIso = new Date().toISOString();
+
+    for (const patientKey of patientKeys) {
+      const years = year
+        ? [Number(year)]
+        : [...new Set(
+            sessions
+              .filter(item => nciSessionPatient(item) === patientKey)
+              .map(item => Number(nciSessionDate(item).slice(0, 4)))
+              .filter(Boolean)
+          )].sort((a, b) => a - b);
+
+      let patientChanged = false;
+
+      for (const seasonYear of years) {
+        // IMPORTANTE: el plan debe trabajar sobre las MISMAS referencias de
+        // `sessions` que después persistimos. Antes PPF CORE volvía a leer y
+        // parsear localStorage, creando objetos distintos: el orden calculado
+        // era correcto, pero las mutaciones se aplicaban sobre copias y nunca
+        // llegaban al array real. Chronological Sort + Global Renumber usa un
+        // contexto explícito para que fecha, reindexado y persistencia actúen
+        // sobre una única colección.
+        const seasonContext = {
+          sessions,
+          completedRecords: (() => {
+            try {
+              const rows = JSON.parse(localStorage.getItem("completedSessions") || "[]");
+              return Array.isArray(rows) ? rows : [];
+            } catch (_) { return []; }
+          })()
+        };
+        const seasonPlan = window.PPF_CORE.chronologicalSeasonPlan(patientKey, {
+          year: seasonYear,
+          plans,
+          context: seasonContext
+        });
+        if (!seasonPlan.blocks.length) continue;
+
+        // Auditoría previa: el CORE debe entregar una secuencia 1..N exacta.
+        const validSequence = seasonPlan.blocks.every((block, index) => block.targetMicro === index + 1);
+        if (!validSequence) throw new Error(`Secuencia no válida para ${patientKey} ${seasonYear}`);
+
+        // Capturamos primero todos los metadatos de origen. Después eliminamos
+        // las claves antiguas y finalmente escribimos las nuevas. Así evitamos
+        // colisiones como M13 -> M2 mientras todavía existe un M2 antiguo.
+        const sourcePlanKeys = new Set();
+        const rebuiltPlanEntries = [];
+
+        seasonPlan.blocks.forEach((block, index) => {
+          const target = index + 1;
+          const sourceMetas = block.oldMicros
+            .map(oldMicro => {
+              const sourceKey = periodicityPlanKey(patientKey, seasonYear, oldMicro);
+              sourcePlanKeys.add(sourceKey);
+              return plans[sourceKey];
+            })
+            .filter(Boolean);
+
+          const preferredMeta = sourceMetas.find(meta => meta?.scheduleMode === "manual")
+            || sourceMetas.find(meta => meta && Object.values(meta).some(Boolean))
+            || {};
+
+          rebuiltPlanEntries.push({
+            key: periodicityPlanKey(patientKey, seasonYear, target),
+            value: {
+              ...preferredMeta,
+              scheduleMode: block.mode,
+              startDate: block.mode === "manual" ? (preferredMeta.startDate || block.start) : "",
+              endDate: block.mode === "manual" ? (preferredMeta.endDate || block.end) : "",
+              updatedAt: nowIso
+            }
+          });
+
+          block.sessions.forEach(session => {
+            const targetLabel = block.mode === "manual"
+              ? `Micro ${target} · ${block.start} — ${block.end} · Manual`
+              : `Micro ${target} · ${block.start} — ${block.end}`;
+
+            const needsUpdate =
+              nciSessionMicro(session) !== target ||
+              Number(session.sessionBaseNumber || 0) !== target ||
+              session.microcicloLabel !== targetLabel ||
+              Boolean(session.microManual || session.microcicloManual) !== (block.mode === "manual");
+
+            if (needsUpdate || force) {
+              session.microciclo = target;
+              session.micro = target;
+              session.microcycle = target;
+              session.sessionBaseNumber = target;
+              session.microcicloLabel = targetLabel;
+              session.microManual = block.mode === "manual";
+              session.microcicloManual = block.mode === "manual";
+              session.updatedAt = nowIso;
+              patientChanged = patientChanged || needsUpdate;
+            }
+          });
+        });
+
+        // Limpiamos TODAS las claves del paciente/año para impedir restos como
+        // M13, M14... y escribimos exclusivamente M1..MN.
+        periodicityPlanEntriesFor(patientKey, seasonYear, nextPlans)
+          .forEach(([planKey]) => delete nextPlans[planKey]);
+        sourcePlanKeys.forEach(planKey => delete nextPlans[planKey]);
+        rebuiltPlanEntries.forEach(({ key, value }) => { nextPlans[key] = value; });
+      }
+
+      // NCI se ejecuta después del reindexado completo, nunca bloque a bloque.
+      const result = nciRenumberPatientSessions(patientKey, {
+        touchUpdatedAt: true,
+        rebuildOrder: true
+      });
+      notificationsChanged = notificationsChanged || Boolean(result?.notificationsChanged);
+      if (patientChanged || result?.changed) {
+        changed = true;
+        affectedPatients += 1;
+      }
+    }
+
+    // Auditoría final: por paciente/año, los micros deben ser exactamente 1..N
+    // y las sesiones de cada micro deben ser X.1, X.2, X.3... sin huecos.
+    for (const patientKey of patientKeys) {
+      const patientSessions = sessions.filter(item => nciSessionPatient(item) === patientKey && nciSessionDate(item));
+      const patientYears = [...new Set(patientSessions.map(item => Number(nciSessionDate(item).slice(0, 4))).filter(Boolean))];
+      for (const seasonYear of patientYears) {
+        const yearSessions = patientSessions.filter(item => Number(nciSessionDate(item).slice(0, 4)) === seasonYear);
+        const micros = [...new Set(yearSessions.map(nciSessionMicro).filter(Boolean))].sort((a, b) => a - b);
+        if (!micros.every((value, index) => value === index + 1)) {
+          throw new Error(`Auditoría fallida: micros no secuenciales en ${patientKey} ${seasonYear}: ${micros.join(",")}`);
+        }
+        for (const microNumber of micros) {
+          const ordered = yearSessions.filter(item => nciSessionMicro(item) === microNumber).sort(window.PPF_CORE.chronological);
+          const valid = ordered.every((item, index) =>
+            Number(item.microSequenceOrder || 0) === index + 1 &&
+            String(nciDisplayNumber(item)) === `${microNumber}.${index + 1}`
+          );
+          if (!valid) throw new Error(`Auditoría NCI fallida en ${patientKey} M${microNumber}`);
+        }
+      }
+    }
+
+    const plansChanged = JSON.stringify(nextPlans) !== JSON.stringify(plans);
+    if (plansChanged) localStorage.setItem(PPF_PERIODICITY_META_KEY, JSON.stringify(nextPlans));
+    if (changed || force) {
+      window.sessions = sessions;
+      localStorage.setItem("sessions", JSON.stringify(sessions));
+    }
+
+    if (changed || plansChanged || force) {
+      if (window.PPF_SUPABASE?.pushValue) {
+        await window.PPF_SUPABASE.pushValue("sessions", sessions);
+        if (plansChanged) await window.PPF_SUPABASE.pushValue(PPF_PERIODICITY_META_KEY, nextPlans);
+      } else if (window.PPF_SUPABASE?.pushKey) {
+        await window.PPF_SUPABASE.pushKey("sessions");
+        if (plansChanged) await window.PPF_SUPABASE.pushKey(PPF_PERIODICITY_META_KEY);
+      }
+      if (notificationsChanged && window.PPF_SUPABASE?.pushKey) {
+        await window.PPF_SUPABASE.pushKey("notifications");
+      }
+
+      localStorage.setItem(PPF_CHRONOLOGY_REBUILD_KEY, String(PPF_CHRONOLOGY_REBUILD_VERSION));
+      window.PPF_CORE.emit("chronological-sort-global-renumber");
+      window.dispatchEvent(new CustomEvent("ppf:chronology-rebuilt", {
+        detail: { reason, patients: affectedPatients, engine: "chronological-sort-global-renumber" }
+      }));
+    }
+
+    return { changed: changed || plansChanged || force, patients: affectedPatients };
+  } catch (error) {
+    console.warn("Chronological Sort + Global Renumber no pudo completar la reconstrucción:", error);
+    return { changed: false, patients: 0, error };
+  } finally {
+    ppfChronologyRebuildRunning = false;
+  }
+}
+
+function periodicityScheduleChronologicalRebuild(reason = "sessions") {
+  if (ppfChronologyRebuildRunning) return;
+  clearTimeout(ppfChronologyRebuildTimer);
+  ppfChronologyRebuildTimer = setTimeout(() => {
+    periodicityChronologicalRebuildV12({ reason }).catch(error => console.warn(error));
+  }, 260);
+}
+
+window.PPF_CHRONOLOGY = {
+  version: PPF_CHRONOLOGY_REBUILD_VERSION,
+  rebuild: periodicityChronologicalRebuildV12,
+  schedule: periodicityScheduleChronologicalRebuild,
+  needsRebuild: periodicityChronologyNeedsRebuild
+};
+
+window.addEventListener("ppf:core-updated", event => {
+  if (event?.detail?.reason === "sessions") periodicityScheduleChronologicalRebuild("sessions-updated");
+});
+
+function periodicityStateMeta(state) {
+  return ({ active:{label:"Activo",icon:"●"}, completed:{label:"Completado",icon:"✓"}, incomplete:{label:"Incompleto",icon:"!"}, future:{label:"Futuro",icon:"○"} })[state] || {label:state,icon:"○"};
+}
+function periodicityRenderV1(nickname, year) {
+  const overview=document.getElementById("periodicitySeasonOverview");
+  const timeline=document.getElementById("periodicityMicroTimeline");
+  const detail=document.getElementById("periodicityMicroDetail");
+  if (!overview || !timeline || !detail) return;
+  if (!nickname) {
+    overview.innerHTML=`<div class="periodicity-pro-empty"><span>📆</span><h3>Selecciona un cliente</h3><p>Construiremos su temporada a partir de los microciclos reales ya existentes.</p></div>`;
+    timeline.innerHTML=""; detail.innerHTML=""; return;
+  }
+  const patient=patients.find(item=>nciNickname(item.nickname)===nciNickname(nickname)) || {nombre:nickname,nickname};
+  const groups=periodicityPatientMicroGroups(nickname, year);
+  const all=groups.flatMap(group=>group.sessions);
+  const completed=groups.reduce((sum,g)=>sum+g.completed,0), pending=groups.reduce((sum,g)=>sum+g.pending,0);
+  const seasonStart=groups.map(g=>g.start).filter(Boolean).sort()[0] || `${year}-01-01`;
+  const seasonEnd=groups.map(g=>g.end).filter(Boolean).sort().at(-1) || `${year}-12-31`;
+  const current=groups.find(g=>g.state==="active") || groups.filter(g=>g.state==="incomplete").at(-1) || groups.at(-1);
+  if (periodicitySelectedMicro == null || !groups.some(g=>g.micro===periodicitySelectedMicro)) periodicitySelectedMicro=current?.micro ?? groups[0]?.micro ?? null;
+  overview.innerHTML=`<div class="periodicity-season-card">
+    <div class="periodicity-season-person"><span>${periodicityEsc((patient.nombre||"?").charAt(0).toUpperCase())}</span><div><p class="eyebrow">TEMPORADA ${periodicityEsc(year)}</p><h3>${periodicityEsc(patient.nombre||nickname)}</h3><small>@${periodicityEsc(patient.nickname||nickname)} · ${periodicityDateLabel(seasonStart)} — ${periodicityDateLabel(seasonEnd)}</small></div></div>
+    <div class="periodicity-season-kpis"><article><small>Microciclos</small><strong>${groups.length}</strong></article><article><small>Sesiones</small><strong>${all.length}</strong></article><article><small>Terminadas</small><strong>${completed}</strong></article><article><small>Pendientes</small><strong>${pending}</strong></article></div>
+  </div>`;
+  timeline.innerHTML=groups.length ? `<div class="periodicity-timeline-head"><div><p class="eyebrow">MAPA DE TEMPORADA</p><h3>Microciclos semanales</h3></div><span>${groups.length} bloques</span></div><div class="periodicity-timeline-track">${groups.map(group=>{const meta=periodicityMeta(nickname,year,group.micro), state=periodicityStateMeta(group.state), range=periodicityWeeklyRange(group,meta); return `<button type="button" class="periodicity-micro-block state-${group.state} ${group.micro===periodicitySelectedMicro?"is-selected":""}" data-periodicity-micro="${group.micro}"><span class="periodicity-micro-number">M${group.micro}</span><strong>${periodicityEsc(meta.name||`Micro ${group.micro}`)}</strong><small>${periodicityDateLabel(range.start)} — ${periodicityDateLabel(range.end)}</small><div class="periodicity-micro-progress"><i style="width:${group.compliance}%"></i></div><footer><span>${range.mode==="manual"?"✍️ Manual":state.icon+" "+state.label}</span><b>${group.completed}/${group.total}</b></footer></button>`}).join("")}</div>` : `<div class="periodicity-pro-empty"><span>🧭</span><h3>Sin microciclos en ${year}</h3><p>Las sesiones que crees para este cliente aparecerán aquí automáticamente.</p></div>`;
+  timeline.querySelectorAll("[data-periodicity-micro]").forEach(button=>button.addEventListener("click",()=>{periodicitySelectedMicro=Number(button.dataset.periodicityMicro); periodicityRenderV1(nickname,year);}));
+  const selected=groups.find(g=>g.micro===periodicitySelectedMicro);
+  if (!selected) { detail.innerHTML=""; return; }
+  const meta=periodicityMeta(nickname,year,selected.micro), state=periodicityStateMeta(selected.state), range=periodicityWeeklyRange(selected,meta);
+  const kinds=Object.entries(selected.kinds).map(([label,count])=>`<span>${periodicityEsc(label)} ×${count}</span>`).join("");
+  detail.innerHTML=`<article class="periodicity-micro-inspector">
+    <header><div><p class="eyebrow">MICRO ${selected.micro}</p><h3>${periodicityEsc(meta.name||`Micro ${selected.micro}`)}</h3><small>${periodicityDateLabel(range.start)} — ${periodicityDateLabel(range.end)} · Semana ${window.PPF_CORE?.isoWeekNumber?.(range.start) || "-"}</small></div><span class="periodicity-state state-${selected.state}">${range.mode==="manual"?"✍️ Manual":state.icon+" "+state.label}</span></header>
+    <section class="periodicity-micro-metrics"><article><small>Sesiones</small><strong>${selected.total}</strong></article><article><small>Terminadas</small><strong>${selected.completed}</strong></article><article><small>Pendientes</small><strong>${selected.pending}</strong></article><article><small>Cumplimiento</small><strong>${selected.compliance}%</strong></article></section>
+    <div class="periodicity-micro-kinds">${kinds || "<span>Sin actividad registrada</span>"}</div>
+    <div class="periodicity-micro-form">
+      <label>Modo del micro<select id="periodicityMicroMode"><option value="weekly" ${range.mode==="weekly"?"selected":""}>📅 Semanal automático · lunes a domingo</option><option value="manual" ${range.mode==="manual"?"selected":""}>✍️ Rango manual</option></select></label>
+      <div class="periodicity-range-fields"><label>Inicio<input type="date" id="periodicityMicroStart" value="${periodicityEsc(range.start)}" ${range.mode==="weekly"?"disabled":""}></label><label>Fin<input type="date" id="periodicityMicroEnd" value="${periodicityEsc(range.end)}" ${range.mode==="weekly"?"disabled":""}></label></div>
+      <label>Nombre del micro<input id="periodicityMicroName" value="${periodicityEsc(meta.name||"")}" placeholder="Ej. Fuerza máxima"></label><label>Objetivo<textarea id="periodicityMicroObjective" placeholder="Objetivo principal del microciclo">${periodicityEsc(meta.objective||"")}</textarea></label><label>Observaciones<textarea id="periodicityMicroNotes" placeholder="Notas estratégicas">${periodicityEsc(meta.notes||"")}</textarea></label></div>
+    <footer class="periodicity-action-row"><button type="button" class="primary-btn periodicity-action-save" id="periodicitySaveMicro">💾 Guardar planificación</button><button type="button" class="periodicity-action-btn periodicity-action-agenda" id="periodicityOpenAgenda"><span>📅</span><strong>Abrir Agenda</strong></button><button type="button" class="periodicity-action-btn periodicity-action-workspace" id="periodicityOpenWorkspace"><span>👤</span><strong>Abrir Workspace</strong></button></footer>
+  </article>`;
+  const modeSelect=document.getElementById("periodicityMicroMode");
+  modeSelect?.addEventListener("change",()=>{const manual=modeSelect.value==="manual"; document.getElementById("periodicityMicroStart").disabled=!manual; document.getElementById("periodicityMicroEnd").disabled=!manual;});
+  document.getElementById("periodicitySaveMicro")?.addEventListener("click", async()=>{
+    const mode=modeSelect?.value||"weekly";
+    await periodicitySaveMeta(nickname,year,selected.micro,{scheduleMode:mode,startDate:mode==="manual"?(document.getElementById("periodicityMicroStart")?.value||selected.start):"",endDate:mode==="manual"?(document.getElementById("periodicityMicroEnd")?.value||selected.end):"",name:document.getElementById("periodicityMicroName")?.value.trim()||"",objective:document.getElementById("periodicityMicroObjective")?.value.trim()||"",notes:document.getElementById("periodicityMicroNotes")?.value.trim()||""});
+
+    // Manual Reset Engine: cuando todos los micros activos de la temporada
+    // están en automático, eliminamos cualquier resto manual histórico antes
+    // de reconstruir. Así un paciente de pruebas no continúa en M19, M20...
+    if (mode === "weekly") {
+      const activeGroups = periodicityPatientMicroGroups(nickname, year);
+      const latestPlans = periodicityReadPlans();
+      const hasActiveManual = activeGroups.some(group =>
+        latestPlans[periodicityPlanKey(nickname, year, group.micro)]?.scheduleMode === "manual"
+      );
+      if (!hasActiveManual) periodicityResetManualSeason(nickname, year);
+    }
+
+    await periodicityChronologicalRebuildV12({force:true,patientNickname:nickname,year,reason:"periodicity-save"});
+    periodicitySelectedMicro=null;
+    periodicityRenderV1(nickname,year);
+  });
+  document.getElementById("periodicityOpenAgenda")?.addEventListener("click",()=>{agendaProWorkspacePatient=nickname; agendaProViewMode="calendar"; pmNavigateAdmin("agenda"); setTimeout(()=>{const filter=document.getElementById("agendaProPatientFilter"); if(filter){filter.value=nickname; filter.dispatchEvent(new Event("change",{bubbles:true}));}},0);});
+  document.getElementById("periodicityOpenWorkspace")?.addEventListener("click",()=>{agendaProWorkspacePatient=nickname; agendaProViewMode="client"; pmNavigateAdmin("agenda");});
+}
+
 function bindPeriodicityPanel() {
-  const filter = document.getElementById("periodicityPatientFilter");
-  if (!filter) return;
+  const filter=document.getElementById("periodicityPatientFilter");
+  const season=document.getElementById("periodicitySeasonYear");
+  if (!filter || !season) return;
+  const years=new Set([new Date().getFullYear()]);
+  window.PPF_CORE?.normalizedContext?.().sessions.forEach(session=>{const d=window.PPF_CORE.date(session); if(d) years.add(Number(d.slice(0,4)));});
+  season.innerHTML=[...years].filter(Boolean).sort((a,b)=>b-a).map(year=>`<option value="${year}">${year}</option>`).join("");
 
-  const getPeriodicityNickname = () => {
-    const value = String(filter.value || "").trim();
-    const selectedText = String(filter.options?.[filter.selectedIndex]?.textContent || "").trim();
+  // Periodicidad es estratégica: siempre entra limpia y exige selección explícita.
+  filter.value="";
+  periodicitySelectedMicro=null;
 
-    const patient =
-      patients.find(p => String(p.nickname || "") === value) ||
-      patients.find(p => String(p.nombre || "") === value) ||
-      patients.find(p => String(p.nickname || "") === selectedText) ||
-      patients.find(p => String(p.nombre || "") === selectedText);
-
-    return patient ? patient.nickname : value;
+  const run=()=>{
+    const nickname=filter.value||"";
+    const year=Number(season.value)||new Date().getFullYear();
+    periodicityRenderV1(nickname,year);
+    renderPeriodicityPatientCard(nickname);
+    if(nickname) renderWeeklyVolumeChart(nickname);
   };
+  filter.addEventListener("change",()=>{periodicitySelectedMicro=null;run();});
+  season.addEventListener("change",()=>{periodicitySelectedMicro=null;run();});
+  document.querySelector(".periodicity-analysis-details")?.addEventListener("toggle",event=>{if(event.currentTarget.open) setTimeout(run,20);});
 
-  const clearPeriodicity = () => {
-    ["weeklyVolumeChart", "plyometricVolumeChart", "tonnageChart", "distributionChart"].forEach(id => {
-      const element = document.getElementById(id);
-      if (element) element.innerHTML = `<p class="empty-chart-message">Selecciona un paciente para ver las gráficas.</p>`;
-    });
-
-    ["weeklyVolumeTableBody", "plyometricVolumeTableBody", "tonnageTableBody"].forEach(id => {
-      const element = document.getElementById(id);
-      if (element) element.innerHTML = `<tr><td colspan="4">Selecciona un paciente para ver datos.</td></tr>`;
-    });
+  const normalizeAndRender=async()=>{
+    await periodicityChronologicalRebuildV12({ reason: "periodicity-open" });
+    // La migración puede introducir años nuevos; reconstruimos el selector.
+    const refreshedYears=new Set([new Date().getFullYear()]);
+    window.PPF_CORE?.normalizedContext?.().sessions.forEach(session=>{const d=window.PPF_CORE.date(session); if(d) refreshedYears.add(Number(d.slice(0,4)));});
+    const selectedYear=Number(season.value)||new Date().getFullYear();
+    season.innerHTML=[...refreshedYears].filter(Boolean).sort((a,b)=>b-a).map(year=>`<option value="${year}" ${year===selectedYear?"selected":""}>${year}</option>`).join("");
+    filter.value="";
+    run();
   };
-
-  const run = () => {
-    const nickname = getPeriodicityNickname();
-
-    if (typeof renderPeriodicityPatientCard === "function") {
-      renderPeriodicityPatientCard(nickname);
-    }
-
-    if (!nickname) {
-      clearPeriodicity();
-      return;
-    }
-
-    renderWeeklyVolumeChart(nickname);
-
-    if (typeof updatePeriodicityDistributionChart === "function") {
-      updatePeriodicityDistributionChart(nickname);
-    }
-  };
-
-  filter.addEventListener("change", run);
-  run();
+  if (window.PPF_SUPABASE_READY?.then) window.PPF_SUPABASE_READY.then(normalizeAndRender).catch(normalizeAndRender);
+  else setTimeout(normalizeAndRender, 250);
 }
 
 
+function ppfSessionStableId(item = {}) {
+  return String(item?.id ?? item?.sessionId ?? "").trim();
+}
 
+function ppfRemoveSessionReferences(sessionIds = []) {
+  const ids = new Set(sessionIds.map(value => String(value ?? "").trim()).filter(Boolean));
+  if (!ids.size) return { completedChanged: false, notificationsChanged: false };
 
-async function deleteSession(sessionId) {
-  const session = sessions.find(item => item.id === sessionId);
-  if (!session) return;
+  let completed = [];
+  try { completed = JSON.parse(localStorage.getItem("completedSessions") || "[]"); } catch (_) {}
+  const nextCompleted = Array.isArray(completed)
+    ? completed.filter(item => !ids.has(ppfSessionStableId(item)))
+    : [];
+  const completedChanged = nextCompleted.length !== (Array.isArray(completed) ? completed.length : 0);
+  if (completedChanged) localStorage.setItem("completedSessions", JSON.stringify(nextCompleted));
 
-  const confirmed = confirm(`¿Eliminar la sesión ${nciDisplayNumber(session)}?`);
-  if (!confirmed) return;
+  let notifications = [];
+  try { notifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
+  // v3.4.1 · Session Lifecycle Sync:
+  // una notificación puede apuntar a una sesión individual (sessionId) o a
+  // todo un micro clonado (sessionIds). Si cualquiera de esas sesiones se
+  // elimina, el aviso deja de representar la verdad actual y se retira.
+  const nextNotifications = Array.isArray(notifications)
+    ? notifications.filter(item => {
+        const directId = String(item?.sessionId ?? "").trim();
+        if (directId && ids.has(directId)) return false;
+        const groupedIds = Array.isArray(item?.sessionIds)
+          ? item.sessionIds.map(value => String(value ?? "").trim()).filter(Boolean)
+          : [];
+        if (groupedIds.some(id => ids.has(id))) return false;
+        return true;
+      })
+    : [];
+  const notificationsChanged = nextNotifications.length !== (Array.isArray(notifications) ? notifications.length : 0);
+  if (notificationsChanged) localStorage.setItem("notifications", JSON.stringify(nextNotifications));
 
-  const patientNickname = session.patientNickname;
-  sessions = sessions.filter(item => item.id !== sessionId);
-  const result = nciRenumberPatientSessions(patientNickname, { touchUpdatedAt: true });
+  // Tombstones locales: impiden que una sincronización posterior vuelva a
+  // introducir una sesión eliminada antes de que Supabase reciba el cambio.
+  let deletedIds = [];
+  try { deletedIds = JSON.parse(localStorage.getItem("deletedSessionIds") || "[]"); } catch (_) {}
+  const mergedDeleted = [...new Set([...(Array.isArray(deletedIds) ? deletedIds : []), ...ids])];
+  localStorage.setItem("deletedSessionIds", JSON.stringify(mergedDeleted));
+
+  return { completedChanged, notificationsChanged, deletedIds: mergedDeleted };
+}
+
+async function ppfDeleteSessionsByIds(sessionIds = [], { confirmation = true } = {}) {
+  const ids = new Set(sessionIds.map(value => String(value ?? "").trim()).filter(Boolean));
+  if (!ids.size) return { deleted: 0 };
+
+  const targets = sessions.filter(item => ids.has(ppfSessionStableId(item)));
+  if (!targets.length) return { deleted: 0 };
+
+  if (confirmation) {
+    const label = targets.length === 1
+      ? `la sesión ${nciDisplayNumber(targets[0])}`
+      : `${targets.length} sesiones seleccionadas`;
+    if (!confirm(`¿Eliminar definitivamente ${label}?\n\nEsta acción no se puede deshacer.`)) return { deleted: 0 };
+  }
+
+  const affectedPatients = [...new Set(targets.map(nciSessionPatient).filter(Boolean))];
+  sessions = sessions.filter(item => !ids.has(ppfSessionStableId(item)));
+  const refs = ppfRemoveSessionReferences([...ids]);
+
+  let notificationsChanged = refs.notificationsChanged;
+  affectedPatients.forEach(patientKey => {
+    const result = nciRenumberPatientSessions(patientKey, { touchUpdatedAt: true, rebuildOrder: true });
+    notificationsChanged = notificationsChanged || Boolean(result?.notificationsChanged);
+  });
+
   window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
-  if (window.PPF_SUPABASE?.pushKey) {
-    try { await window.PPF_SUPABASE.pushKey("sessions"); } catch (error) { console.warn(error); }
-    if (result.notificationsChanged) {
-      try { await window.PPF_SUPABASE.pushKey("notifications"); } catch (error) { console.warn(error); }
+  window.PPF_CORE?.emit?.("sessions");
+
+  // Reconstruimos la cronología después del borrado para compactar M1..Mn y
+  // X.1..X.n sin referencias fantasma.
+  if (window.PPF_CHRONOLOGY?.rebuild) {
+    for (const patientKey of affectedPatients) {
+      try { await window.PPF_CHRONOLOGY.rebuild({ force: true, patientNickname: patientKey, reason: "delete-engine" }); }
+      catch (error) { console.warn("No se pudo reconstruir tras eliminar:", error); }
     }
   }
-  renderSection("sesiones");
+
+  if (window.PPF_SUPABASE?.replaceValue) {
+    try {
+      // Un borrado necesita reemplazo exacto: un merge conservaría en nube la
+      // sesión que acabamos de quitar y podría resucitarla en Agenda PRO.
+      await window.PPF_SUPABASE.replaceValue("deletedSessionIds", refs.deletedIds || [...ids]);
+      await window.PPF_SUPABASE.replaceValue("sessions", sessions);
+      if (refs.completedChanged) {
+        const completed = JSON.parse(localStorage.getItem("completedSessions") || "[]");
+        await window.PPF_SUPABASE.pushValue("completedSessions", completed);
+      }
+      if (notificationsChanged) {
+        const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
+        // Borrado destructivo: reemplazo exacto para impedir que el merge
+        // aditivo vuelva a resucitar avisos de sesiones eliminadas.
+        await window.PPF_SUPABASE.replaceValue("notifications", notifications);
+      }
+    } catch (error) { console.warn("Supabase no confirmó toda la eliminación:", error); }
+  } else if (window.PPF_SUPABASE?.pushKey) {
+    try {
+      await window.PPF_SUPABASE.pushKey("deletedSessionIds");
+      await window.PPF_SUPABASE.pushKey("sessions");
+      if (refs.completedChanged) await window.PPF_SUPABASE.pushKey("completedSessions");
+      if (notificationsChanged) await window.PPF_SUPABASE.pushKey("notifications");
+    } catch (error) { console.warn("Supabase no confirmó toda la eliminación:", error); }
+  }
+
+  return { deleted: targets.length, affectedPatients };
+}
+
+async function deleteSession(sessionId) {
+  const result = await ppfDeleteSessionsByIds([sessionId]);
+  if (result.deleted) renderSection("sesiones");
 }
 
 async function deleteSelectedSessions() {
-  const selected = [...document.querySelectorAll(".session-select:checked")].map(input => input.value);
+  const selected = [...document.querySelectorAll(".session-select:checked")]
+    .map(input => String(input.value ?? "").trim())
+    .filter(Boolean);
 
-  if (selected.length === 0) {
+  if (!selected.length) {
     alert("Selecciona al menos una sesión.");
     return;
   }
 
-  const confirmed = confirm(`¿Eliminar ${selected.length} sesión${selected.length === 1 ? "" : "es"} seleccionada${selected.length === 1 ? "" : "s"}?`);
-  if (!confirmed) return;
-
-  const affectedPatients = Array.from(new Set(
-    sessions.filter(item => selected.includes(item.id)).map(item => item.patientNickname).filter(Boolean)
-  ));
-  sessions = sessions.filter(item => !selected.includes(item.id));
-  let notificationsChanged = false;
-  affectedPatients.forEach(nickname => {
-    const result = nciRenumberPatientSessions(nickname, { touchUpdatedAt: true });
-    notificationsChanged = notificationsChanged || result.notificationsChanged;
-  });
-  window.sessions = sessions;
-  localStorage.setItem("sessions", JSON.stringify(sessions));
-  if (window.PPF_SUPABASE?.pushKey) {
-    try { await window.PPF_SUPABASE.pushKey("sessions"); } catch (error) { console.warn(error); }
-    if (notificationsChanged) {
-      try { await window.PPF_SUPABASE.pushKey("notifications"); } catch (error) { console.warn(error); }
-    }
-  }
-  renderSection("sesiones");
+  const result = await ppfDeleteSessionsByIds(selected);
+  if (result.deleted) renderSection("sesiones");
 }
 
 function toggleAllSessionsSelection(checked) {
@@ -4845,14 +6438,29 @@ function getPatientSortedSessionDates(patientNickname) {
   )].sort();
 }
 
+function ppfWeekStartIso(value) {
+  return window.PPF_CORE?.weekStartIso?.(value) || "";
+}
+
+function ppfWeekEndIso(value) {
+  return window.PPF_CORE?.weekEndIso?.(value) || "";
+}
+
 function getComputedMicrocycleNumber(patientNickname, date) {
   if (!patientNickname || !date) return "-";
+  const weekStart = ppfWeekStartIso(date);
+  const patientSessions = sessions.filter(session => session.patientNickname === patientNickname);
 
-  const dates = getPatientSortedSessionDates(patientNickname);
-  if (!dates.includes(date)) dates.push(date);
-  dates.sort();
+  // Regla Periodicidad PRO v1.2: si ya existe un micro automático en esa
+  // semana (lunes-domingo), cualquier sesión nueva reutiliza su número X.
+  const sameWeek = patientSessions.find(session => {
+    const manual = Boolean(session.microManual || session.microcicloManual || String(session.microcicloLabel || "").toLowerCase().includes("manual"));
+    return !manual && Number(session.microciclo) > 0 && ppfWeekStartIso(session.fecha) === weekStart;
+  });
+  if (sameWeek) return Number(sameWeek.microciclo);
 
-  return dates.indexOf(date) + 1;
+  const maxMicro = patientSessions.reduce((max, session) => Math.max(max, Number(session.microciclo) || 0), 0);
+  return maxMicro + 1 || 1;
 }
 
 function normalizeSessionMicrocycles(patientNickname = "") {
@@ -4914,6 +6522,7 @@ function normalizeSessionMicrocycles(patientNickname = "") {
   if (changed) {
     window.sessions = sessions;
     localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
     if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
       window.PPF_SUPABASE.pushKey("sessions").catch(error =>
@@ -5044,145 +6653,741 @@ function renderRadarChart(values) {
   `;
 }
 
-function radarSvg(items) {
-  const safeItems = (items || []).map(item => ({
-    label: item.label,
-    v: Number(item.v ?? item.value ?? 0) || 0
-  }));
-
+function radarSvg(items, previousItems = [], currentMicro = "—", previousMicro = "—") {
+  const safeItems = (items || []).map(item => ({ label: item.label, v: Number(item.v ?? item.value ?? 0) || 0 }));
+  const previousMap = Object.fromEntries((previousItems || []).map(item => [item.label, Number(item.v ?? item.value ?? 0) || 0]));
   const total = safeItems.reduce((sum, item) => sum + item.v, 0);
-  const maxValue = Math.max(...safeItems.map(item => item.v), 1);
-
-  const cx = 200;
-  const cy = 200;
-  const radius = 118;
-
-  function axisPoint(index, customRadius = radius) {
+  const previousTotal = Object.values(previousMap).reduce((sum, value) => sum + value, 0);
+  const sharedMax = Math.max(...safeItems.map(item => item.v), ...Object.values(previousMap), 1);
+  const cx = 200, cy = 200, radius = 118;
+  const axisPoint = (index, customRadius = radius) => {
     const angle = (-90 + (360 / safeItems.length) * index) * Math.PI / 180;
-    return {
-      x: cx + Math.cos(angle) * customRadius,
-      y: cy + Math.sin(angle) * customRadius,
-      angle
-    };
-  }
-
+    return { x: cx + Math.cos(angle) * customRadius, y: cy + Math.sin(angle) * customRadius, angle };
+  };
   const dataPoints = safeItems.map((item, index) => {
-    const axis = axisPoint(index, radius);
-    const labelPoint = axisPoint(index, radius + 38);
-    const normalized = Math.max(0, Math.min(1, item.v / maxValue));
-    const angle = axis.angle;
-    const percent = total ? safeDistributionPercent(item.v, total) : 0;
-
-    return {
-      ...item,
-      percent,
-      x: cx + Math.cos(angle) * radius * normalized,
-      y: cy + Math.sin(angle) * radius * normalized,
-      labelX: labelPoint.x,
-      labelY: labelPoint.y
-    };
+    const axis = axisPoint(index), labelPoint = axisPoint(index, radius + 38);
+    const previous = previousMap[item.label] || 0;
+    const delta = item.v - previous;
+    return { ...item, previous, delta,
+      deltaPercent: previous ? Math.round((delta / previous) * 100) : (item.v ? 100 : 0),
+      percent: total ? safeDistributionPercent(item.v, total) : 0,
+      previousPercent: previousTotal ? safeDistributionPercent(previous, previousTotal) : 0,
+      x: cx + Math.cos(axis.angle) * radius * Math.max(0, Math.min(1, item.v / sharedMax)),
+      y: cy + Math.sin(axis.angle) * radius * Math.max(0, Math.min(1, item.v / sharedMax)),
+      previousX: cx + Math.cos(axis.angle) * radius * Math.max(0, Math.min(1, previous / sharedMax)),
+      previousY: cy + Math.sin(axis.angle) * radius * Math.max(0, Math.min(1, previous / sharedMax)),
+      labelX: labelPoint.x, labelY: labelPoint.y };
   });
-
-  const polygon = dataPoints.map(point => `${point.x},${point.y}`).join(" ");
-
-  const grid = [0.25, 0.5, 0.75, 1].map(scale => {
-    const gridPoints = safeItems.map((_, index) => {
-      const point = axisPoint(index, radius * scale);
-      return `${point.x},${point.y}`;
-    }).join(" ");
-
-    return `<polygon points="${gridPoints}" class="radar-grid-line" />`;
-  }).join("");
-
-  const axisLines = safeItems.map((_, index) => {
-    const point = axisPoint(index, radius);
-    return `<line x1="${cx}" y1="${cy}" x2="${point.x}" y2="${point.y}" class="radar-axis-line" />`;
-  }).join("");
-
-  const strongest = safeItems.reduce((best, item) => item.v > best.v ? item : best, { label: "-", v: -1 });
-
+  const currentPolygon = dataPoints.map(point => `${point.x},${point.y}`).join(" ");
+  const previousPolygon = dataPoints.map(point => `${point.previousX},${point.previousY}`).join(" ");
+  const grid = [0.25, 0.5, 0.75, 1].map(scale => `<polygon points="${safeItems.map((_, i) => { const p = axisPoint(i, radius * scale); return `${p.x},${p.y}`; }).join(" ")}" class="radar-grid-line" />`).join("");
+  const axisLines = safeItems.map((_, i) => { const p = axisPoint(i); return `<line x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}" class="radar-axis-line" data-category="${safeItems[i].label}" />`; }).join("");
+  const ordered = [...safeItems].sort((a,b) => b.v-a.v);
+  const strongest = ordered[0] || {label:"—",v:0};
+  const weakest = [...safeItems].filter(item => item.v > 0).sort((a,b) => a.v-b.v)[0] || {label:"—",v:0};
+  const minimum = Math.min(...safeItems.map(item => item.v));
+  const currentMax = Math.max(...safeItems.map(item => item.v), 1);
+  const balance = currentMax ? Math.max(0, Math.round(100 - ((currentMax - minimum) / currentMax) * 100)) : 0;
+  const pointMarkup = (point, index, series) => {
+    const isCurrent = series === "current";
+    const value = isCurrent ? point.v : point.previous;
+    const percent = isCurrent ? point.percent : point.previousPercent;
+    const x = isCurrent ? point.x : point.previousX;
+    const y = isCurrent ? point.y : point.previousY;
+    const micro = isCurrent ? currentMicro : previousMicro;
+    return `<g class="radar-pro2-point radar-pro2-point-${series}" tabindex="0" role="button" aria-label="${micro}, ${point.label}: ${value} series" style="--radar-delay:${index * 55}ms" data-label="${point.label}" data-value="${value}" data-percent="${percent}" data-previous="${point.previous}" data-delta="${point.delta}" data-delta-percent="${point.deltaPercent}" data-current-micro="${currentMicro}" data-previous-micro="${previousMicro}" data-series="${series}" data-micro="${micro}" data-category="${point.label}"><circle cx="${x}" cy="${y}" r="13" class="radar-point-hit" /><circle cx="${x}" cy="${y}" r="6" class="radar-point-core" /></g>`;
+  };
   return `
-    <div class="radar-pro2-wrap">
-      <svg class="radar-pro2-svg" viewBox="0 0 400 400" role="img">
+    <div class="radar-pro2-wrap radar-comparison-wrap is-animated">
+      <div class="radar-comparison-legend" aria-label="Leyenda del radar comparativo">
+        <span class="radar-legend-base"><i></i>${previousMicro} · base</span>
+        <span class="radar-legend-current"><i></i>${currentMicro} · comparado</span>
+      </div>
+      <svg class="radar-pro2-svg" viewBox="0 0 400 400" role="img" aria-label="Radar comparativo de ${previousMicro} y ${currentMicro}">
         <defs>
-          <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stop-color="#22c55e" stop-opacity="0.42"/>
-            <stop offset="100%" stop-color="#14b8a6" stop-opacity="0.05"/>
-          </radialGradient>
-          <filter id="radarShadow">
-            <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#22c55e" flood-opacity="0.22"/>
-          </filter>
+          <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#22c55e" stop-opacity="0.36"/><stop offset="100%" stop-color="#14b8a6" stop-opacity="0.04"/></radialGradient>
+          <radialGradient id="radarBaseGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#60a5fa" stop-opacity="0.28"/><stop offset="100%" stop-color="#2563eb" stop-opacity="0.03"/></radialGradient>
+          <filter id="radarShadow"><feDropShadow dx="0" dy="10" stdDeviation="11" flood-color="#22c55e" flood-opacity="0.2"/></filter>
         </defs>
-
-        ${grid}
-        ${axisLines}
-
-        <polygon points="${polygon}" class="radar-data-area" filter="url(#radarShadow)" />
-        <polygon points="${polygon}" class="radar-data-line" />
-
-        ${dataPoints.map(point => `
-          <g class="radar-pro2-point"
-             data-label="${point.label}"
-             data-value="${point.v}"
-             data-percent="${point.percent}">
-            <circle cx="${point.x}" cy="${point.y}" r="13" class="radar-point-hit" />
-            <circle cx="${point.x}" cy="${point.y}" r="6" class="radar-point-core" />
-          </g>
-        `).join("")}
-
-        ${dataPoints.map(point => `
-          <text x="${point.labelX}" y="${point.labelY}" text-anchor="middle" dominant-baseline="middle" class="radar-pro2-label">
-            ${point.label}
-          </text>
-        `).join("")}
+        <g class="radar-grid-group">${grid}${axisLines}</g>
+        <polygon points="${previousPolygon}" class="radar-data-area radar-data-area-base" />
+        <polygon points="${previousPolygon}" class="radar-data-line radar-data-line-base" />
+        <polygon points="${currentPolygon}" class="radar-data-area radar-data-area-current" filter="url(#radarShadow)" />
+        <polygon points="${currentPolygon}" class="radar-data-line radar-data-line-current" />
+        ${dataPoints.map((point,index) => pointMarkup(point,index,"base")).join("")}
+        ${dataPoints.map((point,index) => pointMarkup(point,index,"current")).join("")}
+        ${dataPoints.map(point => `<text x="${point.labelX}" y="${point.labelY}" text-anchor="middle" dominant-baseline="middle" class="radar-pro2-label" data-category="${point.label}">${point.label}</text>`).join("")}
       </svg>
-
-      <div class="radar-pro2-focus-card">
-        <span>Mayor foco</span>
-        <strong>${strongest.label}</strong>
-        <small>${strongest.v < 0 ? 0 : strongest.v} series</small>
-      </div>
-
-      <div class="radar-pro2-tooltip" id="radarTooltip">
-        <span>Categoría</span>
-        <strong>-</strong>
-        <p>- series · -%</p>
-      </div>
-    </div>
-  `;
+      <div class="radar-pro2-focus-card"><span>Mayor foco · ${currentMicro}</span><strong>${strongest.label}</strong><small>${graphProFormatNumber(strongest.v)} series · ${total ? safeDistributionPercent(strongest.v,total) : 0}%</small></div>
+      <div class="radar-pro2-insight-strip" aria-label="Lectura rápida del radar"><article><span>Equilibrio · ${currentMicro}</span><strong>${balance}%</strong><small>Distribución global</small></article><article><span>Menor estímulo · ${currentMicro}</span><strong>${weakest.label}</strong><small>${graphProFormatNumber(weakest.v)} series</small></article></div>
+      <div class="radar-pro2-tooltip" id="radarTooltip" role="tooltip"><span>Categoría</span><strong>-</strong><p>- series · -%</p><small>-</small></div>
+    </div>`;
 }
 
 
-function renderGraphProDashboard(patientNickname = "") {
-  const patient = patients.find(item => item.nickname === patientNickname);
-  const totals = getPatientAnalytics(patientNickname);
+function graphProFormatNumber(value = 0, maximumFractionDigits = 2) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "0";
+  return new Intl.NumberFormat("es-ES", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits
+  }).format(numeric);
+}
 
-  const radarValues = [
-    { label: "TS", v: Number(totals.ts) || 0 },
-    { label: "TI", v: Number(totals.ti) || 0 },
-    { label: "Core", v: Number(totals.core) || 0 },
-    { label: "Plyo", v: Number(totals.plyo) || 0 },
-    { label: "Mov.", v: Number(totals.movilidad) || 0 },
-    { label: "Act.", v: Number(totals.activacion) || 0 }
+function graphProFormatKilograms(value = 0) {
+  return graphProFormatNumber(value, 2);
+}
+
+function graphProDominantCategory(items = []) {
+  const labels = {
+    TS: "Tren superior",
+    TI: "Tren inferior",
+    Core: "Core",
+    Plyo: "Pliometría",
+    "Mov.": "Movilidad",
+    "Act.": "Activación"
+  };
+  const strongest = [...items].sort((a, b) => Number(b.v || 0) - Number(a.v || 0))[0];
+  return strongest && Number(strongest.v) > 0 ? (labels[strongest.label] || strongest.label) : "Sin datos";
+}
+
+
+const graphProKpiFocusByAthlete = new Map();
+
+function graphProInspectorPayload(metric = "", categories = [], currentStats = {}, previousStats = {}, currentLabel = "—", previousLabel = "—") {
+  const category = categories.find(item => item.short === metric || item.key === metric);
+  const totalCurrent = categories.reduce((sum, item) => sum + item.current, 0);
+  const totalPrevious = categories.reduce((sum, item) => sum + item.previous, 0);
+  const interpretation = (item) => {
+    if (item.state === "up") return `El estímulo de ${item.label.toLowerCase()} aumenta en ${item.delta} series. El cambio describe una mayor presencia de esta capacidad, no una mejora automática del rendimiento.`;
+    if (item.state === "down") return `El estímulo de ${item.label.toLowerCase()} disminuye en ${Math.abs(item.delta)} series. Puede responder a descarga, redistribución o cambio de prioridad y debe contrastarse con la planificación.`;
+    return `La exposición de ${item.label.toLowerCase()} permanece estable entre ambos microciclos.`;
+  };
+  if (category) {
+    const shareCurrent = totalCurrent ? Math.round((category.current / totalCurrent) * 100) : 0;
+    const sharePrevious = totalPrevious ? Math.round((category.previous / totalPrevious) * 100) : 0;
+    return { key: category.short, title: category.label, current: `${graphProFormatNumber(category.current)} series`, previous: `${graphProFormatNumber(category.previous)} series`, delta: `${category.delta > 0 ? "+" : ""}${graphProFormatNumber(category.delta)} · ${category.percent > 0 ? "+" : ""}${category.percent}%`, share: `${shareCurrent}% en ${currentLabel} · ${sharePrevious}% en ${previousLabel}`, tone: category.state, text: interpretation(category), recommendation: category.state === "up" ? "Comprueba que el aumento estaba previsto y que recuperación y calidad técnica lo sostienen." : category.state === "down" ? "Confirma si la reducción es intencionada y si otra capacidad ha absorbido el estímulo." : "Mantén el seguimiento y valora calidad, intensidad y respuesta del deportista." };
+  }
+  const workloadDelta = (Number(currentStats.tonnage) || 0) - (Number(previousStats.tonnage) || 0);
+  const totalDelta = totalCurrent - totalPrevious;
+  const generic = {
+    global: { title: "Cambio global de estímulo", current: `${graphProFormatNumber(totalCurrent)} series`, previous: `${graphProFormatNumber(totalPrevious)} series`, delta: `${totalDelta > 0 ? "+" : ""}${graphProFormatNumber(totalDelta)} · ${graphProInsightPercent(totalCurrent,totalPrevious)}%`, share: "Suma de las seis categorías", tone: totalDelta > 0 ? "up" : totalDelta < 0 ? "down" : "stable", text: "Resume el cambio total de exposición entre los microciclos seleccionados.", recommendation: "Interprétalo junto con intensidad, recuperación, objetivo del micro y respuesta del deportista." },
+    balance: { title: "Balance de categorías", current: `${categories.filter(x=>x.state==='up').length} aumentan`, previous: `${categories.filter(x=>x.state==='down').length} disminuyen`, delta: `${categories.filter(x=>x.state==='stable').length} estables`, share: `${categories.length} áreas analizadas`, tone: "stable", text: "Muestra cómo se reparte la dirección del cambio entre las capacidades analizadas.", recommendation: "Revisa si la distribución coincide con las prioridades definidas para el microciclo." },
+    consistency: { title: "Consistencia del cambio", current: "Dirección dominante", previous: `${currentLabel} vs ${previousLabel}`, delta: "Lectura estructural", share: "No mide rendimiento", tone: "stable", text: "Indica si las áreas modificadas se desplazan mayoritariamente en la misma dirección.", recommendation: "Una consistencia alta puede ser coherente con carga o descarga; valida siempre el objetivo planificado." },
+    tonnage: { title: "Tonelaje", current: `${graphProFormatKilograms(currentStats.tonnage)} kg`, previous: `${graphProFormatKilograms(previousStats.tonnage)} kg`, delta: `${workloadDelta > 0 ? "+" : ""}${graphProFormatKilograms(workloadDelta)} kg · ${graphProInsightPercent(currentStats.tonnage,previousStats.tonnage)}%`, share: "Carga externa registrada", tone: workloadDelta > 0 ? "up" : workloadDelta < 0 ? "down" : "stable", text: "Compara la carga externa acumulada registrada en ambos microciclos.", recommendation: "Contrasta el tonelaje con repeticiones, intensidad relativa, RPE y tolerancia individual." }
+  };
+  return { key: metric, ...(generic[metric] || generic.global) };
+}
+
+function graphProBuildIntelligencePanel(currentStats = {}, previousStats = {}, currentLabel = "—", previousLabel = "—", patientNickname = "") {
+  const categories = graphProInsightCategoryMeta().map(item => {
+    const current = Number(currentStats[item.key]) || 0;
+    const previous = Number(previousStats[item.key]) || 0;
+    const delta = current - previous;
+    const percent = graphProInsightPercent(current, previous);
+    const state = Math.abs(percent) < 5 || delta === 0 ? "stable" : (delta > 0 ? "up" : "down");
+    return { ...item, current, previous, delta, percent, state };
+  });
+  const totalCurrent = categories.reduce((sum, item) => sum + item.current, 0);
+  const totalPrevious = categories.reduce((sum, item) => sum + item.previous, 0);
+  const totalDelta = totalCurrent - totalPrevious;
+  const totalPercent = graphProInsightPercent(totalCurrent, totalPrevious);
+  const increases = categories.filter(item => item.state === "up").sort((a, b) => b.percent - a.percent);
+  const decreases = categories.filter(item => item.state === "down").sort((a, b) => a.percent - b.percent);
+  const stable = categories.filter(item => item.state === "stable");
+  const changed = increases.length + decreases.length;
+  const consistency = changed ? Math.round((Math.max(increases.length, decreases.length) / changed) * 100) : 100;
+  const direction = increases.length > decreases.length ? "Expansión del estímulo" : decreases.length > increases.length ? "Reducción del estímulo" : "Estructura estable";
+  const directionTone = increases.length > decreases.length ? "positive" : decreases.length > increases.length ? "attention" : "stable";
+  const mainIncrease = increases[0] || null;
+  const mainDecrease = decreases[0] || null;
+  const workloadDelta = (Number(currentStats.tonnage) || 0) - (Number(previousStats.tonnage) || 0);
+  const workloadPercent = graphProInsightPercent(currentStats.tonnage, previousStats.tonnage);
+  const initialMetric = graphProKpiFocusByAthlete.get(patientNickname) || "";
+  return `
+    <div class="graph-pro-intelligence-panel" aria-label="Panel de inteligencia comparativa" data-patient="${patientNickname}" data-current-label="${currentLabel}" data-previous-label="${previousLabel}">
+      <div class="graph-pro-intelligence-panel-head"><div><p class="eyebrow">KPI Inspector · v3.0.4</p><h3>Lectura rápida del proceso</h3></div><span class="graph-pro-intelligence-direction tone-${directionTone}">${direction}</span></div>
+      <div class="graph-pro-inspector-help"><span aria-hidden="true">◎</span><p>Pasa el cursor para enfocar el radar. Pulsa un KPI para fijar el análisis.</p></div>
+      <div class="graph-pro-intelligence-primary">
+        <button type="button" class="graph-pro-kpi-button graph-pro-process-index tone-${directionTone}" data-kpi="global"><span>Cambio global de estímulo</span><strong>${totalPercent > 0 ? "+" : ""}${totalPercent}%</strong><small>${totalDelta > 0 ? "+" : ""}${graphProFormatNumber(totalDelta)} series · ${currentLabel} vs ${previousLabel}</small></button>
+        <button type="button" class="graph-pro-kpi-button" data-kpi="balance"><span>Balance de categorías</span><strong>${increases.length} ↑ · ${stable.length} = · ${decreases.length} ↓</strong><small>${categories.length} áreas analizadas</small></button>
+        <button type="button" class="graph-pro-kpi-button" data-kpi="consistency"><span>Consistencia del cambio</span><strong>${consistency}%</strong><small>${changed ? "Dirección dominante entre áreas modificadas" : "Sin cambios relevantes"}</small></button>
+        <button type="button" class="graph-pro-kpi-button" data-kpi="tonnage"><span>Tonelaje</span><strong>${workloadPercent > 0 ? "+" : ""}${workloadPercent}%</strong><small>${workloadDelta > 0 ? "+" : ""}${graphProFormatKilograms(workloadDelta)} kg</small></button>
+      </div>
+      <div class="graph-pro-intelligence-highlights">
+        <button type="button" class="graph-pro-kpi-button is-rise" data-kpi="${mainIncrease ? mainIncrease.short : 'global'}"><span>Mayor aumento</span><strong>${mainIncrease ? mainIncrease.label : "Sin aumentos"}</strong><small>${mainIncrease ? `${mainIncrease.delta > 0 ? "+" : ""}${graphProFormatNumber(mainIncrease.delta)} series · ${mainIncrease.percent > 0 ? "+" : ""}${mainIncrease.percent}%` : "No hay categorías al alza"}</small></button>
+        <button type="button" class="graph-pro-kpi-button is-drop" data-kpi="${mainDecrease ? mainDecrease.short : 'global'}"><span>Mayor reducción</span><strong>${mainDecrease ? mainDecrease.label : "Sin reducciones"}</strong><small>${mainDecrease ? `${graphProFormatNumber(mainDecrease.delta)} series · ${mainDecrease.percent}%` : "No hay categorías a la baja"}</small></button>
+      </div>
+      <div class="graph-pro-intelligence-list" role="list" aria-label="Cambios por categoría">
+        ${categories.map(item => `<button type="button" role="listitem" class="graph-pro-intelligence-row graph-pro-kpi-button is-${item.state}" data-kpi="${item.short}"><span>${item.short}</span><strong>${graphProFormatNumber(item.current)}</strong><small>${item.delta > 0 ? "+" : ""}${graphProFormatNumber(item.delta)} · ${item.percent > 0 ? "+" : ""}${item.percent}%</small></button>`).join("")}
+      </div>
+      <section class="graph-pro-kpi-inspector" id="graphProKpiInspector" aria-live="polite" ${initialMetric ? '' : 'hidden'}>
+        <div class="graph-pro-kpi-inspector-head"><div><span>Análisis específico</span><h4 id="graphProInspectorTitle">Selecciona un KPI</h4></div><button type="button" id="graphProInspectorClose" aria-label="Cerrar modo foco">×</button></div>
+        <div class="graph-pro-kpi-inspector-values"><article><span>${previousLabel}</span><strong id="graphProInspectorPrevious">—</strong></article><article><span>${currentLabel}</span><strong id="graphProInspectorCurrent">—</strong></article><article><span>Cambio</span><strong id="graphProInspectorDelta">—</strong></article></div>
+        <p class="graph-pro-kpi-inspector-share" id="graphProInspectorShare">—</p><p id="graphProInspectorText">Pulsa un indicador para abrir su lectura contextual.</p><div class="graph-pro-kpi-recommendation"><span>Decisión práctica</span><p id="graphProInspectorRecommendation">—</p></div>
+      </section>
+      <p class="graph-pro-intelligence-note">Estos indicadores describen cambios de carga y distribución. No equivalen por sí solos a una mejora del rendimiento.</p>
+      <script type="application/json" class="graph-pro-inspector-data">${JSON.stringify({categories,currentStats,previousStats,currentLabel,previousLabel,initialMetric})}</script>
+    </div>`;
+}
+
+
+function graphProBuildDecisionWorkspace(currentStats = {}, previousStats = {}, context = {}) {
+  const { currentLabel = "—", previousLabel = "—", coach = {}, healthScore = 0, healthMeta = {} } = context;
+  const pct = (current, previous) => graphProInsightPercent(Number(current) || 0, Number(previous) || 0);
+  const currentHasActivity = Number(currentStats.sessions) > 0 || Number(currentStats.series) > 0;
+  const previousHasActivity = Number(previousStats.sessions) > 0 || Number(previousStats.series) > 0;
+  const incompleteTonnage = (currentHasActivity && Number(currentStats.tonnage) === 0 && Number(previousStats.tonnage) > 0) ||
+    (previousHasActivity && Number(previousStats.tonnage) === 0 && Number(currentStats.tonnage) > 0);
+  const seriesPercent = pct(currentStats.series, previousStats.series);
+  const categoryDefs = [["ts","Tren superior"],["ti","Tren inferior"],["core","Core"],["plyo","Plyo"],["mov","Movilidad"],["act","Activación"]];
+  const categoryChanges = categoryDefs.map(([key,label]) => {
+    const current = Number(currentStats[key]) || 0;
+    const previous = Number(previousStats[key]) || 0;
+    return { key, label, delta: current - previous, percent: pct(current, previous) };
+  });
+  const mainDecrease = categoryChanges.filter(item => item.delta < 0).sort((a,b) => a.delta - b.delta)[0];
+  const priority = coach.alerts?.[0] || coach.opportunities?.[0] || null;
+
+  let priorityTitle = priority?.title || healthMeta.label || "Confirmar continuidad del proceso";
+  let priorityText = priority?.text || "No hay una incoherencia prioritaria. Contrasta la señal principal con el objetivo del bloque antes de intervenir.";
+  let actionTitle = "Contrastar con la planificación";
+  let actionText = healthMeta.action || `Revisa si la evolución ${previousLabel} → ${currentLabel} responde al objetivo previsto antes de modificar el siguiente micro.`;
+  let nextTitle = mainDecrease ? `Después: revisar ${mainDecrease.label}` : "Después: confirmar la respuesta del bloque";
+  let nextText = mainDecrease ? `${mainDecrease.label} presenta la reducción más clara (${mainDecrease.percent}%). Comprueba si es deliberada antes de corregirla.` : "Si la señal principal es coherente, conserva la estructura y continúa el seguimiento.";
+  let primaryLabel = "Abrir inteligencia";
+  let primaryTarget = ".graph-pro-v4-hub";
+  let secondaryLabel = `Comparar ${previousLabel} ↔ ${currentLabel}`;
+  let secondaryTarget = ".graph-pro-comparison-workspace";
+  let confidence = Number(healthScore) >= 70 ? "Alta" : Number(healthScore) >= 45 ? "Media" : "Condicionada";
+  let tone = Number(healthScore) < 58 ? "review" : Number(healthScore) < 78 ? "attention" : "positive";
+
+  if (incompleteTonnage) {
+    priorityTitle = `Validar el tonelaje de ${currentLabel}`;
+    priorityText = `${currentLabel} tiene actividad registrada, pero el tonelaje no es homogéneo entre los micros. No conviene interpretar todavía el cambio como progresión o descarga.`;
+    actionTitle = "Corregir o confirmar el dato antes de decidir";
+    actionText = `Comprueba primero los kg registrados en ${currentLabel}. Después valida si el cambio de ${seriesPercent > 0 ? "+" : ""}${seriesPercent}% en series responde realmente al objetivo del bloque.`;
+    nextTitle = mainDecrease ? `Siguiente revisión: ${mainDecrease.label}` : "Siguiente revisión: estructura del bloque";
+    nextText = mainDecrease ? `Una vez validado el tonelaje, comprueba si la reducción de ${mainDecrease.label} (${mainDecrease.percent}%) es intencionada.` : "Una vez validado el tonelaje, vuelve a la comparación para interpretar la estructura completa.";
+    primaryLabel = `Revisar ${currentLabel}`;
+    primaryTarget = ".graph-pro-comparison-workspace";
+    secondaryLabel = "Ver causa en Timeline";
+    secondaryTarget = ".performance-timeline-intelligence";
+    confidence = "Alta";
+    tone = "review";
+  }
+
+  return `<section class="performance-decision-workspace tone-${tone}" aria-labelledby="performanceDecisionTitle">
+    <div class="performance-decision-head">
+      <div><p class="eyebrow">DECISION WORKSPACE · v2.5.0.1</p><h3 id="performanceDecisionTitle">Qué hacer ahora</h3><p>Convierte las señales del Centro de Rendimiento en una secuencia concreta de actuación.</p></div>
+      <div class="performance-decision-meta"><span>Confianza</span><strong>${confidence}</strong><small>${previousLabel} ↔ ${currentLabel}</small></div>
+    </div>
+    <div class="performance-decision-focus">
+      <article class="performance-decision-main"><span>Prioridad #1</span><h4>${priorityTitle}</h4><p>${priorityText}</p></article>
+      <article class="performance-decision-step"><span>Qué hacer</span><h4>${actionTitle}</h4><p>${actionText}</p></article>
+      <article class="performance-decision-next"><span>Qué revisar después</span><h4>${nextTitle}</h4><p>${nextText}</p></article>
+    </div>
+    <div class="performance-decision-cta">
+      <div><span>Decisión guiada</span><p>El Dashboard informa; este espacio te lleva directamente al siguiente punto de revisión.</p></div>
+      <div class="performance-decision-buttons">
+        <button type="button" class="is-primary" data-performance-scroll="${primaryTarget}">${primaryLabel}</button>
+        <button type="button" data-performance-scroll="${secondaryTarget}">${secondaryLabel}</button>
+      </div>
+    </div>
+  </section>`;
+}
+
+function graphProBuildExecutiveDashboard(currentStats = {}, previousStats = {}, context = {}) {
+  const { currentLabel = "—", previousLabel = "—", coach = {}, predictive = {}, healthScore = 0 } = context;
+  const pct = (current, previous) => graphProInsightPercent(Number(current) || 0, Number(previous) || 0);
+  const changeMeta = (label, current, previous, unit = "") => {
+    const delta = (Number(current) || 0) - (Number(previous) || 0);
+    const percent = pct(current, previous);
+    const tone = Math.abs(percent) < 5 || delta === 0 ? "stable" : delta > 0 ? "up" : "down";
+    return { label, current: Number(current) || 0, previous: Number(previous) || 0, delta, percent, unit, tone };
+  };
+
+  const changes = [
+    changeMeta("Sesiones", currentStats.sessions, previousStats.sessions),
+    changeMeta("Series", currentStats.series, previousStats.series),
+    changeMeta("Tonelaje", currentStats.tonnage, previousStats.tonnage, "kg")
   ];
 
+  const categories = ["ts", "ti", "core", "plyo", "mov", "act"].map(key => Number(currentStats[key]) || 0);
+  const activeCategories = categories.filter(value => value > 0);
+  const categoryTotal = categories.reduce((sum, value) => sum + value, 0);
+  const categoryPeak = Math.max(...categories, 0);
+  const concentration = categoryTotal ? Math.round((categoryPeak / categoryTotal) * 100) : 0;
+  const balanceScore = activeCategories.length < 2 ? 0 : Math.max(0, Math.min(100, 100 - Math.max(0, concentration - 25) * 1.65));
+
+  const currentHasActivity = Number(currentStats.sessions) > 0 || Number(currentStats.series) > 0;
+  const previousHasActivity = Number(previousStats.sessions) > 0 || Number(previousStats.series) > 0;
+  const incompleteTonnage = (currentHasActivity && Number(currentStats.tonnage) === 0 && Number(previousStats.tonnage) > 0) ||
+    (previousHasActivity && Number(previousStats.tonnage) === 0 && Number(currentStats.tonnage) > 0);
+  const loadPercent = pct(currentStats.series, previousStats.series);
+
+  const areaStates = [
+    { label: "Carga", value: incompleteTonnage ? "Revisar datos" : Math.abs(loadPercent) < 10 ? "Estable" : Math.abs(loadPercent) < 25 ? "Atención" : "Prioritario", tone: incompleteTonnage ? "info" : Math.abs(loadPercent) < 10 ? "positive" : Math.abs(loadPercent) < 25 ? "attention" : "review" },
+    { label: "Distribución", value: balanceScore >= 75 ? "Equilibrada" : balanceScore >= 50 ? "Concentrada" : "Muy concentrada", tone: balanceScore >= 75 ? "positive" : balanceScore >= 50 ? "attention" : "review" },
+    { label: "Estabilidad", value: predictive.stabilityMeta?.label || "Sin datos", tone: Number(predictive.stability) >= 75 ? "positive" : Number(predictive.stability) >= 55 ? "attention" : "review" },
+    { label: "Coherencia", value: coach.scoreMeta?.label || "Sin datos", tone: Number(coach.score) >= 75 ? "positive" : Number(coach.score) >= 55 ? "attention" : "review" }
+  ];
+
+  const alerts = [];
+  if (incompleteTonnage) alerts.push({ tone: "info", title: "Tonelaje incompleto", text: "Uno de los micros tiene actividad, pero no carga externa computable." });
+  if (Math.abs(loadPercent) >= 25) alerts.push({ tone: loadPercent > 0 ? "attention" : "review", title: "Cambio brusco de series", text: `${currentLabel} varía un ${loadPercent > 0 ? "+" : ""}${loadPercent}% frente a ${previousLabel}.` });
+  if (balanceScore < 50 && categoryTotal > 0) alerts.push({ tone: "attention", title: "Distribución concentrada", text: `La categoría principal reúne aproximadamente el ${concentration}% del trabajo.` });
+  (coach.alerts || []).slice(0, 2).forEach(item => alerts.push({ tone: "review", title: item.title || "Alerta del entrenador", text: item.text || "Revisa la señal detectada." }));
+  if (!alerts.length) alerts.push({ tone: "positive", title: "Sin alertas prioritarias", text: "No se detectan señales críticas en la comparación activa." });
+
+  const riskLabel = alerts.some(item => item.tone === "review") ? "Alto" : alerts.some(item => item.tone === "attention") ? "Moderado" : "Bajo";
+  const riskTone = riskLabel === "Alto" ? "review" : riskLabel === "Moderado" ? "attention" : "positive";
+
   return `
-    <section class="graph-pro-hero">
-      <div>
-        <p class="eyebrow">Radar integral</p>
-        <h2>${patient ? patient.nombre : "Todos los pacientes"}</h2>
-        <p>Vista global de distribución, volumen, ejercicios y carga externa.</p>
+    <section class="performance-executive-dashboard" aria-labelledby="performanceDashboardTitle">
+      <div class="performance-dashboard-head">
+        <div><p class="eyebrow">EXECUTIVE DASHBOARD · v2.1</p><h3 id="performanceDashboardTitle">Panel de mando</h3><p>Estado, cambios y alertas de la comparación activa.</p></div>
+        <span class="performance-dashboard-risk tone-${riskTone}">Riesgo ${riskLabel}</span>
       </div>
-      ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="graph-pro-avatar">${patient ? patient.nombre.charAt(0).toUpperCase() : "PRO"}</div>`}
+
+      <div class="performance-dashboard-kpis">
+        <article><span>Performance</span><strong>${healthScore}<small>/100</small></strong><em>Índice global</em></article>
+        <article><span>Coach Score</span><strong>${coach.score || 0}<small>%</small></strong><em>${coach.scoreMeta?.label || "Sin datos"}</em></article>
+        <article><span>Stability</span><strong>${predictive.stability || 0}<small>%</small></strong><em>${predictive.stabilityMeta?.label || "Sin datos"}</em></article>
+        <article><span>Nivel de atención</span><strong class="is-text tone-${riskTone}">${riskLabel}</strong><em>${alerts.length} señal${alerts.length === 1 ? "" : "es"}</em></article>
+      </div>
+
+      <div class="performance-dashboard-main">
+        <div class="performance-dashboard-column">
+          <div class="performance-dashboard-section-title"><span>Cambios relevantes</span><small>${previousLabel} → ${currentLabel}</small></div>
+          <div class="performance-change-list">
+            ${changes.map(item => `<article class="tone-${item.tone}"><div><span>${item.label}</span><small>${graphProFormatNumber(item.previous)}${item.unit ? ` ${item.unit}` : ""} → ${graphProFormatNumber(item.current)}${item.unit ? ` ${item.unit}` : ""}</small></div><strong>${item.percent > 0 ? "+" : ""}${item.percent}%</strong></article>`).join("")}
+          </div>
+        </div>
+
+        <div class="performance-dashboard-column">
+          <div class="performance-dashboard-section-title"><span>Estado por áreas</span><small>Lectura ejecutiva</small></div>
+          <div class="performance-area-grid">
+            ${areaStates.map(item => `<article class="tone-${item.tone}"><span>${item.label}</span><strong>${item.value}</strong><i></i></article>`).join("")}
+          </div>
+        </div>
+
+        <div class="performance-dashboard-column">
+          <div class="performance-dashboard-section-title"><span>Alertas ejecutivas</span><small>Máximo 3</small></div>
+          <div class="performance-alert-list">
+            ${alerts.slice(0, 3).map(item => `<article class="tone-${item.tone}"><i></i><div><strong>${item.title}</strong><p>${item.text}</p></div></article>`).join("")}
+          </div>
+        </div>
+      </div>
+
+      <nav class="performance-dashboard-nav" aria-label="Accesos rápidos del Centro de Rendimiento">
+        <span>Ir a</span>
+        <button type="button" data-performance-scroll=".performance-timeline-intelligence">Timeline</button>
+        <button type="button" data-performance-scroll=".graph-pro-comparison-workspace">Comparación</button>
+        <button type="button" data-performance-scroll=".graph-pro-grid">Radar</button>
+        <button type="button" data-performance-scroll=".graph-pro-intelligence-panel">KPIs</button>
+        <button type="button" data-performance-scroll=".graph-pro-v4-hub">Inteligencia</button>
+        <button type="button" data-performance-scroll=".graph-pro-briefing">Insights</button>
+      </nav>
+    </section>`;
+}
+
+
+
+
+
+const PPF_GRAPH_PRO_BLOCK_LIBRARY_KEY = "ppfGraphProBlockLibraryV231";
+
+function graphProReadBlockLibrary() {
+  try {
+    const value = JSON.parse(localStorage.getItem(PPF_GRAPH_PRO_BLOCK_LIBRARY_KEY) || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch (_) { return {}; }
+}
+
+function graphProWriteBlockLibrary(library = {}) {
+  try { localStorage.setItem(PPF_GRAPH_PRO_BLOCK_LIBRARY_KEY, JSON.stringify(library)); } catch (_) {}
+}
+
+function graphProGetAthleteBlockLibrary(patientNickname = "") {
+  const library = graphProReadBlockLibrary();
+  const list = Array.isArray(library[patientNickname]) ? library[patientNickname] : [];
+  return list.map(item => ({
+    id: String(item.id || ""),
+    name: String(item.name || "Bloque guardado"),
+    micros: [...new Set((item.micros || []).map(Number).filter(Boolean))].sort((a,b)=>a-b),
+    favorite: Boolean(item.favorite),
+    createdAt: Number(item.createdAt) || Date.now(),
+    updatedAt: Number(item.updatedAt) || Number(item.createdAt) || Date.now()
+  })).sort((a,b) => Number(b.favorite)-Number(a.favorite) || b.updatedAt-a.updatedAt);
+}
+
+function graphProSaveAthleteBlockLibrary(patientNickname = "", list = []) {
+  const library = graphProReadBlockLibrary();
+  library[patientNickname] = list;
+  graphProWriteBlockLibrary(library);
+}
+
+function graphProCreateLibraryBlock(block = {}) {
+  return {
+    id: `ppf-block-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+    name: graphProBlockLabel(block, "Bloque guardado"),
+    micros: [...new Set((block.micros || []).map(Number).filter(Boolean))].sort((a,b)=>a-b),
+    favorite: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
+function graphProRenderBlockLibrary(blockState = {}) {
+  const list = Array.isArray(blockState.library) ? blockState.library : [];
+  const escape = value => typeof graphProEscape === "function" ? graphProEscape(String(value || "")) : String(value || "");
+  const cards = list.length ? list.map(item => `<article class="graph-pro-library-card ${item.favorite ? "is-favorite" : ""}" data-library-id="${escape(item.id)}">
+    <button type="button" class="graph-pro-library-favorite" data-library-action="favorite" title="${item.favorite ? "Quitar de favoritos" : "Marcar como favorito"}" aria-label="${item.favorite ? "Quitar de favoritos" : "Marcar como favorito"}">${item.favorite ? "★" : "☆"}</button>
+    <div class="graph-pro-library-card-copy"><strong>${escape(item.name)}</strong><span>${item.micros.length} micro${item.micros.length === 1 ? "" : "s"} · ${item.micros.map(m=>`M${m}`).join(" · ")}</span></div>
+    <div class="graph-pro-library-load"><button type="button" data-library-action="load-a">Cargar en A</button><button type="button" data-library-action="load-b">Cargar en B</button></div>
+    <div class="graph-pro-library-menu"><button type="button" data-library-action="rename" title="Renombrar">✎</button><button type="button" data-library-action="duplicate" title="Duplicar">⧉</button><button type="button" data-library-action="delete" title="Eliminar">×</button></div>
+  </article>`).join("") : `<div class="graph-pro-library-empty"><strong>Tu biblioteca está vacía</strong><span>Guarda el Bloque A o B para reutilizarlo en futuras comparaciones.</span></div>`;
+  return `<section class="graph-pro-block-library" aria-labelledby="graphProBlockLibraryTitle">
+    <div class="graph-pro-library-head"><div><p class="eyebrow">BIBLIOTECA DE BLOQUES · v2.3.1</p><h4 id="graphProBlockLibraryTitle">Bloques guardados</h4><p>Recupera, organiza y reutiliza estructuras de entrenamiento por deportista.</p></div><span>${list.length} guardado${list.length === 1 ? "" : "s"}</span></div>
+    <div class="graph-pro-library-list">${cards}</div>
+  </section>`;
+}
+
+function graphProAverageBlockStats(patientNickname = "", selectedMicros = []) {
+  const micros = [...new Set((selectedMicros || []).map(Number).filter(Boolean))].sort((a,b) => a-b);
+  const keys = ["sessions","series","exercises","tonnage","ts","ti","core","plyo","mov","act"];
+  const totals = { micro: 0, sessions: 0, series: 0, exercises: 0, tonnage: 0, ts: 0, ti: 0, core: 0, plyo: 0, mov: 0, act: 0 };
+  const history = micros.map(micro => getMicroStatsForGraphPro(patientNickname, micro));
+  history.forEach(stats => keys.forEach(key => { totals[key] += Number(stats[key]) || 0; }));
+  const divisor = Math.max(micros.length, 1);
+  const averages = { ...totals };
+  keys.forEach(key => { averages[key] = totals[key] / divisor; });
+  const seriesValues = history.map(item => Number(item.series) || 0);
+  const meanSeries = averages.series || 0;
+  const variance = seriesValues.length > 1 ? seriesValues.reduce((sum,value)=>sum + Math.pow(value-meanSeries,2),0) / seriesValues.length : 0;
+  const variability = meanSeries ? Math.round((Math.sqrt(variance) / meanSeries) * 100) : 0;
+  const density = totals.sessions ? totals.series / totals.sessions : 0;
+  const kgPerSession = totals.sessions ? totals.tonnage / totals.sessions : 0;
+  return { micros, count: micros.length, totals, averages, history, variability, density, kgPerSession };
+}
+
+function graphProBlockLabel(block = {}, fallback = "Bloque") {
+  const name = String(block.name || "").trim();
+  return name || fallback;
+}
+
+
+function graphProBuildSmartComparisons(patientNickname = "", micros = []) {
+  const ordered = [...new Set((micros || []).map(Number).filter(Boolean))].sort((a,b)=>a-b);
+  if (ordered.length < 4) return [];
+  const stats = ordered.map(micro => ({ micro, ...getMicroStatsForGraphPro(patientNickname, micro) }));
+  const scoreLoad = item => (Number(item.series)||0) + ((Number(item.tonnage)||0) / 500) + ((Number(item.sessions)||0) * 2);
+  const chunk = Math.max(2, Math.min(4, Math.floor(ordered.length / 2)));
+  const previous = ordered.slice(Math.max(0, ordered.length - chunk * 2), ordered.length - chunk);
+  const latest = ordered.slice(-chunk);
+  const first = ordered.slice(0, chunk);
+  const last = ordered.slice(-chunk);
+  const rankedLoad = [...stats].sort((a,b)=>scoreLoad(b)-scoreLoad(a));
+  const highLoad = rankedLoad.slice(0, chunk).map(x=>x.micro).sort((a,b)=>a-b);
+  const remaining = stats.filter(x=>!highLoad.includes(x.micro));
+  const meanSeries = remaining.reduce((a,x)=>a+(Number(x.series)||0),0)/Math.max(remaining.length,1);
+  const stable = [...remaining].sort((a,b)=>Math.abs((Number(a.series)||0)-meanSeries)-Math.abs((Number(b.series)||0)-meanSeries)).slice(0,chunk).map(x=>x.micro).sort((a,b)=>a-b);
+  const dense = [...stats].sort((a,b)=>((Number(b.sessions)||0)?(Number(b.series)||0)/Number(b.sessions):0)-((Number(a.sessions)||0)?(Number(a.series)||0)/Number(a.sessions):0)).slice(0,chunk).map(x=>x.micro).sort((a,b)=>a-b);
+  const lowDensity = [...stats].filter(x=>!dense.includes(x.micro)).sort((a,b)=>((Number(a.sessions)||0)?(Number(a.series)||0)/Number(a.sessions):0)-((Number(b.sessions)||0)?(Number(b.series)||0)/Number(b.sessions):0)).slice(0,chunk).map(x=>x.micro).sort((a,b)=>a-b);
+  const items = [
+    { id:'recent', icon:'↗', title:'Evolución reciente', subtitle:`Últimos ${latest.length} micros vs ${previous.length} anteriores`, aName:'Periodo anterior', bName:'Periodo reciente', a:previous, b:latest, reason:'Detecta el cambio más reciente de carga, frecuencia y densidad.' },
+    { id:'progression', icon:'⏱', title:'Inicio vs actualidad', subtitle:'Primer bloque disponible vs último bloque', aName:'Inicio del periodo', bName:'Situación actual', a:first, b:last, reason:'Mide la evolución acumulada dentro del historial disponible.' },
+    { id:'load-stability', icon:'⚖', title:'Carga vs estabilidad', subtitle:'Micros de mayor carga vs patrón más estable', aName:'Mayor estabilidad', bName:'Mayor carga', a:stable, b:highLoad, reason:'Contrasta exigencia máxima con regularidad interna.' },
+    { id:'density', icon:'⚡', title:'Contraste de densidad', subtitle:'Menor densidad vs mayor densidad', aName:'Densidad contenida', bName:'Alta densidad', a:lowDensity, b:dense, reason:'Aísla el efecto de concentrar más series por sesión.' }
+  ];
+  return items.filter(item=>item.a.length && item.b.length && !item.a.some(m=>item.b.includes(m))).slice(0,4);
+}
+
+function graphProRenderSmartComparisons(patientNickname = "", micros = []) {
+  const items = graphProBuildSmartComparisons(patientNickname, micros);
+  if (!items.length) return `<section class="graph-pro-smart-blocks is-empty"><div><p class="eyebrow">SMART BLOCKS · v2.4.0</p><h4>Comparaciones inteligentes</h4><p>Se necesitan al menos cuatro microciclos para generar propuestas automáticas.</p></div></section>`;
+  return `<section class="graph-pro-smart-blocks" aria-labelledby="graphProSmartBlocksTitle">
+    <div class="graph-pro-smart-head"><div><p class="eyebrow">SMART BLOCKS · v2.4.0</p><h4 id="graphProSmartBlocksTitle">Comparaciones inteligentes</h4><p>PPF PRO detecta estructuras útiles y prepara ambos bloques automáticamente.</p></div><span>${items.length} sugerencias</span></div>
+    <div class="graph-pro-smart-grid">${items.map(item=>`<button type="button" class="graph-pro-smart-card" data-smart-comparison="${item.id}"><span class="graph-pro-smart-icon">${item.icon}</span><strong>${item.title}</strong><small>${item.subtitle}</small><em>${item.reason}</em><b>${item.a.map(m=>`M${m}`).join(' · ')} <i>vs</i> ${item.b.map(m=>`M${m}`).join(' · ')}</b></button>`).join('')}</div>
+  </section>`;
+}
+
+function graphProRenderBlockBuilder(micros = [], blockState = {}) {
+  const blockA = blockState.blockA || { name: "Bloque A", micros: [] };
+  const blockB = blockState.blockB || { name: "Bloque B", micros: [] };
+  const renderChoices = (side, block, other) => micros.map(micro => {
+    const checked = (block.micros || []).includes(micro);
+    const locked = (other.micros || []).includes(micro);
+    return `<label class="graph-pro-block-micro ${checked ? "is-selected" : ""} ${locked ? "is-locked" : ""}">
+      <input type="checkbox" data-block-side="${side}" value="${micro}" ${checked ? "checked" : ""} ${locked ? "disabled" : ""}>
+      <span>M${micro}</span>${locked ? `<small>En ${side === "A" ? "B" : "A"}</small>` : ""}
+    </label>`;
+  }).join("");
+  return `<section class="graph-pro-block-builder" aria-labelledby="graphProBlockBuilderTitle">
+    <div class="graph-pro-block-head">
+      <div><p class="eyebrow">BLOCK COMPARISON INTELLIGENCE · v2.4.0</p><h3 id="graphProBlockBuilderTitle">Construye dos bloques de entrenamiento</h3><p>Selecciona libremente los micros. La lectura principal compara medias por micro para igualar bloques de distinta duración.</p></div>
+      <div class="graph-pro-analysis-mode" role="group" aria-label="Nivel de comparación">
+        <button type="button" data-analysis-mode="micro" class="${blockState.mode !== "block" ? "is-active" : ""}">Microciclos</button>
+        <button type="button" data-analysis-mode="block" class="${blockState.mode === "block" ? "is-active" : ""}">Bloques</button>
+      </div>
+    </div>
+    <div class="graph-pro-block-grid">
+      <article class="graph-pro-block-panel is-a">
+        <header><div><span>Bloque A · base</span><strong>${(blockA.micros || []).length} micros</strong></div><button type="button" data-block-clear="A">Limpiar</button></header>
+        <label class="graph-pro-block-name"><span>Nombre</span><input id="graphProBlockNameA" value="${typeof graphProEscape === "function" ? graphProEscape(blockA.name || "Bloque A") : (blockA.name || "Bloque A")}" maxlength="36"></label>
+        <div class="graph-pro-block-micros">${renderChoices("A", blockA, blockB)}</div><button type="button" class="graph-pro-block-save" data-block-save="A" ${(blockA.micros || []).length ? "" : "disabled"}>Guardar en biblioteca</button>
+      </article>
+      <button type="button" class="graph-pro-block-swap" id="graphProSwapBlocks" aria-label="Intercambiar Bloque A y Bloque B" title="Intercambiar bloques">⇄</button>
+      <article class="graph-pro-block-panel is-b">
+        <header><div><span>Bloque B · comparado</span><strong>${(blockB.micros || []).length} micros</strong></div><button type="button" data-block-clear="B">Limpiar</button></header>
+        <label class="graph-pro-block-name"><span>Nombre</span><input id="graphProBlockNameB" value="${typeof graphProEscape === "function" ? graphProEscape(blockB.name || "Bloque B") : (blockB.name || "Bloque B")}" maxlength="36"></label>
+        <div class="graph-pro-block-micros">${renderChoices("B", blockB, blockA)}</div><button type="button" class="graph-pro-block-save" data-block-save="B" ${(blockB.micros || []).length ? "" : "disabled"}>Guardar en biblioteca</button>
+      </article>
+    </div>
+    ${graphProRenderSmartComparisons(blockState.patientNickname || "", micros)}
+    ${graphProRenderBlockLibrary(blockState)}
+    <div class="graph-pro-block-actions">
+      <p id="graphProBlockMessage" role="status">${blockState.mode === "block" ? "Modo bloques activo: selecciona al menos un micro en cada bloque." : "Modo microciclos activo. Tus selecciones de bloques se conservan."}</p>
+      <button type="button" id="graphProApplyBlocks" ${!(blockA.micros?.length && blockB.micros?.length) ? "disabled" : ""}>Analizar bloques</button>
+    </div>
+  </section>`;
+}
+
+function graphProBuildBlockComparisonSummary(blockAData, blockBData, labelA, labelB) {
+  const pct = (b,a) => graphProInsightPercent(b,a);
+  const rows = [
+    ["Sesiones / micro", blockAData.averages.sessions, blockBData.averages.sessions, ""],
+    ["Series / micro", blockAData.averages.series, blockBData.averages.series, ""],
+    ["Tonelaje / micro", blockAData.averages.tonnage, blockBData.averages.tonnage, "kg"],
+    ["Series / sesión", blockAData.density, blockBData.density, ""],
+    ["Kg / sesión", blockAData.kgPerSession, blockBData.kgPerSession, "kg"],
+    ["Variabilidad", blockAData.variability, blockBData.variability, "%"]
+  ];
+  return `<section class="graph-pro-block-results" aria-label="Comparación normalizada de bloques">
+    <div class="graph-pro-block-results-head"><div><p class="eyebrow">COMPARACIÓN NORMALIZADA</p><h3>${labelA} frente a ${labelB}</h3></div><span>Medias por micro</span></div>
+    <div class="graph-pro-block-result-grid">${rows.map(([name,a,b,unit])=>{const delta=pct(b,a); const tone=delta>5?"up":delta<-5?"down":"stable"; const fmt=v=>unit==="kg"?graphProFormatKilograms(v):Number(v).toFixed(name.includes("Variabilidad")?0:1).replace(".0",""); return `<article class="tone-${tone}"><span>${name}</span><div><small>${labelA}</small><strong>${fmt(a)}${unit?` <em>${unit}</em>`:""}</strong></div><div><small>${labelB}</small><strong>${fmt(b)}${unit?` <em>${unit}</em>`:""}</strong></div><b>${delta>0?"+":""}${delta}%</b></article>`}).join("")}</div>
+    <div class="graph-pro-block-totals"><article><span>Totales · ${labelA}</span><strong>${graphProFormatNumber(blockAData.totals.sessions)} ses. · ${graphProFormatNumber(blockAData.totals.series)} series · ${graphProFormatKilograms(blockAData.totals.tonnage)} kg</strong></article><article><span>Totales · ${labelB}</span><strong>${graphProFormatNumber(blockBData.totals.sessions)} ses. · ${graphProFormatNumber(blockBData.totals.series)} series · ${graphProFormatKilograms(blockBData.totals.tonnage)} kg</strong></article></div>
+  </section>`;
+}
+
+function graphProBuildTimelineIntelligence(patientNickname = "", micros = [], selectedA = 0, selectedB = 0, blockA = [], blockB = []) {
+  const history = micros.map(micro => ({ micro, ...getMicroStatsForGraphPro(patientNickname, micro) }));
+  if (!history.length) return `<section class="performance-timeline-intelligence" aria-labelledby="performanceTimelineTitle"><div class="performance-timeline-head"><div><p class="eyebrow">TIMELINE INTELLIGENCE · v2.2</p><h3 id="performanceTimelineTitle">Evolución del bloque</h3><p>No hay microciclos suficientes para construir la lectura histórica.</p></div></div></section>`;
+
+  const maxSeries = Math.max(...history.map(item => Number(item.series) || 0), 1);
+  const maxTonnage = Math.max(...history.map(item => Number(item.tonnage) || 0), 1);
+  const peakSeries = history.reduce((best, item) => Number(item.series) > Number(best.series) ? item : best, history[0]);
+  const peakTonnage = history.reduce((best, item) => Number(item.tonnage) > Number(best.tonnage) ? item : best, history[0]);
+
+  const enriched = history.map((item, index) => {
+    const previous = history[index - 1];
+    const seriesDelta = previous ? graphProInsightPercent(item.series, previous.series) : 0;
+    const tonnageDelta = previous ? graphProInsightPercent(item.tonnage, previous.tonnage) : 0;
+    const hasActivity = Number(item.sessions) > 0 || Number(item.series) > 0;
+    const missingLoad = hasActivity && Number(item.tonnage) === 0;
+    let state = "base", label = "Base", tone = "neutral";
+    if (missingLoad) { state = "incomplete"; label = "Carga sin registrar"; tone = "info"; }
+    else if (item.micro === peakTonnage.micro && Number(item.tonnage) > 0) { state = "peak"; label = "Pico de carga"; tone = "positive"; }
+    else if (previous && seriesDelta <= -20) { state = "download"; label = "Reducción"; tone = "attention"; }
+    else if (previous && seriesDelta >= 20) { state = "progression"; label = "Progresión"; tone = "positive"; }
+    else if (previous && Math.abs(seriesDelta) <= 8) { state = "stable"; label = "Estable"; tone = "neutral"; }
+    else if (previous) { state = "adjustment"; label = "Ajuste"; tone = "attention"; }
+    return { ...item, previousMicro: previous?.micro || 0, seriesDelta, tonnageDelta, state, label, tone };
+  });
+
+  const recent = enriched.slice(-4);
+  const start = recent[0], end = recent[recent.length - 1];
+  const overallSeries = start && end ? graphProInsightPercent(end.series, start.series) : 0;
+  const variability = recent.length > 1 ? Math.round(recent.slice(1).reduce((sum, item) => sum + Math.abs(item.seriesDelta), 0) / (recent.length - 1)) : 0;
+  const trendText = overallSeries > 12 ? `La actividad crece un ${overallSeries}% en la ventana reciente.` : overallSeries < -12 ? `La actividad desciende un ${Math.abs(overallSeries)}% en la ventana reciente.` : "La actividad se mantiene dentro de un rango relativamente estable.";
+  const stabilityText = variability >= 30 ? "La variabilidad entre micros es alta; conviene revisar la continuidad del bloque." : variability >= 15 ? "La planificación presenta ajustes moderados entre semanas." : "La secuencia reciente mantiene una continuidad elevada.";
+  const dataText = enriched.some(item => item.state === "incomplete") ? " Hay micros con actividad pero sin tonelaje registrado." : "";
+
+  const nodes = enriched.map(item => {
+    const seriesHeight = Math.max(8, Math.round((Number(item.series) / maxSeries) * 100));
+    const tonnageHeight = Number(item.tonnage) > 0 ? Math.max(6, Math.round((Number(item.tonnage) / maxTonnage) * 100)) : 0;
+    const inBlockA = blockA.includes(item.micro);
+    const inBlockB = blockB.includes(item.micro);
+    const active = item.micro === Number(selectedA) || item.micro === Number(selectedB) || inBlockA || inBlockB;
+    const role = inBlockA ? "Bloque A" : inBlockB ? "Bloque B" : item.micro === Number(selectedA) ? "Base" : item.micro === Number(selectedB) ? "Comparado" : "";
+    const fallbackBase = item.previousMicro || enriched.find(candidate => candidate.micro !== item.micro)?.micro || 0;
+    return `<button type="button" class="performance-timeline-node tone-${item.tone} ${active ? "is-active" : ""} ${inBlockA ? "is-block-a" : ""} ${inBlockB ? "is-block-b" : ""}" data-timeline-micro="${item.micro}" data-timeline-base="${fallbackBase}" aria-label="Micro ${item.micro}. ${item.label}. ${item.sessions} sesiones, ${item.series} series, ${graphProFormatKilograms(item.tonnage)} kilogramos.${role ? ` Selección actual: ${role}.` : ""}">
+      <span class="performance-timeline-micro">M${item.micro}</span>
+      <div class="performance-timeline-bars" aria-hidden="true"><i class="is-series" style="height:${seriesHeight}%"></i><i class="is-tonnage" style="height:${tonnageHeight}%"></i></div>
+      <strong>${item.label}</strong>
+      <small>${item.sessions} ses. · ${item.series} series</small>
+      <em>${item.previousMicro ? `${item.seriesDelta > 0 ? "+" : ""}${item.seriesDelta}%` : "Inicio"}</em>
+      ${role ? `<b>${role}</b>` : ""}
+    </button>`;
+  }).join("");
+
+  return `<section class="performance-timeline-intelligence" aria-labelledby="performanceTimelineTitle">
+    <div class="performance-timeline-head"><div><p class="eyebrow">TIMELINE INTELLIGENCE · v2.2</p><h3 id="performanceTimelineTitle">Evolución del bloque</h3><p>Lectura cronológica de sesiones, series, tonelaje e hitos automáticos.</p></div><div class="performance-timeline-legend"><span><i class="is-series"></i>Series</span><span><i class="is-tonnage"></i>Tonelaje</span></div></div>
+    <div class="performance-timeline-track" role="list">${nodes}</div>
+    <div class="performance-timeline-summary">
+      <article><span>Lectura histórica</span><p>${trendText} ${stabilityText}${dataText}</p></article>
+      <article><span>Hitos del bloque</span><p>Pico de series en M${peakSeries.micro} (${peakSeries.series}); pico de tonelaje en M${peakTonnage.micro} (${graphProFormatKilograms(peakTonnage.tonnage)} kg).</p></article>
+      <aside><strong>Pulsa un micro</strong><p>Se convertirá en el micro comparado y el anterior disponible actuará como base.</p></aside>
+    </div>
+  </section>`;
+}
+
+function bindPerformanceExecutiveDashboard() {
+  document.querySelectorAll("[data-performance-scroll]").forEach(button => {
+    button.addEventListener("click", () => {
+      const target = document.querySelector(button.dataset.performanceScroll || "");
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.setAttribute("tabindex", "-1");
+      target.focus({ preventScroll: true });
+      window.setTimeout(() => target.removeAttribute("tabindex"), 900);
+    });
+  });
+  document.querySelectorAll("[data-timeline-micro]").forEach(button => {
+    button.addEventListener("click", () => {
+      const microB = Number(button.dataset.timelineMicro || 0);
+      let microA = Number(button.dataset.timelineBase || 0);
+      const selectA = document.getElementById("graphProMicroA");
+      const selectB = document.getElementById("graphProMicroB");
+      if (!selectA || !selectB || !microB) return;
+      if (!microA || microA === microB) microA = [...selectA.options].map(option => Number(option.value)).find(value => value && value !== microB) || 0;
+      if (!microA) return;
+      selectA.value = String(microA);
+      selectB.value = String(microB);
+      selectB.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+}
+
+function renderGraphProDashboard(patientNickname = "", microA = "", microB = "", blockState = {}) {
+  const patient = patients.find(item => item.nickname === patientNickname);
+  const totals = getPatientAnalytics(patientNickname);
+  const micros = getAvailableMicrosForGraphPro(patientNickname);
+  const lastMicro = micros.length ? micros[micros.length - 1] : 0;
+  const previousMicro = micros.length > 1 ? micros[micros.length - 2] : lastMicro;
+  const selectedA = micros.includes(Number(microA)) ? Number(microA) : previousMicro;
+  const selectedB = micros.includes(Number(microB)) ? Number(microB) : lastMicro;
+  const microStatsA = selectedA ? getMicroStatsForGraphPro(patientNickname, selectedA) : {};
+  const microStatsB = selectedB ? getMicroStatsForGraphPro(patientNickname, selectedB) : {};
+  const blockMode = blockState.mode === "block" && blockState.blockA?.micros?.length && blockState.blockB?.micros?.length;
+  const blockAData = graphProAverageBlockStats(patientNickname, blockState.blockA?.micros || []);
+  const blockBData = graphProAverageBlockStats(patientNickname, blockState.blockB?.micros || []);
+  const statsA = blockMode ? blockAData.averages : microStatsA;
+  const statsB = blockMode ? blockBData.averages : microStatsB;
+
+  const radarValues = [
+    { label: "TS", v: Number(statsB.ts) || 0 },
+    { label: "TI", v: Number(statsB.ti) || 0 },
+    { label: "Core", v: Number(statsB.core) || 0 },
+    { label: "Plyo", v: Number(statsB.plyo) || 0 },
+    { label: "Mov.", v: Number(statsB.mov) || 0 },
+    { label: "Act.", v: Number(statsB.act) || 0 }
+  ];
+  const previousRadarValues = [
+    { label: "TS", v: Number(statsA.ts) || 0 },
+    { label: "TI", v: Number(statsA.ti) || 0 },
+    { label: "Core", v: Number(statsA.core) || 0 },
+    { label: "Plyo", v: Number(statsA.plyo) || 0 },
+    { label: "Mov.", v: Number(statsA.mov) || 0 },
+    { label: "Act.", v: Number(statsA.act) || 0 }
+  ];
+
+  const labelA = blockMode ? graphProBlockLabel(blockState.blockA, "Bloque A") : (selectedA ? `M${selectedA}` : "—");
+  const labelB = blockMode ? graphProBlockLabel(blockState.blockB, "Bloque B") : (selectedB ? `M${selectedB}` : "—");
+  const dominant = graphProDominantCategory(radarValues);
+  const patientName = patient ? patient.nombre : "Deportista";
+  const summary = `${graphProFormatNumber(totals.sessions)} sesiones · ${graphProFormatNumber(totals.series)} series · ${graphProFormatKilograms(totals.tonnage)} kg`;
+  const coach = buildCoachIntelligenceEngine(statsB, statsA, { patientNickname, currentMicro: selectedB });
+  const predictive = buildPredictiveIntelligenceEngine(statsB, { patientNickname, currentMicro: selectedB });
+  const loadDelta = graphProInsightPercent(statsB.series || 0, statsA.series || 0);
+  const healthScore = Math.max(0, Math.min(100, Math.round((coach.score * 0.62) + (predictive.stability * 0.38))));
+  const healthMeta = healthScore >= 78
+    ? { tone: "positive", label: "Rendimiento estable", action: "Mantener la dirección actual y observar la evolución." }
+    : healthScore >= 58
+      ? { tone: "attention", label: "Atención recomendada", action: "Revisar los cambios principales antes de progresar la carga." }
+      : { tone: "review", label: "Intervención prioritaria", action: "Validar la estructura del micro y sus cambios de carga." };
+  const priority = coach.alerts?.[0] || coach.opportunities?.[0] || { title: "Proceso estable", text: "No se detectan señales prioritarias en la ventana analizada." };
+  const trendLabel = loadDelta > 8 ? `Carga +${loadDelta}%` : loadDelta < -8 ? `Carga ${loadDelta}%` : "Carga estable";
+
+  return `
+    <section class="performance-executive-header tone-${healthMeta.tone}" aria-labelledby="performanceExecutiveTitle">
+      <div class="performance-executive-main">
+        <div class="performance-executive-identity">
+          ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patientName}">` : `<div class="performance-executive-avatar">${patientName.charAt(0).toUpperCase()}</div>`}
+          <div>
+            <p class="eyebrow">CENTRO DE RENDIMIENTO · EXECUTIVE VIEW</p>
+            <h2 id="performanceExecutiveTitle">${patientName}</h2>
+            <p>${summary}</p>
+          </div>
+        </div>
+        <div class="performance-health-score" aria-label="Índice global ${healthScore} de 100">
+          <span>Performance Score</span>
+          <strong>${healthScore}<small>/100</small></strong>
+          <em>${healthMeta.label}</em>
+          <div><i style="width:${healthScore}%"></i></div>
+        </div>
+      </div>
+
+      <div class="performance-context-grid">
+        <article class="performance-comparison-context"><span class="graph-pro-micro-chip graph-pro-comparison-status is-active" id="graphProComparisonStatus" role="status" aria-live="polite" aria-atomic="true"><span class="graph-pro-status-label">Comparación activa</span><strong class="graph-pro-status-value">${labelA} ↔ ${labelB}</strong></span><small>${blockMode ? `Medias de ${blockAData.count} vs ${blockBData.count} micros` : "Comparación de microciclos"}</small></article>
+        <article><span>Coach Score</span><strong>${coach.score}<small>%</small></strong><small>${coach.scoreMeta.label}</small></article>
+        <article><span>Stability Index</span><strong>${predictive.stability}<small>%</small></strong><small>${predictive.stabilityMeta.label}</small></article>
+        <article><span>Tendencia</span><strong class="is-text">${trendLabel}</strong><small>${graphProFormatNumber(statsB.series || 0)} series${blockMode ? " / micro" : ` en ${labelB}`}</small></article>
+      </div>
+
+      <div class="performance-status-banner">
+        <div><span>Diagnóstico prioritario</span><strong>${priority.title}</strong><p><b>Por qué:</b> ${priority.text}</p></div>
+        <aside><span>Acción recomendada</span><p>${healthMeta.action}</p></aside>
+      </div>
     </section>
 
-    <section class="periodicity-kpi-grid graph-pro-kpis">
-      <article class="periodicity-kpi"><span>Sesiones</span><strong>${totals.sessions}</strong></article>
-      <article class="periodicity-kpi"><span>Series</span><strong>${totals.series}</strong></article>
-      <article class="periodicity-kpi"><span>Ejercicios</span><strong>${totals.exercises}</strong></article>
-      <article class="periodicity-kpi"><span>Tonelaje Kg</span><strong>${Math.round(totals.tonnage)}</strong></article>
-      <article class="periodicity-kpi plyo"><span>Plyo</span><strong>${totals.plyo}</strong></article>
-      <article class="periodicity-kpi"><span>Core</span><strong>${totals.core}</strong></article>
+    ${graphProBuildDecisionWorkspace(statsB, statsA, { currentLabel: labelB, previousLabel: labelA, coach, predictive, healthScore, healthMeta })}
+
+    ${graphProBuildExecutiveDashboard(statsB, statsA, { currentLabel: labelB, previousLabel: labelA, coach, predictive, healthScore })}
+
+    ${graphProRenderBlockBuilder(micros, blockState)}
+
+    ${blockMode ? graphProBuildBlockComparisonSummary(blockAData, blockBData, labelA, labelB) : ""}
+
+    ${graphProBuildTimelineIntelligence(patientNickname, micros, selectedA, selectedB, blockState.blockA?.micros || [], blockState.blockB?.micros || [])}
+
+    <section class="graph-pro-comparison-workspace ${blockMode ? "is-block-mode" : ""}" aria-labelledby="graphProComparisonTitle">
+      <div class="graph-pro-comparison-copy">
+        <p class="eyebrow">COMPARATIVE WORKSPACE · v3.0</p>
+        <h3 id="graphProComparisonTitle">${blockMode ? "Comparación de bloques activa" : "Selecciona dos microciclos terminados"}</h3>
+        <p>${blockMode ? "El radar, los KPIs y la inteligencia utilizan medias normalizadas de los micros seleccionados." : "El radar, el briefing y la comparativa se recalculan sobre la selección activa."}</p>
+      </div>
+      <div class="graph-pro-global-selectors" ${blockMode ? `aria-hidden="true"` : ""}>
+        <label>
+          <span>Micro base</span>
+          <select id="graphProMicroA" aria-label="Seleccionar micro base">${renderMicroOptions(micros, selectedA)}</select>
+        </label>
+        <button type="button" class="graph-pro-swap" id="graphProSwapMicros"
+          aria-label="Intercambiar micro base y micro comparado"
+          title="Intercambiar la dirección del análisis">
+          <span aria-hidden="true">⇄</span>
+        </button>
+        <label>
+          <span>Micro comparado</span>
+          <select id="graphProMicroB" aria-label="Seleccionar micro comparado">${renderMicroOptions(micros, selectedB)}</select>
+        </label>
+      </div>
+      <div class="graph-pro-comparison-feedback" id="graphProComparisonFeedback" role="tooltip" hidden>
+        <strong>Comparación no válida</strong>
+        <span>Estás comparando el mismo micro. Cambia uno de ellos para realizar el análisis.</span>
+      </div>
+      <div class="graph-pro-selection-status" role="status">
+        <span>${blockMode ? "Bloques activos" : "Lectura activa"}</span>
+        <strong>${labelA} frente a ${labelB}</strong>
+      </div>
+    </section>
+
+    <section class="graph-pro-intelligence-kpis" aria-label="Resumen de la comparación">
+      <article><span>${blockMode ? "Bloque base" : "Micro base"}</span><strong>${labelA}</strong><small>${graphProFormatNumber(statsA.sessions || 0)} ${blockMode ? "sesiones / micro" : "sesiones registradas"}</small></article>
+      <article><span>${blockMode ? "Bloque comparado" : "Micro comparado"}</span><strong>${labelB}</strong><small>${graphProFormatNumber(statsB.sessions || 0)} ${blockMode ? "sesiones / micro" : "sesiones registradas"}</small></article>
+      <article><span>Tonelaje comparado</span><strong>${graphProFormatKilograms(statsB.tonnage || 0)} <em>kg</em></strong><small>${blockMode ? "Media por micro" : `Carga externa de ${labelB}`}</small></article>
+      <article><span>Categoría dominante</span><strong class="is-text">${dominant}</strong><small>Mayor volumen en ${labelB}</small></article>
     </section>
 
     <section class="graph-pro-grid">
@@ -5190,76 +7395,112 @@ function renderGraphProDashboard(patientNickname = "") {
         <div class="module-panel-header">
           <div>
             <p class="eyebrow">Radar PRO</p>
-            <h3>TS · TI · Core · Plyo · Movilidad · Activación</h3>
+            <h3>${labelB} analizado frente a ${labelA}</h3>
           </div>
         </div>
-        ${radarSvg(radarValues)}
+        ${radarSvg(radarValues, previousRadarValues, labelB, labelA)}
       </article>
 
-      <article class="graph-pro-card">
-        <div class="module-panel-header">
-          <div>
-            <p class="eyebrow">Detalle</p>
-            <h3>Series por categoría</h3>
-          </div>
-        </div>
-
-        <div class="distribution-chart">
-          ${radarValues.map(item => {
-            const max = Math.max(...radarValues.map(v => Number(v.v ?? v.value ?? 0)), 1);
-            const percent = Math.round(((Number(item.v ?? item.value ?? 0)) / max) * 100);
-            return `
-              <div class="distribution-row">
-                <span>${item.label}</span>
-                <div class="distribution-track"><div class="distribution-fill" style="width:${Number.isFinite(percent) ? percent : 0}%"></div></div>
-                <strong>${Number(item.v ?? item.value ?? 0)}</strong>
-              </div>
-            `;
-          }).join("")}
-        </div>
+      <article class="graph-pro-card graph-pro-intelligence-card">
+        ${graphProBuildIntelligencePanel(statsB, statsA, labelB, labelA, patientNickname)}
       </article>
     </section>
+
+    ${renderGraphProAutomaticInsights(statsB, statsA, {
+      currentMicro: selectedB,
+      previousMicro: selectedA,
+      patientNickname
+    })}
   `;
 }
 
-
 function bindRadarTooltips() {
   const tooltip = document.getElementById("radarTooltip");
-  const wrap = document.querySelector(".radar-pro2-wrap") || document.querySelector(".radar-tooltip-wrap");
+  const wrap = document.querySelector(".radar-pro2-wrap");
   if (!tooltip || !wrap) return;
-
-  document.querySelectorAll(".radar-pro2-point, .radar-point").forEach(point => {
-    point.addEventListener("mouseenter", () => {
-      tooltip.querySelector("span").textContent = point.dataset.label;
-      tooltip.querySelector("strong").textContent = `${point.dataset.value} series`;
-      tooltip.querySelector("p").textContent = `${point.dataset.percent}% del trabajo registrado`;
-
-      const target = point.querySelector(".radar-point-core") || point;
-      const wrapRect = wrap.getBoundingClientRect();
-      const pointRect = target.getBoundingClientRect();
-
-      let left = pointRect.left - wrapRect.left + 24;
-      let top = pointRect.top - wrapRect.top - 54;
-
-      const maxLeft = wrapRect.width - 230;
-      if (left > maxLeft) left = pointRect.left - wrapRect.left - 230;
-      if (left < 8) left = 8;
-      if (top < 8) top = pointRect.top - wrapRect.top + 24;
-
-      tooltip.style.left = `${left}px`;
-      tooltip.style.top = `${top}px`;
-
-      tooltip.classList.add("show");
-      point.classList.add("active");
-    });
-
-    point.addEventListener("mouseleave", () => {
-      tooltip.classList.remove("show");
-      point.classList.remove("active");
-    });
+  let hideTimer;
+  const show = point => {
+    clearTimeout(hideTimer);
+    const value = Number(point.dataset.value || 0);
+    const delta = Number(point.dataset.delta || 0);
+    const deltaPercent = Number(point.dataset.deltaPercent || 0);
+    const trend = delta > 0 ? "▲" : delta < 0 ? "▼" : "=";
+    const detail = tooltip.querySelector("small");
+    const isBase = point.dataset.series === "base";
+    tooltip.querySelector("span").textContent = `${point.dataset.label} · ${point.dataset.micro || ""}`;
+    tooltip.querySelector("strong").textContent = `${graphProFormatNumber(value)} series`;
+    tooltip.querySelector("p").textContent = `${point.dataset.percent}% del volumen de ${point.dataset.micro || "este micro"}`;
+    detail.className = delta > 0 ? "positive" : delta < 0 ? "negative" : "neutral";
+    detail.textContent = isBase
+      ? `Micro base para la comparación con ${point.dataset.currentMicro}`
+      : `${trend} ${delta > 0 ? "+" : ""}${graphProFormatNumber(delta)} series (${deltaPercent > 0 ? "+" : ""}${deltaPercent}%) · ${point.dataset.currentMicro} vs ${point.dataset.previousMicro}`;
+    const target = point.querySelector(".radar-point-core") || point;
+    const wrapRect = wrap.getBoundingClientRect(), pointRect = target.getBoundingClientRect();
+    let left = pointRect.left - wrapRect.left + 24, top = pointRect.top - wrapRect.top - 92;
+    if (left > wrapRect.width - 260) left = pointRect.left - wrapRect.left - 252;
+    if (left < 8) left = 8;
+    if (top < 8) top = pointRect.top - wrapRect.top + 24;
+    tooltip.style.left = `${left}px`; tooltip.style.top = `${top}px`;
+    tooltip.classList.add("show"); point.classList.add("active");
+  };
+  const hide = point => { hideTimer = setTimeout(() => { tooltip.classList.remove("show"); point.classList.remove("active"); }, 80); };
+  document.querySelectorAll(".radar-pro2-point").forEach(point => {
+    point.addEventListener("mouseenter", () => show(point));
+    point.addEventListener("mouseleave", () => hide(point));
+    point.addEventListener("focus", () => show(point));
+    point.addEventListener("blur", () => hide(point));
   });
 }
 
+
+function bindGraphProKpiInspector() {
+  const panel = document.querySelector(".graph-pro-intelligence-panel");
+  const inspector = document.getElementById("graphProKpiInspector");
+  const dataNode = panel?.querySelector(".graph-pro-inspector-data");
+  if (!panel || !inspector || !dataNode) return;
+  let data;
+  try { data = JSON.parse(dataNode.textContent || "{}"); } catch { return; }
+  const patient = panel.dataset.patient || "";
+  const buttons = [...panel.querySelectorAll(".graph-pro-kpi-button")];
+  const setRadarFocus = (key = "", fixed = false) => {
+    const radar = document.querySelector(".radar-pro2-wrap");
+    if (!radar) return;
+    radar.classList.toggle("has-kpi-focus", Boolean(key && ["TS","TI","Core","Plyo","Mov.","Act."].includes(key)));
+    radar.dataset.focusCategory = key;
+    radar.querySelectorAll("[data-category]").forEach(node => node.classList.toggle("is-kpi-focused", node.dataset.category === key));
+    radar.classList.toggle("is-kpi-fixed", fixed);
+  };
+  const render = (key, fixed = true) => {
+    const payload = graphProInspectorPayload(key, data.categories || [], data.currentStats || {}, data.previousStats || {}, data.currentLabel, data.previousLabel);
+    inspector.hidden = false;
+    inspector.className = `graph-pro-kpi-inspector tone-${payload.tone}`;
+    document.getElementById("graphProInspectorTitle").textContent = payload.title;
+    document.getElementById("graphProInspectorPrevious").textContent = payload.previous;
+    document.getElementById("graphProInspectorCurrent").textContent = payload.current;
+    document.getElementById("graphProInspectorDelta").textContent = payload.delta;
+    document.getElementById("graphProInspectorShare").textContent = payload.share;
+    document.getElementById("graphProInspectorText").textContent = payload.text;
+    document.getElementById("graphProInspectorRecommendation").textContent = payload.recommendation;
+    buttons.forEach(button => button.classList.toggle("is-selected", button.dataset.kpi === key));
+    setRadarFocus(key, fixed);
+    if (fixed) graphProKpiFocusByAthlete.set(patient, key);
+  };
+  const clear = () => {
+    inspector.hidden = true;
+    buttons.forEach(button => button.classList.remove("is-selected"));
+    setRadarFocus("", false);
+    graphProKpiFocusByAthlete.delete(patient);
+  };
+  buttons.forEach(button => {
+    button.addEventListener("mouseenter", () => { if (!graphProKpiFocusByAthlete.get(patient)) setRadarFocus(button.dataset.kpi, false); });
+    button.addEventListener("mouseleave", () => { const fixed = graphProKpiFocusByAthlete.get(patient); setRadarFocus(fixed || "", Boolean(fixed)); });
+    button.addEventListener("focus", () => { if (!graphProKpiFocusByAthlete.get(patient)) setRadarFocus(button.dataset.kpi, false); });
+    button.addEventListener("click", () => render(button.dataset.kpi, true));
+  });
+  document.getElementById("graphProInspectorClose")?.addEventListener("click", clear);
+  const initial = graphProKpiFocusByAthlete.get(patient) || data.initialMetric;
+  if (initial) render(initial, true);
+}
 
 
 function getMicroNumberForSessionAdmin(session) {
@@ -5318,6 +7559,730 @@ function renderMicroOptions(micros, selected = "") {
   return micros.map(micro => `<option value="${micro}" ${Number(selected) === micro ? "selected" : ""}>M${micro}</option>`).join("");
 }
 
+function graphProCompareMetricMeta(key = "") {
+  const meta = {
+    sessions: { label: "Sesiones", unit: "sesiones", decimals: 0 },
+    series: { label: "Series", unit: "series", decimals: 0 },
+    exercises: { label: "Ejercicios", unit: "ejercicios", decimals: 0 },
+    tonnage: { label: "Tonelaje total", unit: "kg", decimals: 0 },
+    ts: { label: "TS", unit: "series", decimals: 0 },
+    ti: { label: "TI", unit: "series", decimals: 0 },
+    core: { label: "Core", unit: "series", decimals: 0 },
+    plyo: { label: "Plyo", unit: "series", decimals: 0 },
+    mov: { label: "Movilidad", unit: "series", decimals: 0 },
+    act: { label: "Activación", unit: "series", decimals: 0 }
+  };
+  return meta[key] || { label: key, unit: "", decimals: 0 };
+}
+
+function graphProCompareTrend(diff = 0, percent = 0) {
+  const absolutePercent = Math.abs(Number(percent) || 0);
+  if (diff === 0 || absolutePercent < 5) {
+    return { tone: "stable", icon: "=", label: "Estable", message: "Nivel muy similar al micro base" };
+  }
+  if (diff > 0) {
+    return {
+      tone: "positive",
+      icon: "▲",
+      label: absolutePercent >= 25 ? "Aumento notable" : "Aumento",
+      message: absolutePercent >= 25 ? "Carga claramente superior al micro base" : "Carga superior al micro base"
+    };
+  }
+  return {
+    tone: "negative",
+    icon: "▼",
+    label: absolutePercent >= 25 ? "Descenso notable" : "Descenso",
+    message: absolutePercent >= 25 ? "Carga claramente inferior al micro base" : "Carga inferior al micro base"
+  };
+}
+
+
+/**
+ * GRAFICA PRO v3.0.3 · Training Pattern Detection
+ * Motor determinista de interpretación deportiva.
+ *
+ * No modifica datos ni utiliza servicios externos. Recibe dos resúmenes de
+ * microciclo y devuelve conclusiones explicables listas para la futura capa UI.
+ */
+function graphProInsightPercent(current = 0, previous = 0) {
+  const a = Number(previous) || 0;
+  const b = Number(current) || 0;
+  if (a === 0) return b === 0 ? 0 : 100;
+  return Math.round(((b - a) / Math.abs(a)) * 100);
+}
+
+function graphProInsightCategoryMeta() {
+  return [
+    { key: "ts", label: "Tren superior", short: "TS" },
+    { key: "ti", label: "Tren inferior", short: "TI" },
+    { key: "core", label: "Core", short: "Core" },
+    { key: "plyo", label: "Pliometría", short: "Plyo" },
+    { key: "mov", label: "Movilidad", short: "Mov." },
+    { key: "act", label: "Activación", short: "Act." }
+  ];
+}
+
+function graphProInsightBalance(categoryValues = []) {
+  const active = categoryValues.filter(item => item.current > 0);
+  if (!active.length) return { score: 0, level: "Sin datos", tone: "info", concentration: 0 };
+  const total = active.reduce((sum, item) => sum + item.current, 0);
+  const strongest = Math.max(...active.map(item => item.current), 0);
+  const concentration = total ? Math.round((strongest / total) * 100) : 0;
+  const mean = total / active.length;
+  const variance = active.reduce((sum, item) => sum + Math.pow(item.current - mean, 2), 0) / active.length;
+  const cv = mean ? Math.sqrt(variance) / mean : 0;
+  const score = Math.max(0, Math.min(100, Math.round(100 - cv * 55)));
+  if (score >= 78) return { score, level: "Equilibrio alto", tone: "positive", concentration };
+  if (score >= 55) return { score, level: "Equilibrio moderado", tone: "attention", concentration };
+  return { score, level: "Distribución concentrada", tone: "review", concentration };
+}
+
+function graphProDetectTrainingPattern(stats = {}, comparison = {}) {
+  const meta = graphProInsightCategoryMeta();
+  const values = Object.fromEntries(meta.map(item => [item.key, Math.max(0, Number(stats[item.key]) || 0)]));
+  const total = meta.reduce((sum, item) => sum + values[item.key], 0);
+  const share = key => total ? Math.round((values[key] / total) * 100) : 0;
+  const combinedShare = keys => total ? Math.round((keys.reduce((sum, key) => sum + values[key], 0) / total) * 100) : 0;
+  const ordered = meta.map(item => ({ ...item, value: values[item.key], share: share(item.key) })).sort((a, b) => b.value - a.value);
+  const dominant = ordered[0] || null;
+  const sessions = Math.max(0, Number(stats.sessions) || 0);
+  const loadPercent = Number(comparison.loadPercent) || 0;
+  const comparable = Boolean(comparison.comparable);
+  const increases = Number(comparison.increases) || 0;
+  const decreases = Number(comparison.decreases) || 0;
+  const balanceScore = Number(comparison.balanceScore) || graphProInsightBalance(meta.map(item => ({ current: values[item.key] }))).score;
+  const recoveryShare = combinedShare(["mov", "act"]);
+  const strengthShare = combinedShare(["ts", "ti", "core"]);
+  const competitiveShare = combinedShare(["plyo", "act"]);
+
+  let result;
+  if (!total) {
+    result = { id: "insufficient", label: "Patrón sin definir", tone: "info", confidence: 20, reason: "No hay series categorizadas suficientes." };
+  } else if (comparable && loadPercent <= -18 && decreases >= 3) {
+    result = { id: "deload", label: "Descarga", tone: "attention", confidence: 88, reason: `Reducción global del ${Math.abs(loadPercent)}% y descenso en ${decreases} categorías.` };
+  } else if (recoveryShare >= 48 && competitiveShare <= 35) {
+    result = { id: "regenerative", label: "Regenerativo", tone: "positive", confidence: Math.min(96, 62 + recoveryShare / 2), reason: `Movilidad y activación concentran el ${recoveryShare}% del trabajo.` };
+  } else if (comparable && loadPercent >= 18 && increases >= 4) {
+    result = { id: "accumulation", label: "Acumulación", tone: "positive", confidence: 90, reason: `Aumento global del ${loadPercent}% con progresión en ${increases} categorías.` };
+  } else if (competitiveShare >= 36 && sessions > 0 && sessions <= 4 && share("plyo") >= 14) {
+    result = { id: "competitive", label: "Competitivo", tone: "review", confidence: 78, reason: `Pliometría y activación representan el ${competitiveShare}% con una estructura compacta de ${sessions} sesiones.` };
+  } else if (strengthShare >= 62 && balanceScore >= 50 && (share("ts") >= 15 && share("ti") >= 15)) {
+    result = { id: "transformation", label: "Transformación", tone: "info", confidence: 80, reason: `Fuerza y core reúnen el ${strengthShare}% con participación de tren superior e inferior.` };
+  } else if (dominant && dominant.share >= 45) {
+    result = { id: "specific", label: `Específico · ${dominant.short}`, tone: dominant.share >= 60 ? "attention" : "info", confidence: Math.min(94, 55 + dominant.share / 2), reason: `${dominant.label} concentra el ${dominant.share}% del trabajo categorizado.` };
+  } else if (balanceScore >= 76) {
+    result = { id: "balanced", label: "Multilateral equilibrado", tone: "positive", confidence: 82, reason: `Distribución variada con un índice de equilibrio del ${balanceScore}%.` };
+  } else {
+    result = { id: "mixed", label: "Mixto", tone: "stable", confidence: 65, reason: "Combina estímulos sin una orientación única claramente dominante." };
+  }
+
+  return Object.freeze({
+    ...result,
+    confidence: Math.round(result.confidence),
+    metrics: Object.freeze({ total, sessions, recoveryShare, strengthShare, competitiveShare, balanceScore }),
+    dominant: dominant ? Object.freeze(dominant) : null
+  });
+}
+
+function graphProBuildAutomaticInsights(currentStats = {}, previousStats = {}, context = {}) {
+  const currentMicro = Number(currentStats.micro) || Number(context.currentMicro) || 0;
+  const previousMicro = Number(previousStats.micro) || Number(context.previousMicro) || 0;
+  const categories = graphProInsightCategoryMeta().map(meta => {
+    const current = Number(currentStats[meta.key]) || 0;
+    const previous = Number(previousStats[meta.key]) || 0;
+    return {
+      ...meta,
+      current,
+      previous,
+      delta: current - previous,
+      percent: graphProInsightPercent(current, previous)
+    };
+  });
+
+  const currentTonnage = Number(currentStats.tonnage) || 0;
+  const previousTonnage = Number(previousStats.tonnage) || 0;
+  const currentSeries = Number(currentStats.series) || 0;
+  const previousSeries = Number(previousStats.series) || 0;
+  const currentHasActivity = currentSeries > 0 || Number(currentStats.sessions) > 0;
+  const previousHasActivity = previousSeries > 0 || Number(previousStats.sessions) > 0;
+  const tonnageComparable = currentTonnage > 0 && previousTonnage > 0;
+  const tonnageIncomplete = (currentTonnage === 0 && currentHasActivity && previousTonnage > 0) || (previousTonnage === 0 && previousHasActivity && currentTonnage > 0);
+  const usesTonnage = tonnageComparable;
+  const loadCurrent = usesTonnage ? currentTonnage : currentSeries;
+  const loadPrevious = usesTonnage ? previousTonnage : previousSeries;
+  const loadDelta = loadCurrent - loadPrevious;
+  const loadPercent = graphProInsightPercent(loadCurrent, loadPrevious);
+  const loadUnit = usesTonnage ? "kg" : "series";
+  const loadMetricLabel = usesTonnage ? "tonelaje" : "número de series";
+  const comparable = Boolean(previousMicro && currentMicro && previousMicro !== currentMicro);
+
+  const orderedCurrent = [...categories].sort((a, b) => b.current - a.current);
+  const dominant = orderedCurrent[0] || null;
+  const activeCurrent = categories.filter(item => item.current > 0);
+  const weakest = [...activeCurrent].sort((a, b) => a.current - b.current)[0] || null;
+  const strongestGrowth = [...categories].sort((a, b) => b.delta - a.delta)[0] || null;
+  const strongestDrop = [...categories].sort((a, b) => a.delta - b.delta)[0] || null;
+  const balance = graphProInsightBalance(categories);
+  const totalCategories = categories.reduce((sum, item) => sum + item.current, 0);
+  const dominantShare = dominant && totalCategories ? Math.round((dominant.current / totalCategories) * 100) : 0;
+  const weakShare = weakest && totalCategories ? Math.round((weakest.current / totalCategories) * 100) : 0;
+  const increases = categories.filter(item => item.delta > 0).length;
+  const decreases = categories.filter(item => item.delta < 0).length;
+  const stable = categories.length - increases - decreases;
+  const activeCount = activeCurrent.length;
+  const allRise = activeCount >= 3 && activeCurrent.every(item => item.delta > 0);
+  const allFall = activeCount >= 3 && activeCurrent.every(item => item.delta < 0);
+  const largeShift = Math.max(...categories.map(item => Math.abs(item.percent || 0)), 0);
+  const totalAbsoluteSeriesShift = categories.reduce((sum, item) => sum + Math.abs(item.delta), 0);
+  const positiveSeriesShift = categories.reduce((sum, item) => sum + Math.max(0, item.delta), 0);
+  const negativeSeriesShift = categories.reduce((sum, item) => sum + Math.abs(Math.min(0, item.delta)), 0);
+  const stableCategories = categories
+    .filter(item => Math.abs(item.delta) <= Math.max(2, Math.round(Math.max(item.current, item.previous) * 0.08)))
+    .sort((a, b) => Math.max(b.current, b.previous) - Math.max(a.current, a.previous));
+  const mainIncrease = categories.filter(item => item.delta > 0).sort((a, b) => b.delta - a.delta)[0] || null;
+  const mainReduction = categories.filter(item => item.delta < 0).sort((a, b) => a.delta - b.delta)[0] || null;
+  const increaseContribution = mainIncrease && positiveSeriesShift ? Math.round((mainIncrease.delta / positiveSeriesShift) * 100) : 0;
+  const reductionContribution = mainReduction && negativeSeriesShift ? Math.round((Math.abs(mainReduction.delta) / negativeSeriesShift) * 100) : 0;
+  const previousDominant = [...categories].sort((a, b) => b.previous - a.previous)[0] || null;
+  const orientationChanged = Boolean(previousDominant && dominant && previousDominant.previous > 0 && dominant.current > 0 && previousDominant.key !== dominant.key);
+  const basePattern = graphProDetectTrainingPattern(previousStats, { balanceScore: graphProInsightBalance(categories.map(item => ({ current: item.previous }))).score });
+  const comparedPattern = graphProDetectTrainingPattern(currentStats, {
+    comparable,
+    loadPercent,
+    increases,
+    decreases,
+    balanceScore: balance.score
+  });
+  const patternChanged = basePattern.id !== comparedPattern.id;
+  const patternTransition = patternChanged
+    ? `La orientación evoluciona de ${basePattern.label.toLowerCase()} a ${comparedPattern.label.toLowerCase()}.`
+    : `Ambos micros mantienen un patrón ${comparedPattern.label.toLowerCase()}.`;
+
+  let microType = { id: "transition", label: "Micro de transición", tone: "stable" };
+  if (!comparable) microType = { id: "insufficient", label: "Micro pendiente de comparación", tone: "info" };
+  else if (tonnageIncomplete) microType = { id: "data-review", label: "Datos de tonelaje incompletos", tone: "info" };
+  else if (loadPercent <= -18) microType = { id: "deload", label: "Micro de descarga", tone: "attention" };
+  else if (loadPercent >= 18 && allRise) microType = { id: "accumulation", label: "Micro de acumulación", tone: "positive" };
+  else if (dominantShare >= 45) microType = { id: "specific", label: `Micro específico de ${dominant ? dominant.label.toLowerCase() : "una categoría"}`, tone: dominantShare >= 60 ? "attention" : "info" };
+  else if (Math.abs(loadPercent) < 8 && balance.score >= 75) microType = { id: "balanced", label: "Micro equilibrado", tone: "positive" };
+  else if (loadPercent >= 8) microType = { id: "progression", label: "Micro de progresión", tone: "positive" };
+  else if (loadPercent <= -8) microType = { id: "reduction", label: "Micro de reducción", tone: "attention" };
+
+  let evolution;
+  if (!comparable) {
+    evolution = { id: "evolution", tone: "info", title: "Evolución global", text: "Se necesita un micro anterior distinto para interpretar la evolución de la carga." };
+  } else if (tonnageIncomplete) {
+    evolution = { id: "evolution", tone: "info", title: "Registro de carga externa", text: `Uno de los micros contiene sesiones o series, pero no tonelaje computable. La tendencia se calcula temporalmente con el número de series (${loadPercent > 0 ? "+" : ""}${loadPercent}% frente a M${previousMicro}).` };
+  } else if (Math.abs(loadPercent) < 5) {
+    evolution = { id: "evolution", tone: "stable", title: "Evolución global", text: `${loadMetricLabel.charAt(0).toUpperCase() + loadMetricLabel.slice(1)} estable frente a M${previousMicro} (${Math.round(loadCurrent)} ${loadUnit}).` };
+  } else if (loadDelta > 0) {
+    const adjective = Math.abs(loadPercent) >= 30 ? "Incremento muy notable" : Math.abs(loadPercent) >= 15 ? "Incremento notable" : "Incremento moderado";
+    evolution = { id: "evolution", tone: "positive", title: "Evolución global", text: `${adjective} del ${loadMetricLabel}: +${Math.abs(loadPercent)}% (+${Math.round(loadDelta)} ${loadUnit}) frente a M${previousMicro}.` };
+  } else {
+    const adjective = Math.abs(loadPercent) >= 30 ? "Reducción muy marcada" : Math.abs(loadPercent) >= 15 ? "Reducción notable" : "Reducción moderada";
+    evolution = { id: "evolution", tone: "attention", title: "Evolución global", text: `${adjective} del ${loadMetricLabel}: -${Math.abs(loadPercent)}% (${Math.round(loadDelta)} ${loadUnit}) frente a M${previousMicro}.` };
+  }
+
+  const dominantInsight = dominant && dominant.current > 0
+    ? {
+        id: "dominant",
+        tone: dominantShare >= 60 ? "attention" : "info",
+        title: "Mayor estímulo",
+        text: `${dominant.label} concentra el ${dominantShare}% del trabajo categorizado${dominant.delta ? ` (${dominant.delta > 0 ? "+" : ""}${dominant.delta} series frente a M${previousMicro})` : ""}.`
+      }
+    : { id: "dominant", tone: "info", title: "Mayor estímulo", text: "No hay series categorizadas suficientes para identificar el estímulo dominante." };
+
+  let attention;
+  if (!weakest) {
+    attention = { id: "attention", tone: "info", title: "Punto de atención", text: "No hay datos suficientes para detectar áreas infrarepresentadas." };
+  } else if (dominantShare >= 60) {
+    attention = { id: "attention", tone: "review", title: "Punto de atención", text: `${dominant.label} concentra el ${dominantShare}% del trabajo; conviene revisar si esta especialización es intencionada.` };
+  } else if (strongestDrop && strongestDrop.delta < 0 && Math.abs(strongestDrop.percent) >= 25) {
+    attention = { id: "attention", tone: "attention", title: "Punto de atención", text: `${strongestDrop.label} registra el descenso más acusado (-${Math.abs(strongestDrop.percent)}%) frente a M${previousMicro}.` };
+  } else if (weakShare <= 8 && activeCount >= 4) {
+    attention = { id: "attention", tone: "attention", title: "Punto de atención", text: `${weakest.label} representa solo el ${weakShare}% del trabajo categorizado.` };
+  } else {
+    attention = { id: "attention", tone: "positive", title: "Punto de atención", text: "No se detectan desequilibrios relevantes ni descensos críticos entre categorías." };
+  }
+
+  let distributionText;
+  if (allRise) distributionText = `Incremento homogéneo: aumentan las ${increases} categorías activas del micro.`;
+  else if (allFall) distributionText = `Reducción homogénea: descienden las ${decreases} categorías activas del micro.`;
+  else if (balance.score >= 78) distributionText = `Reparto equilibrado de estímulos (${balance.score}% de equilibrio).`;
+  else if (balance.score >= 55) distributionText = `Reparto moderadamente concentrado; la categoría principal reúne el ${dominantShare}% del trabajo.`;
+  else distributionText = `Distribución concentrada: la categoría principal reúne el ${dominantShare}% del trabajo.`;
+  const distribution = { id: "distribution", tone: balance.tone, title: "Distribución", text: distributionText };
+
+  const impactRaw = Math.round(
+    Math.min(Math.abs(loadPercent), 60) * 0.9 +
+    Math.min(largeShift, 100) * 0.18 +
+    Math.max(0, dominantShare - 35) * 0.65 +
+    Math.max(0, 65 - balance.score) * 0.35
+  );
+  const impactScore = Math.max(0, Math.min(100, impactRaw));
+  const impact = impactScore >= 75
+    ? { level: "Muy alto", tone: "review", score: impactScore }
+    : impactScore >= 50
+      ? { level: "Alto", tone: "attention", score: impactScore }
+      : impactScore >= 25
+        ? { level: "Moderado", tone: "stable", score: impactScore }
+        : { level: "Bajo", tone: "positive", score: impactScore };
+
+  let priority;
+  if (!comparable) priority = { tone: "info", label: "Comparación pendiente", text: "Selecciona o registra un micro anterior para activar la lectura contextual." };
+  else if (tonnageIncomplete) priority = { tone: "info", label: "Tonelaje no registrado", text: `Hay sesiones o series en ambos micros, pero uno de ellos no presenta carga externa computable. Revisa los kg antes de interpretar el cambio como una descarga completa.` };
+  else if (dominantShare >= 60) priority = { tone: "review", label: "Concentración elevada", text: `${dominant.label} reúne el ${dominantShare}% del trabajo categorizado.` };
+  else if (loadPercent <= -18) priority = { tone: "attention", label: usesTonnage ? "Reducción del tonelaje" : "Reducción de series", text: `El ${loadMetricLabel} desciende un ${Math.abs(loadPercent)}% frente a M${previousMicro}.` };
+  else if (loadPercent >= 18) priority = { tone: "positive", label: usesTonnage ? "Progresión de tonelaje" : "Progresión de series", text: `El ${loadMetricLabel} aumenta un ${Math.abs(loadPercent)}% frente a M${previousMicro}.` };
+  else if (balance.score >= 78) priority = { tone: "positive", label: "Equilibrio consolidado", text: "El micro mantiene un reparto variado y sin concentraciones relevantes." };
+  else priority = { tone: "stable", label: "Cambio controlado", text: "La estructura del micro evoluciona sin alteraciones críticas." };
+
+  let causalSummary = "No hay datos suficientes para explicar el origen de las diferencias.";
+  if (comparable) {
+    const causes = [];
+    if (mainIncrease && mainIncrease.delta > 0) {
+      causes.push(`${mainIncrease.label} aporta el principal incremento (+${graphProFormatNumber(mainIncrease.delta)} series${increaseContribution >= 35 ? `; ${increaseContribution}% del aumento categorizado` : ""})`);
+    }
+    if (mainReduction && mainReduction.delta < 0) {
+      causes.push(`${mainReduction.label} concentra la mayor reducción (${mainReduction.delta} series${reductionContribution >= 35 ? `; ${reductionContribution}% del descenso categorizado` : ""})`);
+    }
+    if (orientationChanged) {
+      causes.push(`el foco principal cambia de ${previousDominant.label.toLowerCase()} a ${dominant.label.toLowerCase()}`);
+    } else if (dominant && dominant.current > 0 && previousDominant && previousDominant.previous > 0) {
+      causes.push(`${dominant.label} se mantiene como orientación dominante`);
+    }
+    if (stableCategories.length) {
+      const names = stableCategories.slice(0, 2).map(item => item.label).join(" y ");
+      causes.push(`${names} ${stableCategories.length === 1 ? "permanece" : "permanecen"} estable${stableCategories.length === 1 ? "" : "s"}`);
+    }
+    if (causes.length) causalSummary = causes.join("; ") + ".";
+  }
+
+  const drivers = {
+    mainIncrease: mainIncrease ? { ...mainIncrease, contribution: increaseContribution } : null,
+    mainReduction: mainReduction ? { ...mainReduction, contribution: reductionContribution } : null,
+    stable: stableCategories.slice(0, 3).map(item => ({ ...item })),
+    orientationChanged,
+    previousDominant: previousDominant ? { ...previousDominant } : null,
+    currentDominant: dominant ? { ...dominant } : null,
+    totalAbsoluteSeriesShift,
+    explanation: causalSummary
+  };
+
+  let conclusionText = "Micro pendiente de datos suficientes para generar una lectura técnica representativa.";
+  if (comparable && dominant && dominant.current > 0) {
+    if (microType.id === "data-review") {
+      conclusionText = "La comparación muestra actividad registrada, pero el tonelaje no es homogéneo entre micros. Conviene validar los kg antes de clasificar la semana como descarga o progresión.";
+    } else if (microType.id === "deload") {
+      conclusionText = balance.score >= 70
+        ? "Micro de descarga con reducción global y conservación de un reparto equilibrado de estímulos."
+        : `Micro de descarga con una orientación más marcada hacia ${dominant.label.toLowerCase()}.`;
+    } else if (microType.id === "accumulation") {
+      conclusionText = `Micro de acumulación con progresión homogénea y predominio de ${dominant.label.toLowerCase()}.`;
+    } else if (microType.id === "specific") {
+      conclusionText = `Micro específico orientado a ${dominant.label.toLowerCase()}, con el resto de estímulos en función complementaria.`;
+    } else if (microType.id === "balanced") {
+      conclusionText = "Micro equilibrado, estable en carga y con buena variedad de estímulos.";
+    } else if (microType.id === "progression") {
+      conclusionText = balance.score >= 70
+        ? "Micro de progresión con incremento de carga y distribución equilibrada."
+        : `Micro de progresión con mayor orientación hacia ${dominant.label.toLowerCase()}.`;
+    } else if (microType.id === "reduction") {
+      conclusionText = `Micro de reducción controlada, manteniendo ${dominant.label.toLowerCase()} como estímulo principal.`;
+    } else {
+      conclusionText = balance.score >= 70
+        ? "Micro de transición con carga estable y distribución equilibrada."
+        : `Micro de transición con predominio de ${dominant.label.toLowerCase()}.`;
+    }
+  }
+  if (comparable && causalSummary) {
+    const causalLead = causalSummary.charAt(0).toUpperCase() + causalSummary.slice(1);
+    conclusionText = `${conclusionText} ${causalLead}`;
+  }
+  if (comparable && comparedPattern.id !== "insufficient") {
+    conclusionText = `${conclusionText} ${patternTransition}`;
+  }
+  const conclusion = { id: "conclusion", tone: comparedPattern.tone || microType.tone, title: "Lectura técnica", text: conclusionText };
+
+  const dataPoints = Number(currentStats.sessions || 0) + Number(previousStats.sessions || 0);
+  const activeCategoryCount = categories.filter(item => item.current > 0 || item.previous > 0).length;
+  const confidenceScore = Math.max(0, Math.min(100, Math.round((comparable ? 35 : 0) + Math.min(dataPoints, 6) * 7 + activeCategoryCount * 4)));
+  const confidence = confidenceScore >= 90 ? "Muy alta" : confidenceScore >= 75 ? "Alta" : confidenceScore >= 50 ? "Media" : "Baja";
+
+  return Object.freeze({
+    version: "3.1.0",
+    comparable,
+    currentMicro,
+    previousMicro,
+    load: Object.freeze({ current: loadCurrent, previous: loadPrevious, delta: loadDelta, percent: loadPercent, unit: loadUnit, metric: loadMetricLabel, tonnageIncomplete }),
+    categories: Object.freeze(categories.map(item => Object.freeze(item))),
+    balance: Object.freeze(balance),
+    trendSummary: Object.freeze({ increases, decreases, stable }),
+    confidence: Object.freeze({ score: confidenceScore, level: confidence }),
+    impact: Object.freeze(impact),
+    priority: Object.freeze(priority),
+    microType: Object.freeze(microType),
+    patterns: Object.freeze({
+      base: basePattern,
+      compared: comparedPattern,
+      changed: patternChanged,
+      transition: patternTransition
+    }),
+    drivers: Object.freeze({
+      ...drivers,
+      mainIncrease: drivers.mainIncrease ? Object.freeze(drivers.mainIncrease) : null,
+      mainReduction: drivers.mainReduction ? Object.freeze(drivers.mainReduction) : null,
+      stable: Object.freeze(drivers.stable.map(item => Object.freeze(item))),
+      previousDominant: drivers.previousDominant ? Object.freeze(drivers.previousDominant) : null,
+      currentDominant: drivers.currentDominant ? Object.freeze(drivers.currentDominant) : null
+    }),
+    insights: Object.freeze([evolution, dominantInsight, attention, distribution, conclusion].map(item => Object.freeze(item)))
+  });
+}
+
+function graphProInsightIcon(id = "") {
+  const icons = {
+    evolution: "↗",
+    dominant: "◆",
+    attention: "!",
+    distribution: "◎",
+    conclusion: "🎯"
+  };
+  return icons[id] || "•";
+}
+
+function graphProInsightToneLabel(tone = "info") {
+  const labels = {
+    positive: "Situación favorable",
+    stable: "Situación estable",
+    attention: "Aspecto a vigilar",
+    review: "Revisión recomendada",
+    info: "Información contextual"
+  };
+  return labels[tone] || labels.info;
+}
+
+function renderGraphProComparisonDrivers(report = {}) {
+  const drivers = report.drivers || {};
+  const increase = drivers.mainIncrease;
+  const reduction = drivers.mainReduction;
+  const stable = Array.isArray(drivers.stable) ? drivers.stable : [];
+  const orientation = drivers.orientationChanged && drivers.previousDominant && drivers.currentDominant
+    ? `${drivers.previousDominant.label} → ${drivers.currentDominant.label}`
+    : drivers.currentDominant && drivers.currentDominant.current > 0
+      ? `${drivers.currentDominant.label} se mantiene`
+      : "Sin orientación definida";
+
+  return `
+    <section class="graph-pro-change-drivers" aria-labelledby="graphProDriversTitle">
+      <div class="graph-pro-change-drivers-head">
+        <div>
+          <p class="eyebrow">Comparative Intelligence · v3.0.3</p>
+          <h4 id="graphProDriversTitle">Qué explica el cambio</h4>
+        </div>
+        <p>${drivers.explanation || "Análisis causal pendiente de datos suficientes."}</p>
+      </div>
+      <div class="graph-pro-driver-grid">
+        <article class="driver-rise">
+          <span>↑ Principal impulsor</span>
+          <strong>${increase ? increase.label : "Sin incremento"}</strong>
+          <small>${increase ? `+${increase.delta} series${increase.contribution >= 20 ? ` · ${increase.contribution}% del aumento` : ""}` : "No aumentan categorías"}</small>
+        </article>
+        <article class="driver-drop">
+          <span>↓ Principal reducción</span>
+          <strong>${reduction ? reduction.label : "Sin reducción"}</strong>
+          <small>${reduction ? `${reduction.delta} series${reduction.contribution >= 20 ? ` · ${reduction.contribution}% del descenso` : ""}` : "No disminuyen categorías"}</small>
+        </article>
+        <article class="driver-orientation">
+          <span>◆ Orientación</span>
+          <strong>${orientation}</strong>
+          <small>${drivers.orientationChanged ? "Cambio del estímulo dominante" : "Continuidad del foco principal"}</small>
+        </article>
+        <article class="driver-stable">
+          <span>≈ Estructura conservada</span>
+          <strong>${stable.length ? stable.map(item => item.short || item.label).join(" · ") : "Sin categorías estables"}</strong>
+          <small>${stable.length ? "Variación mínima entre micros" : "La estructura cambia de forma general"}</small>
+        </article>
+      </div>
+    </section>`;
+}
+
+function renderGraphProTrainingPatterns(report = {}) {
+  const patterns = report.patterns || {};
+  const base = patterns.base || {};
+  const compared = patterns.compared || {};
+  return `
+    <section class="graph-pro-patterns" aria-labelledby="graphProPatternsTitle">
+      <div class="graph-pro-patterns-head">
+        <div>
+          <p class="eyebrow">Pattern Intelligence · v3.0.3</p>
+          <h4 id="graphProPatternsTitle">Patrones de entrenamiento detectados</h4>
+        </div>
+        <span class="graph-pro-pattern-transition ${patterns.changed ? "is-change" : "is-stable"}">${patterns.transition || "Patrón pendiente de datos."}</span>
+      </div>
+      <div class="graph-pro-pattern-grid">
+        <article class="tone-${base.tone || "info"}">
+          <small>Micro base · M${report.previousMicro || "—"}</small>
+          <strong>${base.label || "Sin definir"}</strong>
+          <p>${base.reason || "No hay datos suficientes."}</p>
+          <span>Confianza ${base.confidence || 0}%</span>
+        </article>
+        <div class="graph-pro-pattern-arrow" aria-hidden="true">→</div>
+        <article class="tone-${compared.tone || "info"}">
+          <small>Micro comparado · M${report.currentMicro || "—"}</small>
+          <strong>${compared.label || "Sin definir"}</strong>
+          <p>${compared.reason || "No hay datos suficientes."}</p>
+          <span>Confianza ${compared.confidence || 0}%</span>
+        </article>
+      </div>
+      <p class="graph-pro-pattern-method">Clasificación orientativa mediante volumen, distribución por categorías, número de sesiones y cambio respecto al micro base.</p>
+    </section>`;
+}
+
+
+/**
+ * GRAFICA PRO v3.2 · Predictive Intelligence
+ * Motor determinista y explicable. Proyecta la dirección estructural observada,
+ * expresa su confianza y evita presentar estimaciones como certezas.
+ */
+function coachIntelligenceLinearTrend(points = []) {
+  const values = points.map(Number).filter(Number.isFinite);
+  const n = values.length;
+  if (n < 3) return { direction:"insufficient", slope:0, strength:0, r2:0, label:"Histórico insuficiente" };
+  const meanX=(n-1)/2, meanY=values.reduce((a,b)=>a+b,0)/n;
+  let num=0, den=0;
+  values.forEach((y,x)=>{ num+=(x-meanX)*(y-meanY); den+=Math.pow(x-meanX,2); });
+  const slope=den?num/den:0;
+  const predicted=values.map((_,x)=>meanY+slope*(x-meanX));
+  const ssTot=values.reduce((sum,y)=>sum+Math.pow(y-meanY,2),0);
+  const ssRes=values.reduce((sum,y,i)=>sum+Math.pow(y-predicted[i],2),0);
+  const r2=ssTot?Math.max(0,Math.min(1,1-ssRes/ssTot)):1;
+  const normalized=slope/Math.max(1,meanY);
+  const strength=Math.min(100,Math.round(Math.abs(normalized)*500));
+  if(Math.abs(normalized)<.035) return {direction:"stable",slope,strength,r2,label:"Tendencia estable"};
+  return normalized>0?{direction:"up",slope,strength,r2,label:"Tendencia creciente"}:{direction:"down",slope,strength,r2,label:"Tendencia descendente"};
+}
+function coachIntelligenceScoreLabel(score=0){
+  if(score>=88)return{label:"Coherencia excelente",tone:"positive"};
+  if(score>=74)return{label:"Coherencia alta",tone:"positive"};
+  if(score>=58)return{label:"Coherencia moderada",tone:"stable"};
+  if(score>=42)return{label:"Coherencia irregular",tone:"attention"};
+  return{label:"Revisión prioritaria",tone:"review"};
+}
+function predictiveConfidence(trend={}, points=[]){
+  const n=points.length, active=points.filter(v=>Number(v)>0).length;
+  let score=Math.round((Math.min(8,n)/8)*42+(trend.r2||0)*43+(active/Math.max(1,n))*15);
+  if(n<4)score=Math.min(score,44);
+  score=Math.max(0,Math.min(100,score));
+  const level=score>=76?"Alta":score>=52?"Media":score>=30?"Baja":"Insuficiente";
+  return{score,level,tone:score>=76?"positive":score>=52?"stable":"attention"};
+}
+function predictivePriority(item={}){
+  const magnitude=Math.abs(Number(item.projectedChangePercent)||0);
+  const confidence=Number(item.confidence?.score)||0;
+  const score=Math.round(magnitude*.65+confidence*.35+(item.current===0?12:0));
+  if(score>=62)return{level:"Revisar",tone:"review",score};
+  if(score>=38)return{level:"Vigilar",tone:"attention",score};
+  return{level:"Correcto",tone:"positive",score};
+}
+function buildPredictiveIntelligenceEngine(currentStats={}, context={}){
+  const patientNickname=String(context.patientNickname||"");
+  const currentMicro=Number(currentStats.micro||context.currentMicro)||0;
+  const micros=getAvailableMicrosForGraphPro(patientNickname).filter(m=>m<=currentMicro).slice(-8);
+  const history=micros.map(micro=>getMicroStatsForGraphPro(patientNickname,micro));
+  const categories=graphProInsightCategoryMeta();
+  const projections=categories.map(meta=>{
+    const points=history.map(stats=>Number(stats[meta.key])||0);
+    const trend=coachIntelligenceLinearTrend(points);
+    const current=points.at(-1)||0;
+    const projected=Math.max(0,Math.round((current+trend.slope)*10)/10);
+    const projectedChangePercent=current?Math.round((projected-current)/current*100):(projected>0?100:0);
+    const confidence=predictiveConfidence(trend,points);
+    const base={...meta,points,current,projected,projectedChangePercent,...trend,confidence};
+    return{...base,priority:predictivePriority(base)};
+  });
+  const totals=history.map(stats=>categories.reduce((sum,m)=>sum+(Number(stats[m.key])||0),0));
+  const changes=totals.slice(1).map((v,i)=>Math.abs(graphProInsightPercent(v,totals[i])));
+  const avgChange=changes.length?changes.reduce((a,b)=>a+b,0)/changes.length:0;
+  const variance=changes.length?changes.reduce((s,v)=>s+Math.pow(v-avgChange,2),0)/changes.length:0;
+  const stability=Math.max(0,Math.min(100,Math.round(100-avgChange*.8-Math.sqrt(variance)*.9)));
+  const stabilityMeta=stability>=78?{label:"Proceso estable",tone:"positive"}:stability>=55?{label:"Estabilidad moderada",tone:"stable"}:{label:"Proceso variable",tone:"attention"};
+  const ranked=[...projections].sort((a,b)=>b.priority.score-a.priority.score);
+  const focus=ranked[0];
+  const narrative=micros.length<4
+    ? "El histórico todavía es corto. Las proyecciones se muestran con prudencia y ganarán fiabilidad al incorporar nuevos microciclos."
+    : `${focus.label} concentra la mayor prioridad de revisión. Si la dinámica reciente continúa, pasaría de ${focus.current} a aproximadamente ${focus.projected} unidades en el próximo micro, con confianza ${focus.confidence.level.toLowerCase()}.`;
+  const timeline=history.map((stats,i)=>{
+    const total=totals[i]||0, prev=i?totals[i-1]:total;
+    const delta=i?graphProInsightPercent(total,prev):0;
+    const tag=!i?"Base":delta>=18?"Progresión":delta<=-18?"Reducción":"Estable";
+    const tone=!i?"stable":delta>=18?"positive":delta<=-18?"attention":"stable";
+    return{micro:micros[i],total,delta,tag,tone};
+  });
+  return Object.freeze({version:"3.2.0",currentMicro,historyMicros:micros,projections,stability,stabilityMeta,focus,narrative,timeline});
+}
+function buildCoachIntelligenceEngine(currentStats={}, previousStats={}, context={}){
+  const patientNickname=String(context.patientNickname||"");
+  const currentMicro=Number(currentStats.micro||context.currentMicro)||0;
+  const micros=getAvailableMicrosForGraphPro(patientNickname).filter(m=>m<=currentMicro).slice(-5);
+  const history=micros.map(micro=>getMicroStatsForGraphPro(patientNickname,micro));
+  const categories=graphProInsightCategoryMeta();
+  const currentTotal=categories.reduce((sum,item)=>sum+(Number(currentStats[item.key])||0),0);
+  const loadPercent=graphProInsightPercent(currentStats.series,previousStats.series);
+  const tonnagePercent=graphProInsightPercent(currentStats.tonnage,previousStats.tonnage);
+  const balance=graphProInsightBalance(categories.map(item=>({current:Number(currentStats[item.key])||0})));
+  const trends=categories.map(meta=>{const points=history.map(stats=>Number(stats[meta.key])||0);return{...meta,points,...coachIntelligenceLinearTrend(points),current:Number(currentStats[meta.key])||0};});
+  const downward=trends.filter(t=>t.direction==="down").sort((a,b)=>b.strength-a.strength);
+  const upward=trends.filter(t=>t.direction==="up").sort((a,b)=>b.strength-a.strength);
+  const absent=trends.filter(t=>t.current===0&&t.points.slice(-2).every(v=>v===0));
+  const dominant=[...categories].map(meta=>({...meta,value:Number(currentStats[meta.key])||0})).sort((a,b)=>b.value-a.value)[0];
+  const dominantShare=dominant&&currentTotal?Math.round(dominant.value/currentTotal*100):0;
+  const recovery=(Number(currentStats.mov)||0)+(Number(currentStats.act)||0);
+  const recoveryShare=currentTotal?Math.round(recovery/currentTotal*100):0;
+  const alerts=[];
+  if(tonnagePercent>=25&&graphProInsightPercent(currentStats.act,previousStats.act)<=-15)alerts.push({tone:"review",title:"Carga externa y activación divergen",text:`El tonelaje aumenta un ${tonnagePercent}% mientras la activación disminuye. Conviene comprobar si la preparación previa acompaña el incremento de carga.`});
+  if(dominantShare>=58)alerts.push({tone:"attention",title:"Concentración elevada",text:`${dominant.label} reúne el ${dominantShare}% del trabajo categorizado. La especialización puede ser correcta, pero debería responder a una intención planificada.`});
+  if(Math.abs(loadPercent)>=35)alerts.push({tone:"attention",title:"Cambio brusco de volumen",text:`Las series cambian un ${Math.abs(loadPercent)}% frente al micro base. Conviene validar que el salto forma parte de la estrategia del bloque.`});
+  if(recoveryShare<10&&currentTotal>20)alerts.push({tone:"attention",title:"Trabajo preparatorio reducido",text:`Movilidad y activación representan el ${recoveryShare}% del volumen categorizado. Revisa su adecuación al contenido principal del micro.`});
+  const opportunities=[];
+  downward.slice(0,2).forEach(t=>opportunities.push({tone:"info",title:`${t.label}: tendencia descendente`,text:`Desciende de forma sostenida en los últimos ${t.points.length} micros analizados. Es una oportunidad de revisión, no necesariamente un déficit.`}));
+  absent.slice(0,1).forEach(t=>opportunities.push({tone:"review",title:`${t.label} sin presencia reciente`,text:"No registra estímulo en los dos últimos micros disponibles. Comprueba si la ausencia es deliberada."}));
+  if(upward[0])opportunities.push({tone:"positive",title:`Continuidad en ${upward[0].label}`,text:"Mantiene una tendencia creciente durante la ventana histórica disponible, con una progresión relativamente consistente."});
+  if(!opportunities.length)opportunities.push({tone:"positive",title:"Estructura sin señales persistentes",text:"No se detectan tendencias históricas suficientemente claras que requieran revisión inmediata."});
+  let score=100;score-=Math.max(0,65-balance.score)*.45;score-=Math.max(0,Math.abs(loadPercent)-18)*.45;score-=Math.max(0,dominantShare-45)*.7;score-=alerts.length*6;score-=absent.length*3;score=Math.max(0,Math.min(100,Math.round(score)));
+  const scoreMeta=coachIntelligenceScoreLabel(score);
+  const analysis=[`M${currentMicro} ${loadPercent>8?"incrementa":loadPercent<-8?"reduce":"mantiene"} el volumen de series ${Math.abs(loadPercent)}% respecto al micro base.`,`La distribución presenta un equilibrio del ${balance.score}% y ${dominant?dominant.label.toLowerCase():"ninguna categoría"} actúa como foco principal${dominantShare?` con el ${dominantShare}%`:""}.`,downward[0]?`${downward[0].label} muestra la tendencia descendente más clara de la ventana histórica.`:upward[0]?`${upward[0].label} presenta la tendencia creciente más definida.`:""] .filter(Boolean).join(" ");
+  const recommendations=[];if(alerts.length)recommendations.push("Revisar primero las alertas objetivas y confirmar si los cambios responden al objetivo del bloque.");if(dominantShare>=58)recommendations.push("Contrastar la concentración del estímulo con la prioridad técnica prevista para el micro.");if(downward[0])recommendations.push(`Valorar la continuidad de ${downward[0].label.toLowerCase()} dentro de la planificación, sin asumir que su descenso sea negativo por sí solo.`);if(!recommendations.length)recommendations.push("Mantener el criterio actual y observar la evolución en los próximos micros antes de introducir cambios.");
+  return Object.freeze({version:"3.2.0",currentMicro,historyMicros:micros,history,trends,score,scoreMeta,alerts:alerts.slice(0,3),opportunities:opportunities.slice(0,3),analysis,recommendations:recommendations.slice(0,3),metrics:{balanceScore:balance.score,dominantShare,recoveryShare,loadPercent,tonnagePercent}});
+}
+function renderPredictiveIntelligenceEngine(currentStats={},context={}){
+  const predictive=buildPredictiveIntelligenceEngine(currentStats,context);
+  const directionIcon=d=>d==="up"?"↗":d==="down"?"↘":d==="stable"?"→":"·";
+  const cards=predictive.projections.map(item=>`<article class="predictive-card tone-${item.priority.tone}"><div class="predictive-card-head"><span>${item.short}</span><b>${item.priority.level}</b></div><strong>${directionIcon(item.direction)} ${item.label}</strong><div class="predictive-values"><span>${item.current}</span><i>→</i><span>${item.projected}</span></div><div class="predictive-confidence"><small>Confianza ${item.confidence.level}</small><div><i style="width:${item.confidence.score}%"></i></div><em>${item.confidence.score}%</em></div></article>`).join("");
+  const timeline=predictive.timeline.map(item=>`<article class="predictive-timeline-node tone-${item.tone}"><span>M${item.micro}</span><i></i><strong>${item.tag}</strong><small>${item.delta>0?"+":""}${item.delta}%</small></article>`).join("");
+  return `<section class="predictive-intelligence" aria-labelledby="predictiveTitle"><div class="predictive-head"><div><p class="eyebrow">Predictive Intelligence · v3.2</p><h3 id="predictiveTitle">Dirección probable de la planificación</h3><p>Proyección estructural basada en hasta ocho micros. No anticipa rendimiento ni fatiga fisiológica.</p></div><div class="predictive-stability tone-${predictive.stabilityMeta.tone}"><span>Stability Index</span><strong>${predictive.stability}<small>%</small></strong><em>${predictive.stabilityMeta.label}</em></div></div><article class="predictive-reading"><span>Si el patrón continúa…</span><p>${predictive.narrative}</p></article><div class="predictive-grid">${cards}</div><section class="predictive-timeline"><div><h4>Coach Timeline</h4><span>${predictive.historyMicros.length} micros analizados</span></div><div class="predictive-timeline-track">${timeline}</div></section><p class="predictive-method">Estimación lineal explicable. La confianza combina longitud del histórico, continuidad de datos y ajuste de tendencia. Una prioridad indica dónde mirar primero, no que exista un error.</p></section>`;
+}
+
+function renderGraphProV4IntelligenceHub(currentStats={},previousStats={},context={}){
+  const coach=buildCoachIntelligenceEngine(currentStats,previousStats,context);
+  const predictive=buildPredictiveIntelligenceEngine(currentStats,context);
+  const urgent=coach.alerts[0] || coach.opportunities[0] || {title:"Proceso estable",text:"No se detectan señales prioritarias en la ventana histórica disponible."};
+  const topProjection=[...predictive.projections].sort((a,b)=>b.priority.weight-a.priority.weight || b.confidence.score-a.confidence.score)[0];
+  const priorityLabel=coach.alerts.length?"Revisar":coach.opportunities.length?"Vigilar":"Correcto";
+  const priorityTone=coach.alerts.length?"review":coach.opportunities.length?"attention":"positive";
+  const projectionText=topProjection && topProjection.direction!=="insufficient" ? `${topProjection.label}: ${topProjection.direction==="up"?"dirección creciente":topProjection.direction==="down"?"dirección descendente":"estructura estable"}, con ${topProjection.confidence.score}% de confianza.` : "Se necesita más histórico para consolidar una proyección prioritaria.";
+  return `<section class="graph-pro-v4-hub" aria-labelledby="graphProV4Title">
+    <header class="graph-pro-v4-head"><div><p class="eyebrow">Performance Intelligence · v4</p><h3 id="graphProV4Title">Lectura ejecutiva del proceso</h3><p>Primero la decisión; después, el detalle técnico bajo demanda.</p></div><span class="graph-pro-v4-status tone-${priorityTone}">${priorityLabel}</span></header>
+    <div class="graph-pro-v4-scoreboard">
+      <article><span>Coach Score</span><strong>${coach.score}<small>/100</small></strong><em>${coach.scoreMeta.label}</em></article>
+      <article><span>Stability Index</span><strong>${predictive.stability}<small>%</small></strong><em>${predictive.stabilityMeta.label}</em></article>
+      <article><span>Histórico útil</span><strong>${predictive.historyMicros.length}<small> micros</small></strong><em>M${predictive.historyMicros[0]||"—"} → M${predictive.historyMicros.at(-1)||"—"}</em></article>
+    </div>
+    <article class="graph-pro-v4-decision tone-${priorityTone}"><span>Qué revisar primero</span><strong>${urgent.title}</strong><p>${urgent.text}</p></article>
+    <div class="graph-pro-v4-quick-grid"><article><span>Lectura actual</span><p>${coach.analysis}</p></article><article><span>Dirección probable</span><p>${projectionText}</p></article></div>
+    <div class="graph-pro-v4-actions"><strong>Decisiones a considerar</strong>${coach.recommendations.slice(0,3).map((x,i)=>`<p><b>${i+1}</b>${x}</p>`).join("")}</div>
+    <p class="graph-pro-v4-method">Síntesis determinista y explicable. No diagnostica rendimiento, fatiga, lesión ni sustituye el criterio profesional.</p>
+  </section>`;
+}
+
+function renderCoachIntelligenceEngine(currentStats={},previousStats={},context={}){
+  const coach=buildCoachIntelligenceEngine(currentStats,previousStats,context);
+  const trendCards=coach.trends.map(trend=>{const arrow=trend.direction==="up"?"↗":trend.direction==="down"?"↘":trend.direction==="stable"?"→":"·";const tone=trend.direction==="up"?"positive":trend.direction==="down"?"attention":"stable";const max=Math.max(...trend.points,1);const points=trend.points.map((value,i)=>`<i style="--v:${Math.max(5,Math.min(100,value?value/max*100:5))}%" title="M${coach.historyMicros[i]}: ${value}"></i>`).join("");return`<article class="coach-trend tone-${tone}"><div><span>${trend.short}</span><strong>${arrow} ${trend.label}</strong></div><div class="coach-spark" aria-label="${trend.label}: ${trend.points.join(', ')}">${points}</div><small>${trend.label}</small></article>`;}).join("");
+  const cards=(items,empty)=>items.length?items.map(item=>`<article class="coach-signal tone-${item.tone}"><span></span><div><strong>${item.title}</strong><p>${item.text}</p></div></article>`).join(""):`<p class="coach-empty">${empty}</p>`;
+  return `<details class="graph-pro-v4-detail"><summary><span>Coach Intelligence</span><small>Alertas, oportunidades y tendencias</small></summary><section class="coach-intelligence" aria-labelledby="coachIntelligenceTitle"><div class="coach-head"><div><p class="eyebrow">Coach Intelligence Engine · v3.2</p><h3 id="coachIntelligenceTitle">Cabeza pensante del análisis</h3><p>Lectura histórica explicable para orientar la revisión del entrenador, sin sustituir su criterio profesional.</p></div><div class="coach-score tone-${coach.scoreMeta.tone}"><span>Coach Score</span><strong>${coach.score}<small>/100</small></strong><em>${coach.scoreMeta.label}</em></div></div><article class="coach-analysis"><span>Análisis del entrenador</span><p>${coach.analysis}</p></article><div class="coach-columns"><section><h4>⚠ Alertas inteligentes</h4>${cards(coach.alerts,"No se detectan alertas objetivas en esta comparación.")}</section><section><h4>◎ Oportunidades de revisión</h4>${cards(coach.opportunities,"No se detectan oportunidades persistentes.")}</section></div><section class="coach-trends"><div class="coach-section-head"><h4>Tendencias · últimos ${coach.historyMicros.length} micros</h4><span>${coach.historyMicros.map(m=>`M${m}`).join(" · ")}</span></div><div class="coach-trend-grid">${trendCards}</div></section><section class="coach-recommendations"><h4>Decisiones a considerar</h4>${coach.recommendations.map((text,i)=>`<p><span>${i+1}</span>${text}</p>`).join("")}</section><p class="coach-method">Motor determinista basado en volumen, tonelaje, distribución y continuidad histórica. No diagnostica rendimiento ni prescribe entrenamiento.</p></section></details>`;
+}
+globalThis.PPFPredictiveIntelligence=Object.freeze({build:buildPredictiveIntelligenceEngine,confidence:predictiveConfidence,version:"4.0.1"});
+globalThis.PPFCoachIntelligence=Object.freeze({build:buildCoachIntelligenceEngine,trend:coachIntelligenceLinearTrend,version:"4.0.1"});
+globalThis.PPFPerformanceIntelligence=Object.freeze({render:renderGraphProV4IntelligenceHub,version:"4.0.1"});
+
+function renderGraphProAutomaticInsights(currentStats = {}, previousStats = {}, context = {}) {
+  const report = graphProBuildAutomaticInsights(currentStats, previousStats, context);
+  const regular = report.insights.filter(item => item.id !== "conclusion");
+  const conclusion = report.insights.find(item => item.id === "conclusion");
+
+  return `
+    ${renderGraphProV4IntelligenceHub(currentStats, previousStats, context)}
+    ${renderPredictiveIntelligenceEngine(currentStats, context)}
+    ${renderCoachIntelligenceEngine(currentStats, previousStats, context)}
+    <section class="graph-pro-briefing" aria-labelledby="graphProBriefingTitle" aria-describedby="graphProBriefingDescription">
+      <div class="graph-pro-briefing-header">
+        <div>
+          <p class="eyebrow">Automatic Insights</p>
+          <h3 id="graphProBriefingTitle"><span aria-hidden="true">🧠</span> Briefing comparativo</h3>
+          <p id="graphProBriefingDescription">Interpretación automática de los dos microciclos seleccionados mediante reglas deportivas.</p>
+        </div>
+        <div class="graph-pro-briefing-meta">
+          <div class="graph-pro-briefing-confidence" aria-label="Confianza del análisis: ${report.confidence.level}, ${report.confidence.score} por ciento">
+            <span>Confianza</span>
+            <strong>${report.confidence.level}</strong>
+            <small>${report.confidence.score}%</small>
+          </div>
+          <div class="graph-pro-impact tone-${report.impact.tone}" aria-label="Impacto del cambio: ${report.impact.level}, ${report.impact.score} sobre 100">
+            <span>Impacto</span>
+            <strong>${report.impact.level}</strong>
+            <div class="graph-pro-impact-track" aria-hidden="true"><i style="width:${report.impact.score}%"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <article class="graph-pro-priority tone-${report.priority.tone}" aria-label="Insight prioritario. ${report.priority.label}. ${report.priority.text}">
+        <span class="graph-pro-insight-status" aria-hidden="true"></span>
+        <div>
+          <small>Insight prioritario · ${report.microType.label}</small>
+          <strong>${report.priority.label}</strong>
+          <p>${report.priority.text}</p>
+        </div>
+      </article>
+
+      ${renderGraphProTrainingPatterns(report)}
+
+      ${renderGraphProComparisonDrivers(report)}
+
+      <div class="graph-pro-insights-grid" role="list" aria-label="Insights automáticos de la comparación">
+        ${regular.map((item, index) => `
+          <article class="graph-pro-insight-card tone-${item.tone}" role="listitem" style="--insight-delay:${index * 70}ms" aria-label="${item.title}. ${graphProInsightToneLabel(item.tone)}. ${item.text}">
+            <span class="graph-pro-insight-status" aria-hidden="true"></span>
+            <div class="graph-pro-insight-icon" aria-hidden="true">${graphProInsightIcon(item.id)}</div>
+            <div>
+              <div class="graph-pro-insight-title-row">
+                <h4>${item.title}</h4>
+                <span>${graphProInsightToneLabel(item.tone)}</span>
+              </div>
+              <p>${item.text}</p>
+            </div>
+          </article>
+        `).join("")}
+      </div>
+
+      ${conclusion ? `
+        <article class="graph-pro-technical-reading tone-${conclusion.tone}" style="--insight-delay:${regular.length * 70}ms" aria-label="Lectura técnica. ${conclusion.text}">
+          <span class="graph-pro-insight-status" aria-hidden="true"></span>
+          <div class="graph-pro-technical-reading-icon" aria-hidden="true">🎯</div>
+          <div>
+            <span>Lectura técnica</span>
+            <p>${conclusion.text}</p>
+          </div>
+        </article>
+      ` : ""}
+
+      <div class="graph-pro-briefing-footer">
+        <span>${report.trendSummary.increases} categorías aumentan</span>
+        <span>${report.trendSummary.decreases} disminuyen</span>
+        <span>${report.trendSummary.stable} estables</span>
+        <span>${report.balance.level}</span>
+      </div>
+      <p class="graph-pro-briefing-method">Interpretación automática basada en los microciclos seleccionados mediante reglas deportivas.</p>
+    </section>
+  `;
+}
+
+globalThis.PPFGraphAutomaticInsights = Object.freeze({
+  build: graphProBuildAutomaticInsights,
+  percent: graphProInsightPercent,
+  detectPattern: graphProDetectTrainingPattern,
+  version: "3.0.4"
+});
+
 function renderMicroComparison(patientNickname = "", microA = "", microB = "") {
   const micros = getAvailableMicrosForGraphPro(patientNickname);
 
@@ -5332,61 +8297,87 @@ function renderMicroComparison(patientNickname = "", microA = "", microB = "") {
 
   const aStats = getMicroStatsForGraphPro(patientNickname, selectedA);
   const bStats = getMicroStatsForGraphPro(patientNickname, selectedB);
+  // Las sesiones describen el contexto del micro, pero no su carga.
+  // Por eso quedan fuera de las barras y de los contadores de tendencia.
+  const keys = ["series", "exercises", "tonnage", "ts", "ti", "core", "plyo", "mov", "act"];
 
-  const rows = [
-    ["Sesiones", "sessions"],
-    ["Series", "series"],
-    ["Ejercicios", "exercises"],
-    ["Tonelaje Kg", "tonnage"],
-    ["TS", "ts"],
-    ["TI", "ti"],
-    ["Core", "core"],
-    ["Plyo", "plyo"],
-    ["Movilidad", "mov"],
-    ["Activación", "act"]
-  ];
+  const comparisons = keys.map(key => {
+    const meta = graphProCompareMetricMeta(key);
+    const a = Math.round(Number(aStats[key]) || 0);
+    const b = Math.round(Number(bStats[key]) || 0);
+    const diff = b - a;
+    const percent = a === 0 ? (b === 0 ? 0 : 100) : Math.round((diff / Math.abs(a)) * 100);
+    const trend = graphProCompareTrend(diff, percent);
+    const rowMax = Math.max(a, b, 1);
+    return {
+      key, meta, a, b, diff, percent, trend,
+      widthA: a ? Math.max((a / rowMax) * 100, 5) : 0,
+      widthB: b ? Math.max((b / rowMax) * 100, 5) : 0
+    };
+  });
 
-  const max = Math.max(...rows.map(row => Math.max(aStats[row[1]] || 0, bStats[row[1]] || 0)), 1);
+  const increased = comparisons.filter(item => item.trend.tone === "positive").length;
+  const decreased = comparisons.filter(item => item.trend.tone === "negative").length;
+  const stable = comparisons.filter(item => item.trend.tone === "stable").length;
+  const mainChange = [...comparisons].sort((x, y) => Math.abs(y.percent) - Math.abs(x.percent))[0];
 
   return `
     <section class="graph-pro-card micro-compare-card">
-      <div class="module-panel-header">
+      <div class="module-panel-header micro-compare-heading">
         <div>
-          <p class="eyebrow">Comparativa microciclos</p>
+          <p class="eyebrow">Comparative Intelligence</p>
           <h3>M${aStats.micro} vs M${bStats.micro}</h3>
+          <p>Compara volumen, estructura y distribución del trabajo sin hacer cálculos mentales.</p>
         </div>
-        <span>Por defecto: último micro vs anterior</span>
+        <span class="micro-compare-default">Selección activa · M${aStats.micro} ↔ M${bStats.micro}</span>
       </div>
 
-      <div class="micro-compare-selectors">
+      <div class="micro-compare-session-context" aria-label="Contexto de sesiones">
         <div>
-          <label for="microCompareA">Micro base</label>
-          <select id="microCompareA">${renderMicroOptions(micros, aStats.micro)}</select>
+          <span class="micro-session-icon">📅</span>
+          <div>
+            <small>Sesiones planificadas</small>
+            <strong>M${aStats.micro}: ${aStats.sessions} <span>→</span> M${bStats.micro}: ${bStats.sessions}</strong>
+          </div>
         </div>
-        <div>
-          <label for="microCompareB">Micro comparado</label>
-          <select id="microCompareB">${renderMicroOptions(micros, bStats.micro)}</select>
-        </div>
+        <em class="${bStats.sessions > aStats.sessions ? "positive" : bStats.sessions < aStats.sessions ? "negative" : "stable"}">
+          ${bStats.sessions === aStats.sessions ? "Sin cambio" : `${bStats.sessions > aStats.sessions ? "+" : ""}${bStats.sessions - aStats.sessions} ${Math.abs(bStats.sessions - aStats.sessions) === 1 ? "sesión" : "sesiones"}`}
+        </em>
+      </div>
+
+      <div class="micro-compare-summary" aria-label="Resumen de métricas de carga y distribución">
+        <article class="positive"><span>▲</span><div><strong>${increased}</strong><small>Aumentan</small></div></article>
+        <article class="negative"><span>▼</span><div><strong>${decreased}</strong><small>Disminuyen</small></div></article>
+        <article class="stable"><span>=</span><div><strong>${stable}</strong><small>Estables</small></div></article>
+        <article class="main"><span>◎</span><div><strong>${mainChange ? mainChange.meta.label : "—"}</strong><small>Mayor variación ${mainChange ? `${mainChange.percent > 0 ? "+" : ""}${mainChange.percent}%` : ""}</small></div></article>
       </div>
 
       <div class="micro-compare-table">
-        ${rows.map(([label, key]) => {
-          const a = Math.round(aStats[key] || 0);
-          const b = Math.round(bStats[key] || 0);
-          const diff = b - a;
-          const widthA = Math.max((a / max) * 100, a ? 6 : 0);
-          const widthB = Math.max((b / max) * 100, b ? 6 : 0);
-          return `
-            <div class="micro-compare-row">
-              <strong>${label}</strong>
-              <div class="micro-compare-bars">
-                <div class="micro-bar-line"><span>M${aStats.micro}</span><div><i style="width:${widthA}%"></i></div><b>${a}</b></div>
-                <div class="micro-bar-line active"><span>M${bStats.micro}</span><div><i style="width:${widthB}%"></i></div><b>${b}</b></div>
-              </div>
-              <em class="${diff >= 0 ? "positive" : "negative"}">${diff >= 0 ? "+" : ""}${diff}</em>
+        ${comparisons.map(item => `
+          <article class="micro-compare-row ${item.trend.tone}">
+            <div class="micro-compare-metric">
+              <strong>${item.meta.label}</strong>
+              <small>${item.trend.message}</small>
             </div>
-          `;
-        }).join("")}
+            <div class="micro-compare-bars">
+              <div class="micro-bar-line base">
+                <span>M${aStats.micro}</span>
+                <div><i style="width:${item.widthA}%"></i></div>
+                <b>${item.a}${item.meta.unit === "kg" ? " kg" : ""}</b>
+              </div>
+              <div class="micro-bar-line active">
+                <span>M${bStats.micro}</span>
+                <div><i style="width:${item.widthB}%"></i></div>
+                <b>${item.b}${item.meta.unit === "kg" ? " kg" : ""}</b>
+              </div>
+            </div>
+            <div class="micro-compare-delta ${item.trend.tone}">
+              <strong>${item.trend.icon} ${item.diff > 0 ? "+" : ""}${item.diff}${item.meta.unit === "kg" ? " kg" : ""}</strong>
+              <span>${item.percent > 0 ? "+" : ""}${item.percent}%</span>
+              <small>${item.trend.label}</small>
+            </div>
+          </article>
+        `).join("")}
       </div>
     </section>
   `;
@@ -5394,65 +8385,326 @@ function renderMicroComparison(patientNickname = "", microA = "", microB = "") {
 
 function bindGraphPro() {
   const filter = document.getElementById("graphProPatientFilter");
+  const clearButton = document.getElementById("graphProPatientClear");
   const area = document.getElementById("graphProArea");
+  const compareArea = document.getElementById("microCompareArea");
   if (!filter || !area) return;
 
-  function bindMicroCompareSelectors() {
-    const microA = document.getElementById("microCompareA");
-    const microB = document.getElementById("microCompareB");
+  const comparisonByAthlete = new Map();
+  const blockComparisonByAthlete = new Map();
 
-    if (!microA || !microB) return;
+  function getBlockState(patientNickname) {
+    const micros = getAvailableMicrosForGraphPro(patientNickname);
+    const saved = blockComparisonByAthlete.get(patientNickname);
+    if (saved) {
+      saved.patientNickname = patientNickname;
+      saved.blockA.micros = saved.blockA.micros.filter(m => micros.includes(m));
+      saved.blockB.micros = saved.blockB.micros.filter(m => micros.includes(m) && !saved.blockA.micros.includes(m));
+      saved.library = graphProGetAthleteBlockLibrary(patientNickname).map(item => ({ ...item, micros: item.micros.filter(m => micros.includes(m)) }));
+      return saved;
+    }
+    const half = Math.max(1, Math.floor(micros.length / 2));
+    const state = { mode: "micro", patientNickname, blockA: { name: "Bloque A", micros: micros.slice(0, half) }, blockB: { name: "Bloque B", micros: micros.slice(half) }, library: graphProGetAthleteBlockLibrary(patientNickname) };
+    blockComparisonByAthlete.set(patientNickname, state);
+    return state;
+  }
 
-    const rerenderCompare = () => {
-      const compareArea = document.getElementById("microCompareArea");
-      if (!compareArea || !filter.value) return;
-      compareArea.innerHTML = renderMicroComparison(filter.value, microA.value, microB.value);
-      bindMicroCompareSelectors();
-    };
+  function getDefaultComparison(patientNickname) {
+    const micros = getAvailableMicrosForGraphPro(patientNickname);
+    const last = micros.length ? micros[micros.length - 1] : 0;
+    const previous = micros.length > 1 ? micros[micros.length - 2] : last;
+    return { microA: previous, microB: last };
+  }
 
-    microA.addEventListener("change", rerenderCompare);
-    microB.addEventListener("change", rerenderCompare);
+  function getComparison(patientNickname) {
+    const saved = comparisonByAthlete.get(patientNickname);
+    const micros = getAvailableMicrosForGraphPro(patientNickname);
+    if (saved && micros.includes(saved.microA) && micros.includes(saved.microB)) return saved;
+    const defaults = getDefaultComparison(patientNickname);
+    comparisonByAthlete.set(patientNickname, defaults);
+    return defaults;
   }
 
   function emptyGraphPro() {
     area.innerHTML = `
-      <section class="graph-pro-card empty-graph-pro">
-        <p class="eyebrow">Gráfica PRO</p>
-        <h3>Selecciona un paciente</h3>
-        <p>Elige un paciente en el buscador para cargar radar, KPIs y comparativa entre microciclos.</p>
+      <section class="graph-pro-empty-state">
+        <div class="graph-pro-empty-icon" aria-hidden="true">⌁</div>
+        <p class="eyebrow">CENTRO DE RENDIMIENTO v2.0.1</p>
+        <h3>Selecciona un deportista</h3>
+        <p>Elige un deportista y compara libremente dos microciclos terminados.</p>
       </section>
     `;
-
-    const compareArea = document.getElementById("microCompareArea");
     if (compareArea) compareArea.innerHTML = "";
   }
 
-  function run() {
+  function updateGraphProSelectorState() {
+    if (clearButton) clearButton.hidden = !filter.value;
+  }
+
+  function bindBlockBuilder() {
+    if (!filter.value) return;
+    const state = getBlockState(filter.value);
+    const rerender = () => { blockComparisonByAthlete.set(filter.value, state); renderActiveComparison(); };
+    document.querySelectorAll("[data-analysis-mode]").forEach(button => button.addEventListener("click", () => {
+      const next = button.dataset.analysisMode;
+      if (next === "block" && (!state.blockA.micros.length || !state.blockB.micros.length)) {
+        const msg = document.getElementById("graphProBlockMessage");
+        if (msg) msg.textContent = "Selecciona al menos un micro en cada bloque antes de activar el análisis.";
+        return;
+      }
+      state.mode = next;
+      rerender();
+    }));
+    document.querySelectorAll("[data-block-side]").forEach(input => input.addEventListener("change", () => {
+      const side = input.dataset.blockSide;
+      const own = side === "A" ? state.blockA : state.blockB;
+      const other = side === "A" ? state.blockB : state.blockA;
+      const micro = Number(input.value);
+      own.micros = input.checked ? [...new Set([...own.micros, micro])].sort((a,b)=>a-b) : own.micros.filter(item => item !== micro);
+      other.micros = other.micros.filter(item => item !== micro);
+      rerender();
+    }));
+    document.querySelectorAll("[data-block-clear]").forEach(button => button.addEventListener("click", () => {
+      const block = button.dataset.blockClear === "A" ? state.blockA : state.blockB;
+      block.micros = [];
+      if (state.mode === "block") state.mode = "micro";
+      rerender();
+    }));
+    const nameA = document.getElementById("graphProBlockNameA");
+    const nameB = document.getElementById("graphProBlockNameB");
+    const saveNames = () => { state.blockA.name = nameA?.value.trim() || "Bloque A"; state.blockB.name = nameB?.value.trim() || "Bloque B"; blockComparisonByAthlete.set(filter.value, state); };
+    nameA?.addEventListener("change", () => { saveNames(); renderActiveComparison(); });
+    nameB?.addEventListener("change", () => { saveNames(); renderActiveComparison(); });
+
+    document.querySelectorAll("[data-block-save]").forEach(button => button.addEventListener("click", () => {
+      saveNames();
+      const block = button.dataset.blockSave === "A" ? state.blockA : state.blockB;
+      if (!block.micros.length) return;
+      const list = graphProGetAthleteBlockLibrary(filter.value);
+      list.push(graphProCreateLibraryBlock(block));
+      graphProSaveAthleteBlockLibrary(filter.value, list);
+      state.library = graphProGetAthleteBlockLibrary(filter.value);
+      rerender();
+    }));
+
+    document.querySelectorAll("[data-library-action]").forEach(button => button.addEventListener("click", () => {
+      const card = button.closest("[data-library-id]");
+      const id = card?.dataset.libraryId;
+      const action = button.dataset.libraryAction;
+      let list = graphProGetAthleteBlockLibrary(filter.value);
+      const index = list.findIndex(item => item.id === id);
+      if (index < 0) return;
+      const item = list[index];
+      if (action === "load-a" || action === "load-b") {
+        const target = action === "load-a" ? state.blockA : state.blockB;
+        const other = action === "load-a" ? state.blockB : state.blockA;
+        target.name = item.name;
+        target.micros = item.micros.filter(m => !other.micros.includes(m));
+        if (!target.micros.length && item.micros.length) {
+          const msg = document.getElementById("graphProBlockMessage");
+          if (msg) msg.textContent = "Todos los micros de ese bloque ya están ocupados en el bloque contrario.";
+          return;
+        }
+      } else if (action === "favorite") {
+        item.favorite = !item.favorite; item.updatedAt = Date.now();
+        graphProSaveAthleteBlockLibrary(filter.value, list);
+      } else if (action === "duplicate") {
+        list.push({ ...graphProCreateLibraryBlock(item), name: `${item.name} · copia`, favorite: false });
+        graphProSaveAthleteBlockLibrary(filter.value, list);
+      } else if (action === "rename") {
+        const nextName = window.prompt("Nuevo nombre del bloque", item.name);
+        if (nextName === null) return;
+        const clean = nextName.trim().slice(0,36);
+        if (!clean) return;
+        item.name = clean; item.updatedAt = Date.now();
+        graphProSaveAthleteBlockLibrary(filter.value, list);
+      } else if (action === "delete") {
+        if (!window.confirm(`¿Eliminar “${item.name}” de la biblioteca?`)) return;
+        list = list.filter(entry => entry.id !== id);
+        graphProSaveAthleteBlockLibrary(filter.value, list);
+      }
+      state.library = graphProGetAthleteBlockLibrary(filter.value);
+      rerender();
+    }));
+
+    document.querySelectorAll("[data-smart-comparison]").forEach(button => button.addEventListener("click", () => {
+      const proposals = graphProBuildSmartComparisons(filter.value, getAvailableMicrosForGraphPro(filter.value));
+      const proposal = proposals.find(item => item.id === button.dataset.smartComparison);
+      if (!proposal) return;
+      state.blockA = { name: proposal.aName, micros: [...proposal.a] };
+      state.blockB = { name: proposal.bName, micros: [...proposal.b] };
+      state.mode = "block";
+      rerender();
+    }));
+
+    document.getElementById("graphProSwapBlocks")?.addEventListener("click", () => {
+      const oldA = state.blockA; state.blockA = state.blockB; state.blockB = oldA; rerender();
+    });
+    document.getElementById("graphProApplyBlocks")?.addEventListener("click", () => {
+      saveNames();
+      if (!state.blockA.micros.length || !state.blockB.micros.length) return;
+      state.mode = "block";
+      rerender();
+    });
+  }
+
+  function bindComparisonSelectors() {
+    const microASelect = document.getElementById("graphProMicroA");
+    const microBSelect = document.getElementById("graphProMicroB");
+    const swapButton = document.getElementById("graphProSwapMicros");
+    const feedback = document.getElementById("graphProComparisonFeedback");
+    if (!microASelect || !microBSelect || !filter.value) return;
+
+    const current = getComparison(filter.value);
+    let lastValid = { microA: current.microA, microB: current.microB };
+    let feedbackTimer = 0;
+    let statusTimer = 0;
+
+    const setComparisonStatus = (state = "active", comparison = lastValid) => {
+      const status = document.getElementById("graphProComparisonStatus");
+      if (!status) return;
+      window.clearTimeout(statusTimer);
+      const label = status.querySelector(".graph-pro-status-label");
+      const value = status.querySelector(".graph-pro-status-value");
+      status.classList.remove("is-active", "is-swapped", "is-invalid", "is-changing");
+      status.classList.add(`is-${state}`, "is-changing");
+
+      if (state === "swapped") {
+        label.textContent = "↻ Sentido del análisis cambiado";
+        value.textContent = `Ahora se analiza M${comparison.microA} → M${comparison.microB}`;
+        statusTimer = window.setTimeout(() => setComparisonStatus("active", comparison), 1500);
+      } else if (state === "invalid") {
+        label.textContent = "⚠ Comparación no válida";
+        value.textContent = "Selecciona un micro diferente";
+      } else {
+        label.textContent = "Comparación activa";
+        value.textContent = `M${comparison.microA} ↔ M${comparison.microB}`;
+      }
+
+      requestAnimationFrame(() => status.classList.remove("is-changing"));
+    };
+
+    const syncDisabledOptions = () => {
+      [...microASelect.options].forEach(option => {
+        option.disabled = Number(option.value) === Number(microBSelect.value);
+      });
+      [...microBSelect.options].forEach(option => {
+        option.disabled = Number(option.value) === Number(microASelect.value);
+      });
+    };
+
+    const hideInvalidFeedback = () => {
+      window.clearTimeout(feedbackTimer);
+      if (!feedback) return;
+      feedback.hidden = true;
+      feedback.classList.remove("is-visible");
+      microASelect.removeAttribute("aria-invalid");
+      microBSelect.removeAttribute("aria-invalid");
+    };
+
+    const showInvalidFeedback = changedSelect => {
+      window.clearTimeout(feedbackTimer);
+      if (feedback) {
+        feedback.hidden = false;
+        requestAnimationFrame(() => feedback.classList.add("is-visible"));
+      }
+      changedSelect.setAttribute("aria-invalid", "true");
+      changedSelect.setAttribute("aria-describedby", "graphProComparisonFeedback");
+      setComparisonStatus("invalid", lastValid);
+      feedbackTimer = window.setTimeout(() => {
+        changedSelect.value = changedSelect.id === "graphProMicroA" ? String(lastValid.microA) : String(lastValid.microB);
+        hideInvalidFeedback();
+        syncDisabledOptions();
+        setComparisonStatus("active", lastValid);
+        changedSelect.focus({ preventScroll: true });
+      }, 1700);
+    };
+
+    const commitComparison = (next, changedLabel, statusState = "active") => {
+      hideInvalidFeedback();
+      lastValid = { ...next };
+      comparisonByAthlete.set(filter.value, next);
+      renderActiveComparison();
+      requestAnimationFrame(() => {
+        const selectionStatus = document.querySelector(".graph-pro-selection-status");
+        if (selectionStatus) selectionStatus.setAttribute("aria-label", `${changedLabel}. M${next.microA} frente a M${next.microB}`);
+        const refreshedStatus = document.getElementById("graphProComparisonStatus");
+        if (refreshedStatus) {
+          const label = refreshedStatus.querySelector(".graph-pro-status-label");
+          const value = refreshedStatus.querySelector(".graph-pro-status-value");
+          refreshedStatus.classList.remove("is-active", "is-swapped", "is-invalid");
+          refreshedStatus.classList.add(`is-${statusState}`);
+          if (statusState === "swapped") {
+            label.textContent = "↻ Sentido del análisis cambiado";
+            value.textContent = `Ahora se analiza M${next.microA} → M${next.microB}`;
+            window.setTimeout(() => {
+              const activeStatus = document.getElementById("graphProComparisonStatus");
+              if (!activeStatus) return;
+              activeStatus.classList.remove("is-swapped");
+              activeStatus.classList.add("is-active", "is-changing");
+              activeStatus.querySelector(".graph-pro-status-label").textContent = "Comparación activa";
+              activeStatus.querySelector(".graph-pro-status-value").textContent = `M${next.microA} ↔ M${next.microB}`;
+              requestAnimationFrame(() => activeStatus.classList.remove("is-changing"));
+            }, 1500);
+          }
+        }
+      });
+    };
+
+    const updateComparison = event => {
+      const next = {
+        microA: Number(microASelect.value),
+        microB: Number(microBSelect.value)
+      };
+      if (next.microA === next.microB) {
+        showInvalidFeedback(event.currentTarget);
+        return;
+      }
+      const changed = event.currentTarget.id === "graphProMicroA" ? "Micro base actualizado" : "Micro comparado actualizado";
+      commitComparison(next, changed);
+    };
+
+    microASelect.addEventListener("change", updateComparison);
+    microBSelect.addEventListener("change", updateComparison);
+
+    if (swapButton) {
+      swapButton.addEventListener("click", () => {
+        const next = { microA: Number(microBSelect.value), microB: Number(microASelect.value) };
+        if (!next.microA || !next.microB || next.microA === next.microB) return;
+        swapButton.classList.add("is-swapping");
+        window.setTimeout(() => commitComparison(next, "Dirección de comparación invertida", "swapped"), 160);
+      });
+    }
+
+    syncDisabledOptions();
+  }
+
+  function renderActiveComparison() {
+    updateGraphProSelectorState();
     if (!filter.value) {
       emptyGraphPro();
       return;
     }
 
-    if (typeof renderGraphPro === "function") {
-      area.innerHTML = renderGraphPro(filter.value);
-    } else {
-      area.innerHTML = renderGraphProDashboard(filter.value);
-    }
-
+    const { microA, microB } = getComparison(filter.value);
+    area.innerHTML = renderGraphProDashboard(filter.value, microA, microB, getBlockState(filter.value));
+    if (compareArea) compareArea.innerHTML = renderMicroComparison(filter.value, microA, microB);
+    bindBlockBuilder();
+    bindComparisonSelectors();
     if (typeof bindRadarTooltips === "function") bindRadarTooltips();
-
-    const compareArea = document.getElementById("microCompareArea");
-    if (compareArea) {
-      compareArea.innerHTML = renderMicroComparison(filter.value);
-      bindMicroCompareSelectors();
-    }
+    if (typeof bindGraphProKpiInspector === "function") bindGraphProKpiInspector();
+    if (typeof bindPerformanceExecutiveDashboard === "function") bindPerformanceExecutiveDashboard();
   }
 
-  filter.addEventListener("change", run);
-  run();
+  filter.addEventListener("change", renderActiveComparison);
+  clearButton?.addEventListener("click", () => {
+    filter.value = "";
+    renderActiveComparison();
+    filter.focus();
+  });
+
+  renderActiveComparison();
 }
-
-
 
 function downloadJsonFile(filename, data) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -5491,6 +8743,7 @@ function applyLocalBackupData(backup) {
 
   localStorage.setItem("patients", JSON.stringify(patients));
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   localStorage.setItem("histories", JSON.stringify(histories));
   localStorage.setItem("patientFiles", JSON.stringify(patientFiles));
   localStorage.setItem("valoraciones", JSON.stringify(valoraciones));
@@ -6703,7 +9956,7 @@ function pmAdminDashboardHTML() {
         </div>
         <div class="admin-home-hero-side">
           <div class="admin-home-today-summary">
-            <span>HOY</span>
+            <span style="font-size:.82em">📅 A DÍA DE HOY</span>
             <strong>${completedToday}</strong>
             <small>sesiones terminadas</small>
           </div>
@@ -6747,7 +10000,7 @@ function pmAdminDashboardHTML() {
             <button type="button" data-home-section="paciente"><span>👤</span><b>Nuevo paciente</b><small>Alta y ficha personal</small><i>›</i></button>
             <button type="button" data-home-section="valoraciones"><span>📈</span><b>Nueva valoración</b><small>Registrar pruebas</small><i>›</i></button>
             <button type="button" data-home-section="biblioteca"><span>📚</span><b>Biblioteca</b><small>Ejercicios y recursos</small><i>›</i></button>
-            <button type="button" data-home-section="graficaPro"><span>🕸️</span><b>Gráfica PRO</b><small>Analizar distribución</small><i>›</i></button>
+            <button type="button" data-home-section="graficaPro"><span>🏆</span><b>Centro de Rendimiento</b><small>Analizar planificación</small><i>›</i></button>
             <button type="button" data-home-section="agenda"><span>📅</span><b>Agenda PRO</b><small>Semana y horarios</small><i>›</i></button>
             <button type="button" data-home-section="periodicidad"><span>📆</span><b>Periodicidad</b><small>Planificación anual</small><i>›</i></button>
           </div>
@@ -6877,12 +10130,7 @@ function agendaProIsClosedWithoutTime(session = {}) {
 }
 
 function agendaProScheduleMode(session = {}) {
-  const value = String(session.scheduleMode || session.agendaScheduleMode || "").toLowerCase();
-  if (value === "flexible" || session.flexibleSchedule === true) return "flexible";
-  // Regla defensiva: una sesión ya cerrada sin hora nunca vuelve a ser una
-  // incidencia de planificación, aunque un registro histórico no se haya
-  // podido migrar todavía en Supabase.
-  return agendaProIsClosedWithoutTime(session) ? "flexible" : "scheduled";
+  return window.PPF_CORE?.flexible?.(session, window.PPF_CORE.array("completedSessions")) ? "flexible" : "scheduled";
 }
 
 function agendaProIsFlexible(session = {}) {
@@ -6890,16 +10138,17 @@ function agendaProIsFlexible(session = {}) {
 }
 
 function agendaProNeedsTime(session = {}) {
-  // Solo las sesiones activas y presenciales/dirigidas necesitan hora.
-  // Terminadas, canceladas y flexibles quedan fuera de KPI, avisos y bandeja.
-  return !agendaProIsFlexible(session) && !agendaProIsClosedWithoutTime(session);
+  return window.PPF_CORE?.needsTime?.(session, window.PPF_CORE.array("completedSessions")) ?? true;
 }
 
 function agendaProStatus(session = {}) {
-  if (String(session.agendaStatus || "").toLowerCase() === "cancelled") return "cancelled";
-  if (nciIsCompleted(session)) return "completed";
-  const stamp = agendaProSessionDateTime(session);
-  if (stamp && stamp < Date.now() && String(session.fecha || "") < agendaProIsoDate(new Date())) return "late";
+  const core = window.PPF_CORE;
+  if (core) {
+    const state = core.lifecycle(session, core.array("completedSessions"));
+    if (state === "cancelled" || state === "completed") return state;
+    if (core.isOverdue(session, core.array("completedSessions"))) return "late";
+    return "scheduled";
+  }
   return "scheduled";
 }
 
@@ -6934,7 +10183,8 @@ function agendaProFilteredSessions() {
   const kind = document.getElementById("agendaProKindFilter")?.value || "";
   const status = document.getElementById("agendaProStatusFilter")?.value || "";
   const query = String(document.getElementById("agendaProSearch")?.value || "").trim().toLowerCase();
-  return sessions.filter(session => {
+  const source = window.PPF_CORE?.normalizedContext?.().sessions || sessions;
+  return source.filter(session => {
     if (patient && nciSessionPatient(session) !== nciNickname(patient)) return false;
     if (kind && nciSessionKind(session) !== kind) return false;
     if (status && agendaProStatus(session) !== status) return false;
@@ -7021,11 +10271,7 @@ function agendaProTargetFromPoint(x, y) {
 }
 
 function agendaProConflict(session = {}) {
-  const date = String(session.fecha || "");
-  const time = String(session.scheduledTime || "").trim();
-  if (!date || !time || agendaProIsFlexible(session) || agendaProStatus(session) === "cancelled") return false;
-  const key = nciSessionPatient(session);
-  return sessions.some(other => String(other.id) !== String(session.id) && nciSessionPatient(other) === key && String(other.fecha || "") === date && String(other.scheduledTime || "").trim() === time && agendaProStatus(other) !== "cancelled");
+  return window.PPF_CORE?.conflict?.(session) || false;
 }
 
 
@@ -7235,21 +10481,12 @@ function agendaProHTML() {
 
 
 function agendaWorkspacePatientKey() {
-  if (agendaProWorkspacePatient) return nciNickname(agendaProWorkspacePatient);
-  const filter = document.getElementById("agendaProPatientFilter")?.value || "";
-  if (filter) return nciNickname(filter);
-  const firstWithSessions = patients.find(patient => sessions.some(session => nciSessionPatient(session) === nciNickname(patient.nickname)));
-  return nciNickname(firstWithSessions?.nickname || patients[0]?.nickname || "");
+  return agendaProWorkspacePatient ? nciNickname(agendaProWorkspacePatient) : "";
 }
 
 function agendaWorkspaceSessions(patientKey) {
-  return sessions.filter(session => nciSessionPatient(session) === patientKey).sort((a, b) => {
-    const date = String(a.fecha || "").localeCompare(String(b.fecha || ""));
-    if (date !== 0) return date;
-    const micro = nciSessionMicro(a) - nciSessionMicro(b);
-    if (micro !== 0) return micro;
-    return Number(a.subsessionOrder || a.dayOrder || 1) - Number(b.subsessionOrder || b.dayOrder || 1);
-  });
+  const core = window.PPF_CORE;
+  return core ? core.forPatient(patientKey).sort(core.chronological) : [];
 }
 
 function agendaWorkspaceSessionCard(session) {
@@ -7270,26 +10507,49 @@ function agendaWorkspaceRender() {
   const mount = document.getElementById("agendaClientWorkspace");
   if (!mount) return;
   const key = agendaWorkspacePatientKey();
+  const patientOptions = patients.map(item => `<option value="${agendaProEscape(item.nickname)}">${agendaProEscape(item.nombre)}</option>`).join("");
+
+  if (!key) {
+    mount.innerHTML = `<div class="agenda-workspace-head agenda-workspace-head-empty">
+      <div class="agenda-workspace-person"><span>👤</span><div><p class="eyebrow">CLIENT WORKSPACE</p><h2>Selecciona un cliente</h2><small>Elige un cliente para consultar su planificación completa.</small></div></div>
+      <div class="agenda-workspace-selector"><label>Cliente<div class="agenda-workspace-select-shell"><select id="agendaWorkspacePatient"><option value="" selected disabled>Selecciona un cliente</option>${patientOptions}</select></div></label><button type="button" id="agendaWorkspaceNewSession" disabled>＋ Nueva sesión</button></div>
+    </div>
+    <section class="agenda-workspace-body agenda-workspace-welcome">
+      <div class="agenda-workspace-empty"><span>👤</span><h3>Elige un cliente</h3><p>Al seleccionarlo aparecerán sus sesiones, próxima planificación, cumplimiento y línea temporal.</p></div>
+    </section>`;
+    document.getElementById("agendaWorkspacePatient")?.addEventListener("change", event => {
+      agendaProWorkspacePatient = event.target.value;
+      agendaWorkspaceRender();
+    });
+    return;
+  }
+
   agendaProWorkspacePatient = key;
-  const patient = patients.find(item => nciNickname(item.nickname) === key) || { nombre: "Selecciona cliente", nickname: "" };
-  const all = agendaWorkspaceSessions(key);
-  const completed = all.filter(item => agendaProStatus(item) === "completed");
-  const pending = all.filter(item => !["completed", "cancelled"].includes(agendaProStatus(item)));
-  const cancelled = all.filter(item => agendaProStatus(item) === "cancelled");
-  const noTime = pending.filter(item => agendaProNeedsTime(item) && !String(item.scheduledTime || "").trim()).length;
-  const compliance = all.length ? Math.round((completed.length / Math.max(1, completed.length + pending.length)) * 100) : 0;
-  const next = pending.slice().sort((a,b) => agendaProSessionDateTime(a)-agendaProSessionDateTime(b))[0];
-  const currentMicro = all.reduce((max,item)=>Math.max(max,nciSessionMicro(item)||0),0);
+  const patient = patients.find(item => nciNickname(item.nickname) === key);
+  if (!patient) {
+    agendaProWorkspacePatient = "";
+    agendaWorkspaceRender();
+    return;
+  }
+  const coreSummary = window.PPF_CORE?.summary?.(key) || { sessions: [], completedSessions: [], pendingSessions: [], cancelledSessions: [], withoutTime: 0, compliance: 0, nextSession: null, currentMicro: 0 };
+  const all = coreSummary.sessions;
+  const completed = coreSummary.completedSessions;
+  const pending = coreSummary.pendingSessions;
+  const cancelled = coreSummary.cancelledSessions;
+  const noTime = coreSummary.withoutTime;
+  const compliance = coreSummary.compliance;
+  const next = coreSummary.nextSession;
+  const currentMicro = coreSummary.currentMicro;
   const grouped = new Map();
   all.forEach(session => {
     const micro = nciSessionMicro(session) || 0;
     if (!grouped.has(micro)) grouped.set(micro, []);
     grouped.get(micro).push(session);
   });
-  const timeline = [...grouped.entries()].sort((a,b)=>b[0]-a[0]).map(([micro, list]) => `<section class="agenda-workspace-micro"><header><span>MICRO ${agendaProEscape(micro || "-")}</span><small>${list.length} sesión${list.length===1?"":"es"}</small></header><div>${list.slice().sort((a,b)=>agendaProSessionDateTime(b)-agendaProSessionDateTime(a) || Number(b.subsessionOrder||1)-Number(a.subsessionOrder||1)).map(agendaWorkspaceSessionCard).join("")}</div></section>`).join("");
+  const timeline = [...grouped.entries()].sort((a,b)=>b[0]-a[0]).map(([micro, list]) => `<section class="agenda-workspace-micro"><header class="agenda-workspace-micro-badge" aria-label="Micro ${agendaProEscape(micro || "-")}, ${list.length} sesión${list.length===1?"":"es"}"><span>M${agendaProEscape(micro || "-")}</span><small>×${list.length}</small></header><div>${list.slice().sort((a,b)=>agendaProSessionDateTime(b)-agendaProSessionDateTime(a) || Number(b.subsessionOrder||1)-Number(a.subsessionOrder||1)).map(agendaWorkspaceSessionCard).join("")}</div></section>`).join("");
   mount.innerHTML = `<div class="agenda-workspace-head">
-      <div class="agenda-workspace-person"><span>${agendaProEscape((patient.nombre || patient.nickname || "?").trim().charAt(0).toUpperCase())}</span><div><p class="eyebrow">CLIENT WORKSPACE</p><h2>${agendaProEscape(patient.nombre || "Selecciona cliente")}</h2><small>@${agendaProEscape(patient.nickname || "")} · Micro actual ${agendaProEscape(currentMicro || "-")}</small></div></div>
-      <div class="agenda-workspace-selector"><label>Cliente<select id="agendaWorkspacePatient">${patients.map(item=>`<option value="${agendaProEscape(item.nickname)}" ${nciNickname(item.nickname)===key?"selected":""}>${agendaProEscape(item.nombre)}</option>`).join("")}</select></label><button type="button" id="agendaWorkspaceNewSession">＋ Nueva sesión</button></div>
+      <div class="agenda-workspace-person"><span>${agendaProEscape((patient.nombre || patient.nickname || "?").trim().charAt(0).toUpperCase())}</span><div><p class="eyebrow">CLIENT WORKSPACE</p><h2>${agendaProEscape(patient.nombre)}</h2><small>@${agendaProEscape(patient.nickname || "")} · Micro actual ${agendaProEscape(currentMicro || "-")}</small></div></div>
+      <div class="agenda-workspace-selector"><label>Cliente<div class="agenda-workspace-select-shell has-close"><select id="agendaWorkspacePatient"><option value="" disabled>Selecciona un cliente</option>${patients.map(item=>`<option value="${agendaProEscape(item.nickname)}" ${nciNickname(item.nickname)===key?"selected":""}>${agendaProEscape(item.nombre)}</option>`).join("")}</select><button type="button" id="agendaWorkspaceClear" class="agenda-workspace-close" aria-label="Cerrar cliente" data-tooltip="Cerrar cliente"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></label><button type="button" id="agendaWorkspaceNewSession">＋ Nueva sesión</button></div>
     </div>
     <section class="agenda-workspace-summary">
       <article><span>📅</span><div><small>Sesiones</small><strong>${all.length}</strong></div></article>
@@ -7303,6 +10563,7 @@ function agendaWorkspaceRender() {
     </section>
     <section class="agenda-workspace-body"><div class="agenda-workspace-title"><div><p class="eyebrow">LÍNEA TEMPORAL</p><h3>Plan completo del cliente</h3></div><span>${all.length} registros</span></div>${timeline || `<div class="agenda-workspace-empty"><span>📭</span><h3>Sin sesiones</h3><p>Crea la primera sesión para este cliente.</p></div>`}</section>`;
   document.getElementById("agendaWorkspacePatient")?.addEventListener("change", event => { agendaProWorkspacePatient = event.target.value; agendaWorkspaceRender(); });
+  document.getElementById("agendaWorkspaceClear")?.addEventListener("click",()=>{agendaProWorkspacePatient="";agendaWorkspaceRender();});
   document.getElementById("agendaWorkspaceNewSession")?.addEventListener("click", () => {
     const nickname = patient.nickname || "";
     renderSection("sesiones");
@@ -7572,6 +10833,7 @@ async function agendaProDuplicateSession(sessionId) {
   const created = sessions.find(item => String(item.id) === String(clone.id)) || clone;
   window.sessions = sessions;
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
 
   try {
     if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
@@ -7588,27 +10850,8 @@ async function agendaProDuplicateSession(sessionId) {
 }
 
 async function agendaProDeleteSession(sessionId) {
-  const session = sessions.find(item => String(item.id) === String(sessionId));
-  if (!session) return;
-  const patient = agendaProPatient(session);
-  const confirmed = confirm(`¿Eliminar definitivamente la sesión ${nciDisplayNumber(session)} de ${patient.nombre}?\n\nEsta acción no se puede deshacer.`);
-  if (!confirmed) return;
-
-  const nickname = session.patientNickname;
-  sessions = sessions.filter(item => String(item.id) !== String(sessionId));
-  const renumberResult = nciRenumberPatientSessions(nickname, { touchUpdatedAt: true });
-  window.sessions = sessions;
-  localStorage.setItem("sessions", JSON.stringify(sessions));
-
-  try {
-    if (window.PPF_SUPABASE?.pushValue) await window.PPF_SUPABASE.pushValue("sessions", sessions);
-    else if (window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("sessions");
-    if (renumberResult.notificationsChanged && window.PPF_SUPABASE?.pushKey) await window.PPF_SUPABASE.pushKey("notifications");
-  } catch (error) {
-    console.error("Agenda PRO no pudo confirmar la eliminación en Supabase:", error);
-    alert("La sesión se eliminó en este dispositivo, pero Supabase no confirmó la sincronización.");
-  }
-  renderSection("agenda");
+  const result = await ppfDeleteSessionsByIds([sessionId]);
+  if (result.deleted) renderSection("agenda");
 }
 
 async function agendaProSaveEditor(event) {
@@ -7644,7 +10887,7 @@ async function agendaProMoveSessionToDate(sessionId, targetDate) {
 
 function bindAgendaPro() {
   document.getElementById("agendaProCalendarMode")?.addEventListener("click", () => { agendaProViewMode = "calendar"; agendaProApplyViewMode(); agendaProRenderWeek(); });
-  document.getElementById("agendaProClientMode")?.addEventListener("click", () => { agendaProViewMode = "client"; agendaProApplyViewMode(); });
+  document.getElementById("agendaProClientMode")?.addEventListener("click", () => { agendaProWorkspacePatient = ""; agendaProViewMode = "client"; agendaProApplyViewMode(); });
   agendaProApplyViewMode();
   agendaProRenderWeek();
   document.getElementById("agendaProPrevWeek")?.addEventListener("click", () => { agendaProWeekAnchor = agendaProAddDays(agendaProWeekAnchor, -7); renderSection("agenda"); });
@@ -7832,7 +11075,7 @@ const sections = {
           <span class="sessions-pro-plan-icon">🏋️</span>
           <strong>Planificación activa</strong>
           <div class="sessions-pro-plan-chips" aria-label="Módulos de la sesión">
-            <small>Movilidad</small><small>Activación</small><small>Principal</small>
+            <small>Movilidad</small><small>Activación</small><small>Principal</small><small>Carrera</small>
           </div>
         </div>
       </section>
@@ -7840,7 +11083,7 @@ const sections = {
       <form class="patient-form sessions-pro-form" id="sessionsForm">
         <div class="session-search-clean">
           <div>
-            <label for="sessionPatientSearch">Selecciona cliente</label>
+            <label for="sessionPatientSearch">Deportista destino</label>
             <select id="sessionPatientSearch" required>
               <option value="">Selecciona paciente</option>
               ${patients.map(patient => `<option value="${patient.nickname}">${patient.nombre}</option>`).join("")}
@@ -7862,6 +11105,7 @@ const sections = {
             <select id="sessionKind" class="session-kind-select">
               <option value="gym">🏋️ Gimnasio</option>
               <option value="field">🏟️ Campo</option>
+              <option value="running">🏃 Carrera</option>
               <option value="recovery">🧘 Recuperación</option>
               <option value="testing">📊 Test / Valoración</option>
               <option value="competition">🏆 Competición</option>
@@ -7911,15 +11155,81 @@ const sections = {
           <small id="sessionClipboardStatus">Copia una sesión creada desde el listado inferior y pégala aquí.</small>
         </section>
 
+        <section class="phase3-micro-preview-shell" aria-label="FASE 3 Microcycle Clone Preview">
+          <div class="phase3-title-row">
+            <div><p class="eyebrow">FASE 3 · MICROCYCLE CLONE</p><h3>Copiar microciclo completo</h3><small>3.2 · Block Mapper seguro. Origen independiente, contenido real y distribución previa por sesión.</small></div>
+            <span class="phase3-badge">MODO SIMULACIÓN</span>
+          </div>
+          <div class="phase3-origin-destination-note"><span>📤 <b>Origen</b>: se elige aquí</span><span>📥 <b>Destino</b>: selector habitual de Creación sesiones</span></div>
+          <div class="phase3-controls phase3-controls-origin">
+            <label><span>Deportista origen</span><select id="phase3SourcePatient"><option value="">Selecciona deportista origen</option></select></label>
+            <label><span>Micro origen</span><select id="phase3SourceMicro"><option value="">Selecciona micro origen</option></select></label>
+            <button class="secondary-btn" type="button" id="phase3PreviewBtn" title="Selecciona automáticamente el último micro del deportista origen">👁️ Vista previa · último micro</button>
+          </div>
+          <div id="phase3Preview" class="phase3-preview"><div class="phase3-empty">Selecciona deportista origen y microciclo para preparar la vista previa.</div></div>
+          <div class="phase3-mapper-head">
+            <div><p class="eyebrow">FASE 3.2 · BLOCK MAPPER</p><h4>Distribución de bloques</h4><small>Decide a qué bloque llegará cada contenido antes de clonar el micro.</small></div>
+            <button class="secondary-btn" type="button" id="phase3ApplyMapBtn">↻ Restablecer mapa 1:1</button>
+          </div>
+          <div id="phase3Mapper" class="phase3-mapper"><div class="phase3-empty">Selecciona un micro origen para activar el Block Mapper.</div></div>
+
+          <div class="phase3-clone-head">
+            <div>
+              <p class="eyebrow">FASE 3.3.1 · DATE PLANNER</p>
+              <h4>Plan final de destino + calendario</h4>
+              <small>Reconstruye la futura copia aplicando el Block Mapper y permite ajustar la fecha de cada sesión antes de clonar.</small>
+            </div>
+            <span class="phase3-badge">SOLO PREVISUALIZACIÓN</span>
+          </div>
+
+          <div class="phase3-destination-controls">
+            <label>
+              <span>Deportista destino</span>
+              <div id="phase3DestinationPatient" class="phase3-destination-readonly">Selecciona el deportista destino arriba.</div>
+            </label>
+            <label>
+              <span>Micro destino</span>
+              <select id="phase3TargetMicro">
+                <option value="">Selecciona micro destino</option>
+                ${Array.from({length:52},(_,i)=>`<option value="${i+1}">Micro ${i+1}</option>`).join("")}
+              </select>
+            </label>
+            <label>
+              <span>Semana base destino · lunes</span>
+              <input id="phase3TargetStartDate" type="date" />
+            </label>
+          </div>
+
+          <div class="phase3-date-planner-toolbar">
+            <div>
+              <strong>📅 DATE PLANNER</strong>
+              <small>PPF propone las fechas según el día de la semana del micro origen. Puedes modificar cada sesión individualmente.</small>
+            </div>
+            <button type="button" class="secondary-btn" id="phase3ResetDatesBtn">↻ Restaurar fechas automáticas</button>
+          </div>
+
+          <div id="phase3ClonePreview" class="phase3-clone-preview">
+            <div class="phase3-empty">Selecciona origen, destino, micro destino y semana base para construir el plan final.</div>
+          </div>
+
+          <div class="phase3-clone-lock">
+            <button class="primary-btn" type="button" id="phase3CloneLockedBtn" disabled>🔒 Clonar microciclo · revisa el plan</button>
+            <small>FASE 3.4 · Deep Clone Engine: escribe únicamente el plan validado, genera IDs nuevos y envía una sola notificación agrupada.</small>
+          </div>
+        </section>
+
         <section class="session-module-kpis">
           <button class="session-module-btn active" type="button" data-module="movilidad">
-            <span class="action-icon">🧘</span><strong>Movilidad</strong><small>10 ejercicios</small>
+            <span class="action-icon">🧘</span><strong>Movilidad</strong><small>Dinámico · añade solo los necesarios</small>
           </button>
           <button class="session-module-btn" type="button" data-module="activacion">
-            <span class="action-icon">⚡</span><strong>Activación</strong><small>10 ejercicios + RPE</small>
+            <span class="action-icon">⚡</span><strong>Activación</strong><small>Dinámico · ejercicios + RPE</small>
           </button>
           <button class="session-module-btn" type="button" data-module="principal">
-            <span class="action-icon">🏋️</span><strong>Sesión Principal</strong><small>4 bloques x 4 ejercicios</small>
+            <span class="action-icon">🏋️</span><strong>Sesión Principal</strong><small>4 bloques · ejercicios dinámicos</small>
+          </button>
+          <button class="session-module-btn" type="button" data-module="carrera">
+            <span class="action-icon">🏃</span><strong>Sesiones Carrera</strong><small>Series dinámicas · distancia/tiempo + ritmo + RPE + FC</small>
           </button>
         </section>
 
@@ -7929,7 +11239,7 @@ const sections = {
               <p class="eyebrow">Bloque de trabajo</p>
               <h3 id="activeModuleTitle">Movilidad</h3>
             </div>
-            <span id="activeModuleCount">10 ejercicios</span>
+            <span id="activeModuleCount">1 ejercicio</span>
           </div>
 
           <div id="principalBlocksNav" class="principal-blocks-nav" style="display:none;">
@@ -7958,7 +11268,12 @@ const sections = {
           <datalist id="libraryMovilidadList">${libraryOptions("Movilidad")}</datalist>
           <datalist id="libraryActivacionList">${libraryOptions("Activación")}</datalist>
           <datalist id="libraryPrincipalList">${libraryOptions("Sesión Principal")}</datalist>
+          <datalist id="libraryCarreraList">${libraryOptions("Sesiones Carrera")}</datalist>
           <div id="moduleExercises"></div>
+          <div class="dynamic-exercise-actions">
+            <button class="secondary-btn add-exercise-btn" type="button" id="addExerciseBtn">＋ Añadir ejercicio</button>
+            <small id="dynamicExerciseHint">Solo se muestran los ejercicios que necesitas · máximo 10 por bloque.</small>
+          </div>
         </section>
 
         <button class="primary-btn" type="submit" id="saveSessionBtn">Guardar sesión</button>
@@ -7985,134 +11300,97 @@ const sections = {
     afterRender: bindSessionsForm
   },
   periodicidad: {
-    title: "Periodicidad",
+    title: "Periodicidad PRO",
     html: `
-      <h2>Periodicidad PRO</h2>
-      <p>Control de volumen, ejercicios, pliometría, distribución y tonelaje por microciclo.</p>
+      <div class="periodicity-pro-v1" id="periodicityProRoot">
+        <section class="periodicity-pro-hero">
+          <div>
+            <p class="eyebrow">PLANIFICACIÓN ESTRATÉGICA</p>
+            <h2>📆 Periodicidad PRO</h2>
+            <p>Lee la temporada real del deportista a partir de sus microciclos y sesiones existentes.</p>
+          </div>
+          <div class="periodicity-pro-controls">
+            <label>Cliente
+              <select id="periodicityPatientFilter">
+                <option value="" selected>Selecciona paciente</option>
+                ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
+              </select>
+            </label>
+            <label>Temporada
+              <select id="periodicitySeasonYear"></select>
+            </label>
+          </div>
+        </section>
 
-      <div class="patient-form" style="margin-top:24px;">
-        <label for="periodicityPatientFilter">Filtrar por paciente</label>
-        <select id="periodicityPatientFilter">
-          <option value="" selected disabled>Selecciona paciente</option>
-          ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
-        </select>
+        <section id="periodicitySeasonOverview" class="periodicity-season-overview"></section>
+        <section id="periodicityMicroTimeline" class="periodicity-micro-timeline"></section>
+        <section id="periodicityMicroDetail" class="periodicity-micro-detail"></section>
+
+        <details class="periodicity-analysis-details">
+          <summary><span>📊</span><div><strong>Análisis avanzado del entrenamiento</strong><small>Volumen, pliometría, tonelaje y distribución</small></div><b>⌄</b></summary>
+          <div class="periodicity-analysis-content">
+            <div id="periodicityPatientCard"></div>
+            <section class="periodicity-kpi-grid" id="periodicityKpis"></section>
+
+            <section class="periodicity-dashboard">
+              <article class="periodicity-card">
+                <div class="module-panel-header"><div><p class="eyebrow">Volumen semanal</p><h3>Series por microciclo</h3></div><span>M1 · M2 · M3...</span></div>
+                <div class="volume-chart" id="weeklyVolumeChart"></div>
+              </article>
+              <article class="periodicity-card">
+                <div class="module-panel-header"><div><p class="eyebrow">Resumen total</p><h3>Detalle por microciclo</h3></div></div>
+                <div class="volume-table-wrap"><table class="volume-table"><thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Series</th></tr></thead><tbody id="weeklyVolumeTableBody"></tbody></table></div>
+              </article>
+            </section>
+
+            <section class="periodicity-dashboard">
+              <article class="periodicity-card">
+                <div class="module-panel-header"><div><p class="eyebrow">Volumen pliometría</p><h3>Series de pliometría por microciclo</h3></div><span>Plyo Extensiva · Plyo Intensiva · Pliometría</span></div>
+                <div class="volume-chart plyo-chart" id="plyometricVolumeChart"></div>
+              </article>
+              <article class="periodicity-card">
+                <div class="module-panel-header"><div><p class="eyebrow">Resumen pliometría</p><h3>Detalle pliométrico anual</h3></div></div>
+                <div class="volume-table-wrap"><table class="volume-table"><thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios Plyo</th><th>Series Plyo</th></tr></thead><tbody id="plyometricVolumeTableBody"></tbody></table></div>
+              </article>
+            </section>
+
+            <section class="periodicity-dashboard kg-dashboard-row">
+              <article class="periodicity-card"><div class="module-panel-header"><div><p class="eyebrow">Tonelaje</p><h3>Kg totales por microciclo</h3></div><span>Series × Reps × Kg</span></div><div class="volume-chart tonnage-chart" id="tonnageChart"></div></article>
+              <article class="periodicity-card"><div class="module-panel-header"><div><p class="eyebrow">Resumen tonelaje</p><h3>Detalle de carga externa</h3></div></div><div class="volume-table-wrap"><table class="volume-table"><thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Tonelaje Kg</th></tr></thead><tbody id="tonnageTableBody"></tbody></table></div></article>
+            </section>
+
+            <section class="periodicity-dashboard distribution-dashboard-row"><article class="periodicity-card distribution-wide-card"><div class="module-panel-header"><div><p class="eyebrow">Distribución</p><h3>TS · TI · Core · Plyo</h3></div></div><div class="distribution-chart" id="distributionChart"></div></article></section>
+          </div>
+        </details>
       </div>
-
-      <div id="periodicityPatientCard"></div>
-
-      <section class="periodicity-kpi-grid" id="periodicityKpis"></section>
-
-      <section class="periodicity-dashboard">
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Volumen semanal</p>
-              <h3>Series por microciclo</h3>
-            </div>
-            <span>M1 · M2 · M3...</span>
-          </div>
-          <div class="volume-chart" id="weeklyVolumeChart"></div>
-        </article>
-
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Resumen total</p>
-              <h3>Detalle por microciclo</h3>
-            </div>
-          </div>
-          <div class="volume-table-wrap">
-            <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Series</th></tr></thead>
-              <tbody id="weeklyVolumeTableBody"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <section class="periodicity-dashboard">
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Volumen pliometría</p>
-              <h3>Series de pliometría por microciclo</h3>
-            </div>
-            <span>Plyo Extensiva · Plyo Intensiva · Pliometría</span>
-          </div>
-          <div class="volume-chart plyo-chart" id="plyometricVolumeChart"></div>
-        </article>
-
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Resumen pliometría</p>
-              <h3>Detalle pliométrico anual</h3>
-            </div>
-          </div>
-          <div class="volume-table-wrap">
-            <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios Plyo</th><th>Series Plyo</th></tr></thead>
-              <tbody id="plyometricVolumeTableBody"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <section class="periodicity-dashboard kg-dashboard-row">
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Tonelaje</p>
-              <h3>Kg totales por microciclo</h3>
-            </div>
-            <span>Series × Reps × Kg</span>
-          </div>
-          <div class="volume-chart tonnage-chart" id="tonnageChart"></div>
-        </article>
-
-        <article class="periodicity-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Resumen tonelaje</p>
-              <h3>Detalle de carga externa</h3>
-            </div>
-          </div>
-          <div class="volume-table-wrap">
-            <table class="volume-table">
-              <thead><tr><th>Microciclo</th><th>Sesiones</th><th>Ejercicios</th><th>Tonelaje Kg</th></tr></thead>
-              <tbody id="tonnageTableBody"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <section class="periodicity-dashboard distribution-dashboard-row">
-        <article class="periodicity-card distribution-wide-card">
-          <div class="module-panel-header">
-            <div>
-              <p class="eyebrow">Distribución</p>
-              <h3>TS · TI · Core · Plyo</h3>
-            </div>
-          </div>
-          <div class="distribution-chart" id="distributionChart"></div>
-        </article>
-      </section>
     `,
     afterRender: bindPeriodicityPanel
   },
   graficaPro: {
-    title: "Gráfica PRO",
+    title: "Centro de Rendimiento",
     html: `
-      <h2>Gráfica PRO</h2>
-      <p>Radar completo por cliente para ver distribución, volumen y carga de un vistazo.</p>
+      <section class="graph-pro-page-intro">
+        <div>
+          <p class="eyebrow">INTELIGENCIA DEL ENTRENAMIENTO</p>
+          <h2>Centro de Rendimiento</h2>
+          <p>Compara libremente dos microciclos y analiza sus diferencias con inteligencia deportiva.</p>
+        </div>
+        <span class="graph-pro-version-chip">Centro de Rendimiento · v2.5.0</span>
+      </section>
 
-      <div class="patient-form" style="margin-top:24px;">
-        <label for="graphProPatientFilter">Filtrar por paciente</label>
-        <select id="graphProPatientFilter">
-          <option value="" selected disabled>Selecciona paciente</option>
-          ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
-        </select>
-      </div>
+      <section class="graph-pro-selector-panel">
+        <label for="graphProPatientFilter">Deportista</label>
+        <div class="graph-pro-select-wrap">
+          <select id="graphProPatientFilter">
+            <option value="" selected disabled>Selecciona un deportista</option>
+            ${patientOptions().replace('<option value="">Selecciona paciente</option>', '')}
+          </select>
+          <button type="button" id="graphProPatientClear" class="graph-pro-select-clear" aria-label="Cerrar deportista" data-tooltip="Cerrar deportista" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+          <span class="graph-pro-select-arrow" aria-hidden="true">⌄</span>
+        </div>
+      </section>
 
       <div id="graphProArea"></div><div id="microCompareArea"></div>
     `,
@@ -8251,6 +11529,10 @@ function pmSyncAdminNavigation(key) {
   document.querySelectorAll("[data-mobile-section]").forEach(nav => {
     nav.classList.toggle("active", nav.dataset.mobileSection === key);
   });
+  document.querySelectorAll("[data-floating-section]").forEach(nav => {
+    nav.classList.toggle("active", nav.dataset.floatingSection === key);
+  });
+  ppfUpdateFloatingNavigator(key);
 }
 
 function pmCloseAdminMoreSheet() {
@@ -8310,13 +11592,17 @@ function renderSection(key) {
   const section = sections[key] || sections.inicio;
   const isHome = key === "inicio";
   const isAgenda = key === "agenda";
+  const isPeriodicity = key === "periodicidad";
+  const isGraphPro = key === "graficaPro";
   document.body.classList.toggle("admin-home-active", isHome);
   document.body.classList.toggle("admin-agenda-active", isAgenda);
+  document.body.classList.toggle("admin-periodicity-active", isPeriodicity);
+  document.body.classList.toggle("admin-graph-pro-active", isGraphPro);
   sectionTitle.textContent = section.title;
   contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-  if (!isHome) pmSetDashboardKpis(key);
+  if (!isHome && !isPeriodicity && !isGraphPro) pmSetDashboardKpis(key);
   if (section.afterRender) section.afterRender();
-  if (!isHome) pmSetDashboardKpis(key);
+  if (!isHome && !isPeriodicity && !isGraphPro) pmSetDashboardKpis(key);
 }
 
 navItems.forEach(item => {
@@ -8335,7 +11621,101 @@ document.getElementById("adminMobileMoreBtn")?.addEventListener("click", () => {
 document.getElementById("adminMobileMoreClose")?.addEventListener("click", pmCloseAdminMoreSheet);
 document.getElementById("adminMobileMoreBackdrop")?.addEventListener("click", pmCloseAdminMoreSheet);
 document.getElementById("adminMobileLogout")?.addEventListener("click", () => window.PM_ADMIN_LOGOUT());
-document.addEventListener("keydown", event => { if (event.key === "Escape") pmCloseAdminMoreSheet(); });
+
+// PPF PRO v2.5.0.1.2 · PPF Workspace Navigator
+const PPF_FLOATING_SECTION_LABELS = Object.freeze({
+  inicio: "Inicio",
+  paciente: "Paciente",
+  usuarios: "Usuarios",
+  biblioteca: "Biblioteca",
+  sesiones: "Creación sesiones",
+  agenda: "Agenda PRO",
+  periodicidad: "Periodicidad",
+  graficaPro: "Centro de Rendimiento",
+  valoraciones: "Valoraciones",
+  sistema: "Sistema"
+});
+let ppfFloatingNavigatorSection = "inicio";
+function ppfUpdateFloatingNavigator(key) {
+  const trigger = document.getElementById("ppfFloatingMenuBtn");
+  const context = trigger?.querySelector(".ppf-floating-menu-context");
+  const sectionName = PPF_FLOATING_SECTION_LABELS[key] || "Inicio";
+  ppfFloatingNavigatorSection = key in PPF_FLOATING_SECTION_LABELS ? key : "inicio";
+  if (context) {
+    context.classList.add("is-changing");
+    window.setTimeout(() => {
+      context.textContent = ` · ${sectionName}`;
+      context.classList.remove("is-changing");
+    }, 90);
+  }
+  trigger?.setAttribute("data-section", ppfFloatingNavigatorSection);
+  if (!trigger?.classList.contains("is-open")) {
+    trigger?.setAttribute("aria-label", `Abrir menú lateral. Sección actual: ${sectionName}`);
+    trigger?.setAttribute("title", `Menú · ${sectionName}`);
+  }
+}
+
+// PPF PRO v2.5.0.1 · Floating Navigation Access
+let ppfFloatingMenuLastFocus = null;
+function ppfCloseFloatingMenu(options = {}) {
+  const drawer = document.getElementById("ppfFloatingMenuDrawer");
+  const backdrop = document.getElementById("ppfFloatingMenuBackdrop");
+  const trigger = document.getElementById("ppfFloatingMenuBtn");
+  drawer?.classList.remove("open");
+  backdrop?.classList.remove("open");
+  trigger?.classList.remove("is-open");
+  trigger?.setAttribute("aria-expanded", "false");
+  trigger?.setAttribute("aria-label", `Abrir menú lateral. Sección actual: ${PPF_FLOATING_SECTION_LABELS[ppfFloatingNavigatorSection] || "Inicio"}`);
+  trigger?.setAttribute("title", `Menú · ${PPF_FLOATING_SECTION_LABELS[ppfFloatingNavigatorSection] || "Inicio"}`);
+  const icon = trigger?.querySelector(".ppf-floating-menu-icon");
+  if (icon) icon.textContent = "☰";
+  const action = trigger?.querySelector(".ppf-floating-menu-action");
+  if (action) action.textContent = "Menú";
+  drawer?.setAttribute("aria-hidden", "true");
+  drawer?.setAttribute("inert", "");
+  document.body.classList.remove("ppf-floating-menu-open");
+  window.setTimeout(() => {
+    if (drawer && !drawer.classList.contains("open")) drawer.hidden = true;
+    if (backdrop && !backdrop.classList.contains("open")) backdrop.hidden = true;
+  }, 290);
+  if (options.restoreFocus !== false) (ppfFloatingMenuLastFocus || trigger)?.focus?.();
+}
+function ppfOpenFloatingMenu() {
+  const drawer = document.getElementById("ppfFloatingMenuDrawer");
+  const backdrop = document.getElementById("ppfFloatingMenuBackdrop");
+  const trigger = document.getElementById("ppfFloatingMenuBtn");
+  ppfFloatingMenuLastFocus = document.activeElement;
+  if (drawer) { drawer.hidden = false; drawer.removeAttribute("inert"); drawer.setAttribute("aria-hidden", "false"); }
+  if (backdrop) backdrop.hidden = false;
+  trigger?.classList.add("is-open");
+  trigger?.setAttribute("aria-expanded", "true");
+  trigger?.setAttribute("aria-label", "Cerrar menú lateral");
+  trigger?.setAttribute("title", "Cerrar menú");
+  const icon = trigger?.querySelector(".ppf-floating-menu-icon");
+  if (icon) icon.textContent = "✕";
+  const action = trigger?.querySelector(".ppf-floating-menu-action");
+  if (action) action.textContent = "Cerrar";
+  document.body.classList.add("ppf-floating-menu-open");
+  requestAnimationFrame(() => requestAnimationFrame(() => { backdrop?.classList.add("open"); drawer?.classList.add("open"); }));
+  window.setTimeout(() => drawer?.querySelector("button")?.focus(), 120);
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+function ppfToggleFloatingMenu() {
+  const drawer = document.getElementById("ppfFloatingMenuDrawer");
+  if (drawer?.classList.contains("open")) ppfCloseFloatingMenu(); else ppfOpenFloatingMenu();
+}
+document.getElementById("ppfFloatingMenuBtn")?.addEventListener("click", ppfToggleFloatingMenu);
+document.getElementById("ppfFloatingMenuClose")?.addEventListener("click", ppfCloseFloatingMenu);
+document.getElementById("ppfFloatingMenuBackdrop")?.addEventListener("click", ppfCloseFloatingMenu);
+document.querySelectorAll("[data-floating-section]").forEach(item => {
+  item.addEventListener("click", () => {
+    ppfCloseFloatingMenu({ restoreFocus: false });
+    pmNavigateAdmin(item.dataset.floatingSection);
+  });
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") { pmCloseAdminMoreSheet(); ppfCloseFloatingMenu(); }
+});
 
 const sidebarLogoutBtn = document.getElementById("logoutBtn");
 if (sidebarLogoutBtn) {
@@ -8533,8 +11913,12 @@ async function pmRefreshPatientsKpiAndPage() {
   try { patientFiles = JSON.parse(localStorage.getItem("patientFiles") || "[]"); } catch (_) { patientFiles = []; }
 
   if (typeof pmSetDashboardKpis === "function") {
-    const active = document.querySelector('.nav-item.active')?.dataset.section || "paciente";
-    pmSetDashboardKpis(active === "usuarios" ? "usuarios" : "paciente");
+    // B.2.1.4.5 · Sync Hydration: tras un pull conservamos el contexto visual
+    // activo. Antes este refresco forzaba siempre el modo "paciente" y podía
+    // sobrescribir temporalmente los KPI de Creación sesiones hasta volver a
+    // pulsar la sección.
+    const active = document.querySelector('.nav-item.active')?.dataset.section || "inicio";
+    pmSetDashboardKpis(active);
   } else {
     if (patientCounter) patientCounter.textContent = patients.length;
     if (historyCounter) historyCounter.textContent = histories.length;
@@ -8736,6 +12120,7 @@ async function agendaProMigrateHistoricalFlexibleSessions(options = {}) {
   if (!changed && marker && !force) return { changed: 0, total: sessions.length };
 
   localStorage.setItem("sessions", JSON.stringify(sessions));
+  window.PPF_CORE?.emit?.("sessions");
   // Algunas instalaciones antiguas conservan objetos completos también en
   // completedSessions. Si existen, se normalizan para que ningún consumidor
   // secundario vuelva a presentar "Sin hora" como incidencia.

@@ -43,6 +43,11 @@ let completedSessions = JSON.parse(localStorage.getItem("completedSessions")) ||
 
 let currentPatient = patients.find(patient => patient.nickname === currentUser.nickname);
 let currentClient = currentPatient;
+window.currentPatient = currentPatient;
+
+if (currentPatient) {
+  window.PPF_CLIENT_HERO?.render?.({ patient: currentPatient });
+}
 
 if (!currentPatient) {
   alert("No se han encontrado tus datos de cliente.");
@@ -545,6 +550,252 @@ function getClientDashboardStats() {
   return getClientPeriodicityStats();
 }
 
+function getClientHomeDateLabel(session) {
+  if (!session?.fecha) return "Próximamente";
+  const value = String(session.fecha).slice(0, 10);
+  const sessionDate = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(sessionDate.getTime())) return session.fecha;
+
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const tomorrowKey = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+
+  if (value === todayKey) return "Hoy";
+  if (value === tomorrowKey) return "Mañana";
+  return sessionDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function getClientHomeDateKey(session) {
+  return String(session?.fecha || "").slice(0, 10);
+}
+
+function getClientHomeTodayKey(offsetDays = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function getClientHomeDailyState(session) {
+  if (!session) {
+    return {
+      eyebrow: "✓ Todo al día",
+      title: "No tienes entrenamientos pendientes.",
+      copy: "Tu planificación está al día. Disfruta del descanso y prepárate para lo siguiente.",
+      action: null
+    };
+  }
+
+  const dateKey = getClientHomeDateKey(session);
+  const todayKey = getClientHomeTodayKey(0);
+  const tomorrowKey = getClientHomeTodayKey(1);
+
+  if (dateKey && dateKey < todayKey) {
+    return {
+      eyebrow: "Sesión pendiente",
+      title: "Tu entrenamiento te está esperando",
+      copy: "Tienes una sesión pendiente por completar. Puedes retomarla cuando estés preparado.",
+      action: "Ver mi entrenamiento"
+    };
+  }
+
+  if (dateKey === todayKey) {
+    return {
+      eyebrow: "Entrenas hoy",
+      title: "Tu sesión de hoy está preparada",
+      copy: "Todo está listo para que continúes con tu planificación.",
+      action: "Ver mi entrenamiento"
+    };
+  }
+
+  if (dateKey === tomorrowKey) {
+    return {
+      eyebrow: "Próximo entrenamiento",
+      title: "Mañana continúa tu planificación",
+      copy: "Tu siguiente sesión ya está preparada para que sepas qué viene después.",
+      action: "Ver mi entrenamiento"
+    };
+  }
+
+  return {
+    eyebrow: "Próxima sesión",
+    title: "Tu siguiente entrenamiento ya está programado",
+    copy: "Consulta la sesión cuando quieras y llega con todo claro al próximo entrenamiento.",
+    action: "Ver mi entrenamiento"
+  };
+}
+
+function renderClientHomeNextSession() {
+  const pendingSessions = getClientPendingSessions().slice().sort((a, b) => {
+    const dateA = getClientHomeDateKey(a) || "9999-12-31";
+    const dateB = getClientHomeDateKey(b) || "9999-12-31";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    return Number(a.numero || 0) - Number(b.numero || 0);
+  });
+  const nextSession = pendingSessions[0];
+  const state = getClientHomeDailyState(nextSession);
+
+  if (!nextSession) {
+    return `
+      <article class="ppf-home-empty-next ppf-daily-smart-card" data-daily-state="all-clear">
+        <p class="ppf-next-smart-card__eyebrow">${escapeHTML(state.eyebrow)}</p>
+        <h3>${escapeHTML(state.title)}</h3>
+        <p>${escapeHTML(state.copy)}</p>
+      </article>
+    `;
+  }
+
+  const kind = getClientSessionKind(nextSession);
+  const series = getClientSessionSeries(nextSession);
+  const exercises = getClientSessionExercises(nextSession).length;
+  const tonnage = Math.round(getClientSessionTonnage(nextSession));
+  const when = getClientHomeDateLabel(nextSession);
+
+  return `
+    <article class="ppf-next-smart-card ppf-daily-smart-card" data-daily-state="session">
+      <div>
+        <p class="ppf-next-smart-card__eyebrow">${escapeHTML(state.eyebrow)} · ${escapeHTML(when)}</p>
+        <h3>${escapeHTML(state.title)}</h3>
+        <p class="ppf-next-smart-card__copy">${escapeHTML(state.copy)}</p>
+        <div class="ppf-next-smart-card__meta" aria-label="Resumen del entrenamiento">
+          <span>${kind.icon} ${escapeHTML(kind.label)}</span>
+          <span>Sesión ${escapeHTML(getClientSessionDisplayNumber(nextSession))}</span>
+          <span>${series} series</span>
+          <span>${exercises} ejercicios</span>
+          ${tonnage > 0 ? `<span>${tonnage} Kg programados</span>` : ""}
+        </div>
+      </div>
+      <button class="ppf-home-primary-action" type="button" data-client-nav-action="proxima">${escapeHTML(state.action || "Ver mi entrenamiento")}</button>
+    </article>
+  `;
+}
+
+function getClientHomeConsistency() {
+  const clientSessions = sortSessionsNewestFirst(
+    sessions.filter(session => sessionBelongsToCurrentClient(session))
+  ).slice(0, 6);
+
+  if (!clientSessions.length) return { value: null, completed: 0, total: 0 };
+  const completed = clientSessions.filter(session => isSessionCompleted(session.id || session.sessionId)).length;
+  return {
+    value: Math.round((completed / clientSessions.length) * 100),
+    completed,
+    total: clientSessions.length
+  };
+}
+
+function renderClientHomeSmartCards(stats) {
+  const completedCount = getClientCompletedSessions().length;
+  const microLabel = stats.micro || "-";
+  const consistency = getClientHomeConsistency();
+  const consistencyValue = consistency.value === null ? "—" : `${consistency.value}%`;
+  const consistencyCopy = consistency.value === null
+    ? "aún sin historial suficiente"
+    : `${consistency.completed} de tus últimas ${consistency.total} sesiones`;
+
+  return `
+    <section class="ppf-home-smart-grid" aria-label="Resumen de tu proceso">
+      <article class="ppf-home-smart-kpi">
+        <span>Entrenamientos</span>
+        <strong>${completedCount}</strong>
+        <small>${completedCount === 1 ? "sesión completada" : "sesiones completadas"}</small>
+      </article>
+      <article class="ppf-home-smart-kpi">
+        <span>Momento actual</span>
+        <strong>${escapeHTML(microLabel)}</strong>
+        <small>de tu planificación</small>
+      </article>
+      <article class="ppf-home-smart-kpi">
+        <span>Constancia</span>
+        <strong>${consistencyValue}</strong>
+        <small>${escapeHTML(consistencyCopy)}</small>
+      </article>
+    </section>
+  `;
+}
+
+function getClientHomeProgressMessage(completedCount, consistency) {
+  if (completedCount === 0) return {
+    title: "Empezamos a construir tu historial",
+    copy: "Cuando completes tus primeras sesiones, aquí podrás seguir tu evolución con datos reales.",
+    tone: "building"
+  };
+  if (completedCount < 4) return {
+    title: "Tu proceso ya está en marcha",
+    copy: `Ya has completado ${completedCount} ${completedCount === 1 ? "entrenamiento" : "entrenamientos"}. Necesitamos algo más de historial antes de valorar tendencias con rigor.`,
+    tone: "building"
+  };
+  if (consistency.value !== null && consistency.total >= 4 && consistency.value >= 80) return {
+    title: "Estás manteniendo una buena continuidad",
+    copy: `Has completado ${consistency.completed} de tus últimas ${consistency.total} sesiones. Seguimos acumulando información para interpretar tu progreso con rigor.`,
+    tone: "positive"
+  };
+  return {
+    title: "Seguimos construyendo tu progreso",
+    copy: `Tienes ${completedCount} entrenamientos completados. PPF seguirá utilizando tu historial para mostrarte cambios cuando existan datos suficientes.`,
+    tone: "neutral"
+  };
+}
+
+function renderClientHomeProgress(stats) {
+  const completedCount = getClientCompletedSessions().length;
+  const consistency = getClientHomeConsistency();
+  const progress = getClientHomeProgressMessage(completedCount, consistency);
+
+  return `
+    <article class="ppf-home-progress-card ppf-home-progress-card--${progress.tone}">
+      <div>
+        <p class="eyebrow">Tu evolución</p>
+        <h3>${escapeHTML(progress.title)}</h3>
+        <p class="ppf-home-progress-copy">${escapeHTML(progress.copy)}</p>
+      </div>
+      <button class="ppf-home-secondary-action" type="button" data-client-progress-sessions>Ver mis entrenamientos</button>
+    </article>
+  `;
+}
+
+function renderClientDetailedPerformance(stats, weekly, plyo) {
+  return `
+    <details class="ppf-home-detail">
+      <summary>Ver rendimiento detallado</summary>
+      <div class="ppf-home-detail__body">
+        <section class="periodicity-kpi-grid client-periodicity-kpis">
+          <article class="periodicity-kpi"><span>Micro actual</span><strong>${stats.micro}</strong></article>
+          <article class="periodicity-kpi"><span>Sesiones acumuladas</span><strong>${stats.sessions}</strong></article>
+          <article class="periodicity-kpi"><span>Series acumuladas</span><strong>${stats.series}</strong></article>
+          <article class="periodicity-kpi"><span>Ejercicios programados</span><strong>${stats.exercises}</strong></article>
+          <article class="periodicity-kpi plyo"><span>Series pliometría</span><strong>${stats.plyoSeries}</strong></article>
+          <article class="periodicity-kpi plyo"><span>Ejercicios pliometría</span><strong>${stats.plyoExercises}</strong></article>
+          <article class="periodicity-kpi"><span>Tonelaje Kg</span><strong>${stats.tonnage}</strong></article>
+        </section>
+
+        <section class="periodicity-dashboard client-periodicity-dashboard">
+          <article class="periodicity-card client-periodicity-card">
+            <div class="module-panel-header"><div><p class="eyebrow">Volumen</p><h3>Series por microciclo</h3></div></div>
+            ${renderClientVolumeBarChart(weekly, "Series", "Sin series registradas todavía.")}
+          </article>
+          <article class="periodicity-card client-periodicity-card">
+            <div class="module-panel-header"><div><p class="eyebrow">Pliometría</p><h3>Volumen pliometría</h3></div></div>
+            ${renderClientVolumeBarChart(plyo, "Series", "Sin volumen de pliometría registrado todavía.")}
+          </article>
+        </section>
+
+        <section class="periodicity-dashboard client-periodicity-dashboard client-periodicity-bottom">
+          <article class="periodicity-card client-periodicity-card client-tonnage-card">
+            <div class="module-panel-header"><div><p class="eyebrow">Carga externa</p><h3>Kg totales por microciclo</h3></div></div>
+            ${renderClientVolumeBarChart(weekly, "Tonelaje Kg", "Sin tonelaje registrado todavía.", { valueKey: "tonnage", format: value => Math.round(value) })}
+          </article>
+          <article class="periodicity-card client-periodicity-card client-distribution-card">
+            <div class="module-panel-header"><div><p class="eyebrow">Distribución</p><h3>TS · TI · Core · Plyo</h3></div></div>
+            ${renderClientDistribution()}
+          </article>
+        </section>
+      </div>
+    </details>
+  `;
+}
+
 function renderClientDashboard() {
   refreshCompletedSessions();
   const stats = getClientDashboardStats();
@@ -552,93 +803,19 @@ function renderClientDashboard() {
   const plyo = getClientPlyometricData();
 
   const html = `
-    <div class="client-profile-card client-pro-hero">
-      ${currentPatient.foto 
-        ? `<img class="client-profile-photo" src="${currentPatient.foto}" alt="${currentPatient.nombre}">`
-        : `<div class="client-profile-photo fallback">${currentPatient.nombre.charAt(0).toUpperCase()}</div>`
-      }
-
-      <div>
-        <p class="eyebrow">Periodicidad PRO Cliente</p>
-        <h2>${currentPatient.nombre}</h2>
-        <p>Mismo panel visual que usa tu preparador: microciclos, volumen, pliometría, tonelaje y distribución del trabajo.</p>
-
-        <div class="patient-tags">
-          <span>@${currentPatient.nickname}</span>
-          <span>${currentPatient.edad || "-"} años</span>
-          <span>${currentPatient.peso || "-"} kg</span>
-          <span>${currentPatient.altura || "-"} cm</span>
-          <span>IMC ${currentPatient.imc || "-"}</span>
-          <span>${currentPatient.contenido || "-"}</span>
+    <div class="ppf-client-home">
+      <div class="ppf-home-section-head">
+        <div>
+          <p>Tu entrenamiento</p>
+          <h2>Esto es lo que necesitas saber hoy</h2>
         </div>
       </div>
+
+      ${renderClientHomeNextSession()}
+      ${renderClientHomeSmartCards(stats)}
+      ${renderClientHomeProgress(stats)}
+      ${renderClientDetailedPerformance(stats, weekly, plyo)}
     </div>
-
-    <section class="periodicity-kpi-grid client-periodicity-kpis">
-      <article class="periodicity-kpi"><span>Micro actual</span><strong>${stats.micro}</strong></article>
-      <article class="periodicity-kpi"><span>Sesiones acumuladas</span><strong>${stats.sessions}</strong></article>
-      <article class="periodicity-kpi"><span>Series acumuladas</span><strong>${stats.series}</strong></article>
-      <article class="periodicity-kpi"><span>Ejercicios programados</span><strong>${stats.exercises}</strong></article>
-      <article class="periodicity-kpi plyo"><span>Series pliometría</span><strong>${stats.plyoSeries}</strong></article>
-      <article class="periodicity-kpi plyo"><span>Ejercicios pliometría</span><strong>${stats.plyoExercises}</strong></article>
-      <article class="periodicity-kpi"><span>Tonelaje Kg</span><strong>${stats.tonnage}</strong></article>
-    </section>
-
-    <section class="periodicity-dashboard client-periodicity-dashboard">
-      <article class="periodicity-card client-periodicity-card">
-        <div class="module-panel-header">
-          <div>
-            <p class="eyebrow">Volumen</p>
-            <h3>Series por microciclo</h3>
-          </div>
-        </div>
-        ${renderClientVolumeBarChart(weekly, "Series", "Sin series registradas todavía.")}
-      </article>
-
-      <article class="periodicity-card client-periodicity-card">
-        <div class="module-panel-header">
-          <div>
-            <p class="eyebrow">Pliometría</p>
-            <h3>Volumen pliometría</h3>
-          </div>
-        </div>
-        ${renderClientVolumeBarChart(plyo, "Series", "Sin volumen de pliometría registrado todavía.")}
-      </article>
-    </section>
-
-    <section class="periodicity-dashboard client-periodicity-dashboard client-periodicity-bottom">
-      <article class="periodicity-card client-periodicity-card client-tonnage-card">
-        <div class="module-panel-header">
-          <div>
-            <p class="eyebrow">Carga externa</p>
-            <h3>Kg totales por microciclo</h3>
-          </div>
-        </div>
-        ${renderClientVolumeBarChart(weekly, "Tonelaje Kg", "Sin tonelaje registrado todavía.", { valueKey: "tonnage", format: value => Math.round(value) })}
-      </article>
-
-      <article class="periodicity-card client-periodicity-card client-distribution-card">
-        <div class="module-panel-header">
-          <div>
-            <p class="eyebrow">Distribución</p>
-            <h3>TS · TI · Core · Plyo</h3>
-          </div>
-        </div>
-        ${renderClientDistribution()}
-      </article>
-    </section>
-
-    <section class="client-pro-grid client-latest-grid">
-      <article class="client-pro-card">
-        <div class="module-panel-header">
-          <div>
-            <p class="eyebrow">Últimas sesiones</p>
-            <h3>Resumen reciente</h3>
-          </div>
-        </div>
-        ${renderClientLatestSessions()}
-      </article>
-    </section>
   `;
 
   setTimeout(animateClientPeriodicityCharts, 80);
@@ -709,20 +886,12 @@ function sessionBelongsToCurrentClient(session = {}) {
 }
 
 function isSessionCompleted(sessionId) {
+  const session = sessions.find(item => String(item.id || item.sessionId || "") === String(sessionId || ""));
+  if (window.PPF_SESSION_TRUTH && session) {
+    return window.PPF_SESSION_TRUTH.isCompleted(session, completedSessions);
+  }
   const sid = String(sessionId || "");
-  let notifications = [];
-  try { notifications = JSON.parse(localStorage.getItem("notifications") || "[]"); } catch (_) {}
-
-  const latestPreparedAt = (Array.isArray(notifications) ? notifications : [])
-    .filter(item => item?.type === "prepared_session" && String(item?.sessionId || "") === sid)
-    .reduce((latest, item) => Math.max(latest, Date.parse(item?.createdAt || "") || 0), 0);
-
-  return completedSessions.some(item => {
-    if (String(item.sessionId || item.id || "") !== sid) return false;
-    if (normalizeClientIdentity(item.patientNickname || item.nickname || item.patient || "") !== normalizeClientIdentity(currentPatient?.nickname || "")) return false;
-    const completedAt = Date.parse(item.completedAt || item.fechaCompletada || "") || 0;
-    return !(latestPreparedAt && latestPreparedAt > completedAt);
-  });
+  return completedSessions.some(item => String(item.sessionId || item.id || "") === sid);
 }
 
 function sortSessionsNewestFirst(list = []) {
@@ -745,30 +914,14 @@ function sortSessionsOldestFirst(list = []) {
 
 function getClientCompletedSessions() {
   refreshCompletedSessions();
-  return sortSessionsNewestFirst(
-    sessions.filter(session =>
-      sessionBelongsToCurrentClient(session) &&
-      isSessionCompleted(session.id)
-    )
-  );
+  const summary = window.PPF_CORE?.summary?.(currentPatient.nickname);
+  return summary ? summary.completedSessions : [];
 }
 
 function getClientPendingSessions() {
   refreshCompletedSessions();
-  return sessions
-    .filter(session =>
-      sessionBelongsToCurrentClient(session) &&
-      !isSessionCompleted(session.id)
-    )
-    .sort((a, b) => {
-      const dateA = a.fecha || "";
-      const dateB = b.fecha || "";
-      if (dateA !== dateB) return dateA.localeCompare(dateB);
-      const microA = Number(a.microciclo || a.sessionBaseNumber || 0);
-      const microB = Number(b.microciclo || b.sessionBaseNumber || 0);
-      if (microA !== microB) return microA - microB;
-      return Number(a.subsessionOrder || a.dayOrder || 1) - Number(b.subsessionOrder || b.dayOrder || 1);
-    });
+  const summary = window.PPF_CORE?.summary?.(currentPatient.nickname);
+  return summary ? summary.pendingSessions : [];
 }
 
 function completeClientSession(sessionId) {
@@ -789,6 +942,12 @@ function completeClientSession(sessionId) {
 });
 
   localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
+  window.PPF_CORE?.emit?.("completedSessions");
+  // B.2.1.4.5 · Instant Refresh: retiramos el aviso de esta sesión en el mismo
+  // tick visual. Después el reconciliador confirma la sustitución exacta en
+  // Supabase, evitando tanto el parpadeo como una posible resurrección.
+  try { window.PPF_NOTIFICATIONS?.purgePreparedSessionLocal?.(sessionId); } catch (_) {}
+  try { window.dispatchEvent(new CustomEvent("PPF_NOTIFICATION_LIFECYCLE_RECONCILE", { detail: { sessionId } })); } catch (_) {}
 
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
   window.PPF_SUPABASE.pushKey("completedSessions");
@@ -861,20 +1020,20 @@ function normalizeSessionNumber(session) {
 }
 
 function isSessionCompletedForClient(session) {
+  if (window.PPF_SESSION_TRUTH) return window.PPF_SESSION_TRUTH.isCompleted(session, completedSessions);
   const sessionNumber = normalizeSessionNumber(session);
   const patientNickname = session?.patientNickname || currentClient?.nickname || currentClient?.id || "";
-
   return completedSessions.some(item => {
     const sameId = item.sessionId && session.id && String(item.sessionId) === String(session.id);
     const samePatient = String(item.patientNickname || "") === String(patientNickname || "");
     const completedNumber = Number(item.numero || item.numeroSesion || item.sessionNumber || 0);
-    const sameNumber = samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber;
-    return sameId || sameNumber;
+    return sameId || (samePatient && completedNumber && sessionNumber && completedNumber === sessionNumber);
   });
 }
 
 function persistCompletedSessionsAndCloud() {
   localStorage.setItem("completedSessions", JSON.stringify(completedSessions));
+  window.PPF_CORE?.emit?.("completedSessions");
 
   if (window.PPF_SUPABASE && typeof window.PPF_SUPABASE.pushKey === "function") {
     window.PPF_SUPABASE.pushKey("completedSessions").catch(error => {
@@ -1087,11 +1246,11 @@ function renderNextSession() {
 
 const clientSections = {
   inicio: {
-    title: "Dashboard Cliente PRO",
+    title: "Inicio",
     html: () => renderClientDashboard()
   },
   dashboard: {
-    title: "Dashboard Cliente PRO",
+    title: "Inicio",
     html: () => renderClientDashboard()
   },
   proxima: {
@@ -1420,13 +1579,51 @@ function renderClientSection(key) {
   const section = clientSections[sectionKey];
   if (!section || !clientSectionTitle || !clientContentArea) return;
   clientSectionTitle.textContent = section.title;
+  const isHome = sectionKey === "inicio" || sectionKey === "dashboard";
+  document.body.classList.toggle("client-home-active", isHome);
+  clientContentArea.classList.toggle("client-home-surface", isHome);
   clientContentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
+  window.PPF_CLIENT_HERO?.setSection?.(sectionKey);
   if (sectionKey === "historial") { pmClientCleanFakeValuations(true); if (typeof ensureClientValuationTooltip === "function") ensureClientValuationTooltip(); }
 
   document.querySelectorAll(".client-mobile-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.clientSection === sectionKey || (sectionKey === "dashboard" && tab.dataset.clientSection === "inicio"));
   });
 }
+
+
+function navigateClientHome(targetSection) {
+  const key = clientSections[targetSection] ? targetSection : "inicio";
+  if (typeof window.PM_FINAL_CLIENT_SECTION === "function") {
+    window.PM_FINAL_CLIENT_SECTION(key);
+  } else {
+    document.querySelectorAll(".client-nav-item").forEach(item => {
+      item.classList.toggle("active", item.dataset.clientSection === key || (key === "dashboard" && item.dataset.clientSection === "inicio"));
+    });
+    renderClientSection(key);
+  }
+  try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+}
+
+document.addEventListener("click", event => {
+  const progressDetail = event.target.closest("[data-client-progress-sessions]");
+  if (progressDetail) {
+    event.preventDefault();
+    const detail = document.querySelector(".ppf-home-detail");
+    if (detail) {
+      detail.open = true;
+      try { detail.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (_) {}
+    }
+    return;
+  }
+
+  const action = event.target.closest("[data-client-nav-action]");
+  if (!action) return;
+  event.preventDefault();
+  navigateClientHome(action.dataset.clientNavAction || "inicio");
+});
+
+window.PPF_CLIENT_NAVIGATE = navigateClientHome;
 
 clientNavItems.forEach(item => {
   item.addEventListener("click", () => {
@@ -1545,47 +1742,14 @@ window.completeClientSession = completeClientSession;
 
 
 
-/* PM FIX · Navegación inferior móvil cliente funcional */
-function pmEnsureClientMobileNav() {
-  const isClientPage = document.body && document.querySelector(".client-layout");
-  if (!isClientPage) return;
-
-  let nav = document.getElementById("pmClientBottomNav");
-  if (!nav) {
-    nav = document.createElement("nav");
-    nav.id = "pmClientBottomNav";
-    nav.className = "pm-client-bottom-nav";
-    nav.innerHTML = `
-      <button type="button" data-client-section="dashboard"><span>🏠</span><small>Inicio</small></button>
-      <button type="button" data-client-section="proxima"><span>📅</span><small>Sesión</small></button>
-      <button type="button" data-client-section="historial"><span>📊</span><small>Valoraciones</small></button>
-      <button type="button" data-client-section="archivos"><span>📁</span><small>Archivos</small></button>
-      <button type="button" data-client-section="perfil"><span>👤</span><small>Perfil</small></button>
-    `;
-    document.body.appendChild(nav);
-  }
-
-  nav.querySelectorAll("button").forEach(btn => {
-    btn.onclick = () => {
-      const section = btn.dataset.clientSection || "dashboard";
-      document.querySelectorAll(".client-nav-item").forEach(item => {
-        item.classList.toggle("active", item.dataset.clientSection === section);
-      });
-      nav.querySelectorAll("button").forEach(b => b.classList.toggle("active", b === btn));
-      if (typeof renderClientSection === "function") renderClientSection(section);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    };
-  });
-
-  const activeSection = document.querySelector(".client-nav-item.active")?.dataset.clientSection || "dashboard";
-  nav.querySelectorAll("button").forEach(btn => btn.classList.toggle("active", btn.dataset.clientSection === activeSection));
-}
+/* PM FIX 2026-08-07 · Navegación móvil heredada eliminada.
+   La única barra inferior cliente es .client-mobile-bottom-nav de cliente.html. */
 
 async function pmClientRefreshCloudData() {
   try {
     if (window.PPF_SUPABASE?.pull) await window.PPF_SUPABASE.pull();
     pmClientCleanFakeValuations(true);
-    const active = document.querySelector(".client-nav-item.active")?.dataset.clientSection || document.querySelector("#pmClientBottomNav button.active")?.dataset.clientSection || "dashboard";
+    const active = document.querySelector(".client-nav-item.active")?.dataset.clientSection || "dashboard";
     if (typeof renderClientSection === "function") renderClientSection(active);
   } catch (error) {
     console.warn("No se pudo refrescar datos cliente:", error);
@@ -1595,10 +1759,6 @@ async function pmClientRefreshCloudData() {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pmClientRefreshCloudData(); });
 window.addEventListener("storage", event => { if (["valoraciones","patients","histories"].includes(event.key)) pmClientRefreshCloudData(); });
 setTimeout(pmClientRefreshCloudData, 900);
-
-document.addEventListener("DOMContentLoaded", pmEnsureClientMobileNav);
-setTimeout(pmEnsureClientMobileNav, 0);
-setTimeout(pmEnsureClientMobileNav, 700);
 
 
 
@@ -1616,7 +1776,7 @@ setTimeout(pmEnsureClientMobileNav, 700);
     document.querySelectorAll(".client-nav-item").forEach(item => {
       item.classList.toggle("active", item.dataset.clientSection === key || (key === "dashboard" && item.dataset.clientSection === "inicio"));
     });
-    document.querySelectorAll(".client-mobile-tab, #pmClientBottomNav button").forEach(btn => {
+    document.querySelectorAll(".client-mobile-tab").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.clientSection === key || (key === "dashboard" && btn.dataset.clientSection === "inicio"));
     });
   }
@@ -1628,7 +1788,7 @@ setTimeout(pmEnsureClientMobileNav, 700);
       logoutClient();
       return;
     }
-    const tab = event.target.closest(".client-mobile-tab, #pmClientBottomNav button");
+    const tab = event.target.closest(".client-mobile-tab");
     if (tab) {
       event.preventDefault();
       activateClientSection(tab.dataset.clientSection || "dashboard");
@@ -1661,18 +1821,20 @@ function pmClientReloadRuntimeFromStorage() {
   try { completedSessions = JSON.parse(localStorage.getItem("completedSessions") || "[]"); } catch (_) { completedSessions = []; }
   currentPatient = patients.find(patient => patient.nickname === currentUser.nickname) || currentPatient;
   currentClient = currentPatient;
+  window.currentPatient = currentPatient;
   if (currentPatient) {
     const name = document.getElementById("clientHeaderName");
     const avatar = document.getElementById("clientAvatar");
     if (name) name.textContent = currentPatient.nombre || currentUser.nickname;
     if (avatar) avatar.textContent = String(currentPatient.nombre || currentUser.nickname || "?").charAt(0).toUpperCase();
+    window.PPF_CLIENT_HERO?.render?.({ patient: currentPatient });
   }
 }
 
 function pmClientRefreshVisibleSectionAfterSync() {
   pmClientReloadRuntimeFromStorage();
   if (typeof pmClientCleanFakeValuations === "function") pmClientCleanFakeValuations(false);
-  const active = document.querySelector(".client-nav-item.active")?.dataset.clientSection || document.querySelector("#pmClientBottomNav button.active")?.dataset.clientSection || "dashboard";
+  const active = document.querySelector(".client-nav-item.active")?.dataset.clientSection || "dashboard";
   if (typeof renderClientSection === "function") renderClientSection(active);
 }
 
@@ -1681,6 +1843,25 @@ window.addEventListener("PPF_SUPABASE_SYNCED", function(event){
   if (event.detail && event.detail.direction === "pull") pmClientRefreshVisibleSectionAfterSync();
 });
 setTimeout(function(){ if (window.PPF_SYNC_ON_OPEN) window.PPF_SYNC_ON_OPEN("client-start"); }, 500);
+
+
+  // B.2.1.1 · Progress Navigation Polish:
+  // "Ver mis entrenamientos" has a distinct responsibility from "Ver rendimiento detallado".
+  document.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-client-progress-sessions]");
+    if (!btn) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    if (typeof window.PPF_CLIENT_NAVIGATE === "function") {
+      window.PPF_CLIENT_NAVIGATE("sesiones");
+    } else if (typeof window.PM_FINAL_CLIENT_SECTION === "function") {
+      window.PM_FINAL_CLIENT_SECTION("sesiones");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      document.querySelector('.client-nav-item[data-client-section="sesiones"]')?.click();
+    }
+  }, true);
 
 })();
 

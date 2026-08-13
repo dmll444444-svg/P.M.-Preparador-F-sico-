@@ -1,0 +1,40 @@
+/* PPF PRO v2.5.0.2.4 · Smart States Framework */
+:root{
+  --ppf-state-radius:18px;
+  --ppf-state-border:rgba(148,163,184,.18);
+  --ppf-state-bg:linear-gradient(145deg,rgba(15,23,42,.72),rgba(15,23,42,.42));
+  --ppf-state-muted:#94a3b8;
+  --ppf-state-info:#38bdf8;
+  --ppf-state-success:#34d399;
+  --ppf-state-warning:#fbbf24;
+  --ppf-state-error:#fb7185;
+}
+.ppf-smart-state{
+  display:grid;place-items:center;gap:10px;min-height:150px;padding:28px 22px;
+  border:1px dashed var(--ppf-state-border);border-radius:var(--ppf-state-radius);
+  background:var(--ppf-state-bg);text-align:center;color:inherit;
+}
+.ppf-smart-state[hidden]{display:none!important}
+.ppf-smart-state__icon{
+  display:grid;place-items:center;width:46px;height:46px;border-radius:15px;
+  background:color-mix(in srgb,var(--ppf-state-accent,var(--ppf-state-info)) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--ppf-state-accent,var(--ppf-state-info)) 34%,transparent);
+  color:var(--ppf-state-accent,var(--ppf-state-info));font-size:22px;line-height:1;
+}
+.ppf-smart-state__title{margin:0;font-size:1rem;font-weight:800;letter-spacing:-.01em}
+.ppf-smart-state__message{max-width:540px;margin:0;color:var(--ppf-state-muted);font-size:.9rem;line-height:1.55}
+.ppf-smart-state__actions{display:flex;flex-wrap:wrap;justify-content:center;gap:9px;margin-top:4px}
+.ppf-smart-state--empty{--ppf-state-accent:var(--ppf-state-info)}
+.ppf-smart-state--loading{--ppf-state-accent:var(--ppf-state-info)}
+.ppf-smart-state--success{--ppf-state-accent:var(--ppf-state-success)}
+.ppf-smart-state--warning{--ppf-state-accent:var(--ppf-state-warning)}
+.ppf-smart-state--error{--ppf-state-accent:var(--ppf-state-error)}
+.ppf-smart-state--compact{min-height:auto;padding:18px}.ppf-smart-state--compact .ppf-smart-state__icon{width:38px;height:38px;font-size:18px}
+.ppf-smart-state__spinner{width:22px;height:22px;border:2px solid color-mix(in srgb,currentColor 24%,transparent);border-top-color:currentColor;border-radius:50%;animation:ppfStateSpin .75s linear infinite}
+@keyframes ppfStateSpin{to{transform:rotate(1turn)}}
+.ppf-smart-state-host{position:relative}
+.ppf-smart-state-host[aria-busy="true"]{cursor:progress}
+.ppf-smart-state-native{padding:20px!important;border:1px dashed var(--ppf-state-border)!important;border-radius:var(--ppf-state-radius)!important;background:var(--ppf-state-bg)!important;color:var(--ppf-state-muted)!important;text-align:center!important}
+.ppf-state-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+@media (max-width:640px){.ppf-smart-state{min-height:128px;padding:22px 16px}.ppf-smart-state__message{font-size:.84rem}}
+@media (prefers-reduced-motion:reduce){.ppf-smart-state__spinner{animation:none;border-top-color:transparent}}

@@ -1,7 +1,7 @@
 {
-  "name": "P.M. Preparador Físico Online",
-  "short_name": "PM Online",
-  "description": "Programa Preparador Físico Online para administración y clientes.",
+  "name": "PM · Programa Preparador Físico",
+  "short_name": "PM PPF",
+  "description": "PPF · Programa Preparador Físico de Pablo Marín para planificación, entrenamiento y seguimiento del rendimiento.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -11,8 +11,8 @@
     "browser"
   ],
   "orientation": "portrait",
-  "background_color": "#020617",
-  "theme_color": "#22c55e",
+  "background_color": "#030712",
+  "theme_color": "#a3e635",
   "categories": [
     "health",
     "fitness",

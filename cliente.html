@@ -4,18 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Panel Cliente</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="style.css?v=2026.08.07-mobile-header-logo-fix-v3" />
+  <link rel="manifest" href="manifest.webmanifest?v=2026.08.07-master-pm-scale-v3" />
   <meta name="theme-color" content="#22c55e" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <link rel="icon" href="favicon.ico?v=4" />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=4" />
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=2026.08.07-master-pm-scale-v3" />
+  <link rel="icon" href="favicon.ico?v=2026.08.07-master-pm-scale-v3" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=2026.08.07-master-pm-scale-v3" />
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=2026.08.07-master-pm-scale-v3" />
+  <link rel="stylesheet" href="ppf-unified-feedback.css?v=2.5.0.2.2" />
+  <link rel="stylesheet" href="ppf-motion.css?v=2.5.0.2.4" />
+  <link rel="stylesheet" href="ppf-smart-states.css?v=2.5.0.2.4" />
+  <link rel="stylesheet" href="ppf-client-hero.css?v=2.5.0.3.1.A.2" />
+  <link rel="stylesheet" href="ppf-client-home.css?v=2.5.0.3.1.B.2.1.3" />
+  <link rel="stylesheet" href="ppf-client-layout.css?v=2.5.0.3.1.B.2.1.4" />
 </head>
-<body>
+<body class="client-home-active">
   <div class="client-layout">
     <aside class="client-sidebar">
       <div class="sidebar-brand">
-        <div class="logo small">PF</div>
+        <div class="logo small ppf-brand-mark"><img src="brand/pm-simplified.png?v=2026.08.07-master-pm-scale-v3" alt="PM" /></div>
         <div>
           <h2>Cliente</h2>
           <span>Área personal</span>
@@ -23,21 +30,23 @@
       </div>
 
       <nav class="sidebar-nav">
-        <button class="client-nav-item active" data-client-section="dashboard"><span>📊</span> Dashboard</button>
+        <button class="client-nav-item active" data-client-section="dashboard"><span>🏠</span> Inicio</button>
         <button class="client-nav-item" data-client-section="proxima"><span>🎯</span> Sesión próxima</button>
         <button class="client-nav-item" data-client-section="sesiones"><span>🏋️</span> Mis sesiones</button>
         <button class="client-nav-item" data-client-section="historial"><span>📊</span> Mis Valoraciones</button>
-        <button class="client-nav-item" data-client-section="archivos"><span>🗂️</span> Mis archivos</button>
       </nav>
-
-      <button id="clientLogoutBtn" class="logout">Cerrar sesión</button>
     </aside>
 
     <main class="client-main">
       <header class="admin-header">
-        <div>
-          <p class="eyebrow">Programa Preparador Físico</p>
-          <h1 id="clientSectionTitle">Dashboard Cliente PRO</h1>
+        <div class="client-header-brand-zone">
+          <a class="client-mobile-header-logo" href="cliente.html" aria-label="Ir al inicio" title="Inicio">
+            <img src="brand/pm-simplified.png?v=2026.08.07-mobile-header-logo-fix-v3" alt="PM" />
+          </a>
+          <div class="client-header-desktop-title">
+            <p class="eyebrow">PM · Programa Preparador Físico</p>
+            <h1 id="clientSectionTitle">Dashboard Cliente PRO</h1>
+          </div>
         </div>
         <div class="admin-user client-header-user">
           <div class="client-user-stack">
@@ -48,9 +57,44 @@
         </div>
       </header>
 
-      <section class="content-card" id="clientContentArea"></section>
+      <section id="clientSmartHero" class="ppf-client-hero" aria-live="polite"></section>
+      <section class="content-card client-home-surface" id="clientContentArea"></section>
     </main>
   </div>
+
+
+  <button class="ppf-client-floating-menu-btn" id="ppfClientFloatingMenuBtn" type="button"
+          aria-label="Abrir menú rápido" aria-controls="ppfClientFloatingMenuDrawer"
+          aria-expanded="false" title="Abrir menú">
+    <span class="ppf-client-floating-menu-icon" aria-hidden="true">☰</span>
+    <span class="ppf-client-floating-menu-label">Menú</span>
+  </button>
+
+  <div class="ppf-client-floating-menu-backdrop" id="ppfClientFloatingMenuBackdrop" hidden></div>
+
+  <aside class="ppf-client-floating-menu-drawer" id="ppfClientFloatingMenuDrawer"
+         aria-hidden="true" aria-label="Menú rápido del cliente" hidden inert>
+    <div class="ppf-client-floating-menu-head">
+      <div class="ppf-client-floating-menu-brand">
+        <div class="logo small ppf-brand-mark"><img src="brand/pm-simplified.png?v=2026.08.07-master-pm-scale-v3" alt="PM" /></div>
+        <div><small>PPF PRO</small><h2>Mi espacio</h2></div>
+      </div>
+      <button type="button" class="ppf-client-floating-menu-close" id="ppfClientFloatingMenuClose"
+              aria-label="Cerrar menú">✕</button>
+    </div>
+
+    <nav class="ppf-client-floating-menu-nav" aria-label="Secciones del cliente">
+      <button type="button" data-client-floating-section="dashboard"><span>🏠</span><b>Inicio</b></button>
+      <button type="button" data-client-floating-section="proxima"><span>🎯</span><b>Sesión próxima</b></button>
+      <button type="button" data-client-floating-section="sesiones"><span>🏋️</span><b>Mis sesiones</b></button>
+      <button type="button" data-client-floating-section="historial"><span>📊</span><b>Mis valoraciones</b></button>
+      <button type="button" data-client-floating-section="archivos"><span>🗂️</span><b>Mis archivos</b></button>
+    </nav>
+
+    <button type="button" class="ppf-client-floating-menu-logout" data-client-floating-logout>
+      Cerrar sesión
+    </button>
+  </aside>
 
   <nav class="client-mobile-bottom-nav" aria-label="Navegación inferior cliente">
     <button class="client-mobile-tab active" type="button" data-client-section="dashboard">
@@ -65,17 +109,24 @@
     <button class="client-mobile-tab" type="button" data-client-section="historial">
       <span>📊</span><small>Valoraciones</small>
     </button>
-    <button class="client-mobile-tab" type="button" data-client-section="archivos">
-      <span>🗂️</span><small>Archivos</small>
-    </button>
   </nav>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
-  <script src="supabase-sync.js"></script>
+  <script src="supabase-sync.js?v=2.5.0.3.1.B.2.1.4.3"></script>
   <script src="presence.js"></script>
-  <script src="pwa-register.js"></script>
-  <script src="cliente.js"></script>
-  <script src="notifications.js"></script>
+  <script src="ppf-core.js?v=1.4.2"></script>
+  <script src="session-truth.js?v=2.0.0"></script>
+  <script src="app-version.js?v=2.5.0.3.1.B.2.1.4.3"></script>
+  <script src="ppf-cache-manager.js?v=2.5.0.3.1.B.1.2"></script>
+  <script src="pwa-register.js?v=2.5.0.3.1.B.1.2"></script>
+  <script src="ppf-client-hero.js?v=2.5.0.3.1.A.2"></script>
+  <script src="cliente.js?v=2026.08.07-mobile-nav-dedup-v1"></script>
+  <script src="ppf-client-access.js?v=2.5.0.3.1.B.1.2"></script>
+  <script src="ppf-kpi-feedback.js?v=2.5.0.2.1"></script>
+  <script src="notifications.js?v=2.5.0.3.1.B.2.1.4.5"></script>
+  <script src="ppf-unified-feedback.js?v=2.5.0.2.2"></script>
+  <script src="ppf-motion.js?v=2.5.0.2.4"></script>
+  <script src="ppf-smart-states.js?v=2.5.0.2.4"></script>
 </body>
 </html>

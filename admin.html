@@ -4,18 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Panel Administrador</title>
-  <link rel="stylesheet" href="style.css?v=4.2.1" />
-  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="style.css?v=2026.08.07-master-pm-scale-v3" />
+  <link rel="manifest" href="manifest.webmanifest?v=2026.08.07-master-pm-scale-v3" />
   <meta name="theme-color" content="#22c55e" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <link rel="icon" href="favicon.ico?v=4" />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=4" />
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=2026.08.07-master-pm-scale-v3" />
+  <link rel="icon" href="favicon.ico?v=2026.08.07-master-pm-scale-v3" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=2026.08.07-master-pm-scale-v3" />
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=2026.08.07-master-pm-scale-v3" />
+  <link rel="stylesheet" href="ppf-unified-feedback.css?v=2.5.0.2.2" />
+  <link rel="stylesheet" href="ppf-motion.css?v=2.5.0.2.4" />
+  <link rel="stylesheet" href="ppf-smart-states.css?v=2.5.0.2.4" />
 </head>
 <body>
   <div class="admin-layout">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="logo small">PF</div>
+        <div class="logo small ppf-brand-mark"><img src="brand/pm-simplified.png?v=2026.08.07-master-pm-scale-v3" alt="PM" /></div>
         <div>
           <h2>Admin</h2>
           <span>Panel principal</span>
@@ -30,7 +34,7 @@
         <button class="nav-item" data-section="sesiones"><span>🏋️</span> Creación sesiones</button>
         <button class="nav-item" data-section="agenda"><span>📅</span> Agenda PRO</button>
         <button class="nav-item" data-section="periodicidad"><span>📆</span> Periodicidad</button>
-        <button class="nav-item" data-section="graficaPro"><span>🕸️</span> Gráfica PRO</button>
+        <button class="nav-item" data-section="graficaPro"><span>🏆</span> Centro de Rendimiento</button>
 
         <button class="nav-item" data-section="valoraciones"><span>📊</span> Valoraciones</button>
               <button class="nav-item" data-section="sistema"><span>⚙️</span> Sistema</button>
@@ -42,7 +46,7 @@
     <main class="admin-main">
       <header class="admin-header">
         <div>
-          <p class="eyebrow">Programa Preparador Físico</p>
+          <p class="eyebrow">PM · Programa Preparador Físico</p>
           <h1 id="sectionTitle">Paciente</h1>
         </div>
         <div class="admin-user">
@@ -62,6 +66,34 @@
   </div>
 
 
+
+  <button class="ppf-floating-menu-btn" id="ppfFloatingMenuBtn" type="button" aria-label="Abrir menú lateral" aria-controls="ppfFloatingMenuDrawer" aria-expanded="false" title="Abrir menú">
+    <span class="ppf-floating-menu-icon" aria-hidden="true">☰</span>
+    <span class="ppf-floating-menu-label"><span class="ppf-floating-menu-action">Menú</span><span class="ppf-floating-menu-context" aria-hidden="true"> · Inicio</span></span>
+  </button>
+
+  <div class="ppf-floating-menu-backdrop" id="ppfFloatingMenuBackdrop" hidden></div>
+  <aside class="ppf-floating-menu-drawer" id="ppfFloatingMenuDrawer" aria-hidden="true" aria-label="Menú rápido de PPF PRO" hidden inert>
+    <div class="ppf-floating-menu-head">
+      <div class="ppf-floating-menu-brand">
+        <div class="logo small ppf-brand-mark"><img src="brand/pm-simplified.png?v=2026.08.07-master-pm-scale-v3" alt="PM" /></div>
+        <div><small>PPF PRO</small><h2>Menú rápido</h2></div>
+      </div>
+      <button type="button" class="ppf-floating-menu-close" id="ppfFloatingMenuClose" aria-label="Cerrar menú">✕</button>
+    </div>
+    <nav class="ppf-floating-menu-nav" aria-label="Secciones del administrador">
+      <button type="button" data-floating-section="inicio"><span>🏠</span><b>Inicio</b></button>
+      <button type="button" data-floating-section="paciente"><span>👤</span><b>Paciente</b></button>
+      <button type="button" data-floating-section="usuarios"><span>👥</span><b>Usuarios</b></button>
+      <button type="button" data-floating-section="biblioteca"><span>📚</span><b>Biblioteca</b></button>
+      <button type="button" data-floating-section="sesiones"><span>🏋️</span><b>Creación sesiones</b></button>
+      <button type="button" data-floating-section="agenda"><span>📅</span><b>Agenda PRO</b></button>
+      <button type="button" data-floating-section="periodicidad"><span>📆</span><b>Periodicidad</b></button>
+      <button type="button" data-floating-section="graficaPro"><span>🏆</span><b>Centro de Rendimiento</b></button>
+      <button type="button" data-floating-section="valoraciones"><span>📊</span><b>Valoraciones</b></button>
+      <button type="button" data-floating-section="sistema"><span>⚙️</span><b>Sistema</b></button>
+    </nav>
+  </aside>
 
   <nav class="admin-mobile-bottom-nav" aria-label="Navegación principal del administrador">
     <button class="admin-mobile-nav-item active" type="button" data-mobile-section="inicio" aria-label="Inicio">
@@ -92,7 +124,7 @@
       <button type="button" data-mobile-section="biblioteca"><span>📚</span><b>Biblioteca</b><small>Ejercicios y recursos</small></button>
       <button type="button" data-mobile-section="agenda"><span>📅</span><b>Agenda PRO</b><small>Semana y horarios</small></button>
       <button type="button" data-mobile-section="periodicidad"><span>📆</span><b>Periodicidad</b><small>Planificación temporal</small></button>
-      <button type="button" data-mobile-section="graficaPro"><span>🕸️</span><b>Gráfica PRO</b><small>Análisis del rendimiento</small></button>
+      <button type="button" data-mobile-section="graficaPro"><span>🏆</span><b>Centro de Rendimiento</b><small>Análisis integral del rendimiento</small></button>
       <button type="button" data-mobile-section="valoraciones"><span>📊</span><b>Valoraciones</b><small>Tests e informes</small></button>
       <button type="button" data-mobile-section="sistema"><span>⚙️</span><b>Sistema</b><small>Configuración y datos</small></button>
       <button type="button" class="admin-mobile-sheet-logout" id="adminMobileLogout"><span>🚪</span><b>Cerrar sesión</b><small>Salir del panel</small></button>
@@ -101,9 +133,17 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
-  <script src="supabase-sync.js"></script>
+  <script src="supabase-sync.js?v=2.5.0.3.1.B.2.1.4.3"></script>
   <script src="presence.js"></script>
-  <script src="pwa-register.js?v=4.2.1"></script>
-  <script src="admin.js?v=4.2.1"></script>
+  <script src="ppf-core.js?v=1.4.2"></script>
+  <script src="session-truth.js?v=2.0.0"></script>
+  <script src="app-version.js?v=2.5.0.3.1.B.2.1.4.3"></script>
+  <script src="ppf-cache-manager.js?v=2026.07.20-cache-manager-v2"></script>
+  <script src="pwa-register.js?v=2026.07.20-cache-manager-v2"></script>
+  <script src="admin.js?v=2.5.0.3.1.B.2.4.0-library-running"></script>
+  <script src="ppf-kpi-feedback.js?v=2.5.0.2.1"></script>
+  <script src="ppf-unified-feedback.js?v=2.5.0.2.2"></script>
+  <script src="ppf-motion.js?v=2.5.0.2.4"></script>
+  <script src="ppf-smart-states.js?v=2.5.0.2.4"></script>
 </body>
 </html>
