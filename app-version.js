@@ -3,8 +3,8 @@
 (() => {
   "use strict";
 
-  const VERSION = "2026.08.13-micro-notification-ux-v3-4-2";
-  const BUILD = "PPF_V3_4_2_MICRO_NOTIFICATION_UX";
+  const VERSION = "2026.08.14-canonical-micro-notification-labels-v3-4-2-2";
+  const BUILD = "PPF_V3_4_2_2_CANONICAL_MICRO_NOTIFICATION_LABELS";
 
   globalThis.PPF_APP_VERSION = VERSION;
   globalThis.PPF_BUILD_ID = BUILD;

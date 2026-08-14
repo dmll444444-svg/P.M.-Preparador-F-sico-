@@ -3616,7 +3616,19 @@ function bindSessionsForm() {
     const lastDate = uniqueDates[uniqueDates.length-1] || firstDate;
     const sessionsByDate = dates.reduce((acc, date) => { acc[date] = (acc[date] || 0) + 1; return acc; }, {});
     const doubleSessionDates = Object.entries(sessionsByDate).filter(([, count]) => count > 1).map(([date]) => date);
-    const sessionNumbers = created.map(item => String(item.numero || "").trim()).filter(Boolean);
+    // v3.4.2.1 · Micro Notification Session Labels
+    // La UX nunca expone el contador/ID legacy (numero). Mostramos la
+    // numeración funcional del micro destino: 8.1, 8.2, 8.3...
+    const sessionNumbers = created
+      .slice()
+      .sort((a, b) => Number(a.subsessionOrder || a.microSequenceOrder || 0) - Number(b.subsessionOrder || b.microSequenceOrder || 0))
+      .map((item, index) => {
+        const explicit = String(item.displaySessionNumber || "").trim();
+        if (explicit) return explicit;
+        const order = Number(item.subsessionOrder || item.microSequenceOrder || item.displayOrder || (index + 1));
+        return `${operation.targetMicro}.${order}`;
+      })
+      .filter(Boolean);
     const sessionText = `${created.length} ${created.length === 1 ? "sesión" : "sesiones"}`;
     const dayText = `${uniqueDates.length} ${uniqueDates.length === 1 ? "día" : "días"}`;
     const rangeText = firstDate && lastDate && firstDate !== lastDate ? ` · ${firstDate} → ${lastDate}` : (firstDate ? ` · ${firstDate}` : "");

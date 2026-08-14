@@ -5,7 +5,7 @@
   const STORAGE_KEY = "notifications";
   const CLEANUP_MIGRATION_KEY = "ppf_notification_cleanup_b2142_done";
   const TRUTH_RECONCILIATION_KEY = "ppf_notification_truth_b2143_done";
-  const LIFECYCLE_VERSION = "3.4.2";
+  const LIFECYCLE_VERSION = "3.4.2.2";
   const POLL_MS = 15000;
   let currentNickname = "";
   let initialized = false;
@@ -275,6 +275,23 @@
     });
   }
 
+  // v3.4.2.2 · Canonical Microcycle Notification Labels
+  // La notificación puede haber sido persistida por un build anterior con
+  // IDs/contadores legacy (24, 25, 26...). Para microcycle_plan reconstruimos
+  // SIEMPRE la numeración visible desde microcycle + sessionCount.
+  function notificationBody(item) {
+    if (item?.type !== "microcycle_plan") return item?.body || "Ya tienes una nueva sesión disponible.";
+    const micro = Number(item.microcycle || 0);
+    const count = Math.max(0, Number(item.sessionCount || (Array.isArray(item.sessionIds) ? item.sessionIds.length : 0)));
+    if (!micro || !count) return item?.body || "Ya tienes una nueva sesión disponible.";
+    const canonical = Array.from({ length: count }, (_, index) => `${micro}.${index + 1}`);
+    let body = String(item.body || "");
+    const suffix = `Sesiones ${canonical.join(", ")}`;
+    if (/\bSesiones\s+[^·]+$/i.test(body)) body = body.replace(/\bSesiones\s+[^·]+$/i, suffix);
+    else body = `${body}${body ? " · " : ""}${suffix}`;
+    return body;
+  }
+
   function renderUI() {
     ensureUI();
     const items = mine();
@@ -289,7 +306,7 @@
     list.innerHTML = items.length ? items.slice(0, 20).map(item => `
       <button type="button" class="ppf-notification-item ${isRead(item) ? "is-read" : "is-unread"}" data-notification-id="${escapeHtml(item.id)}">
         <span class="ppf-notification-icon">${item.type === "microcycle_plan" ? "📅" : "🏋️"}</span>
-        <span><strong>${escapeHtml(item.title || "Nueva sesión preparada")}</strong><small>${escapeHtml(item.body || "Ya tienes una nueva sesión disponible.")}</small><time>${formatDate(item.createdAt)}</time></span>
+        <span><strong>${escapeHtml(item.title || "Nueva sesión preparada")}</strong><small>${escapeHtml(notificationBody(item))}</small><time>${formatDate(item.createdAt)}</time></span>
       </button>`).join("") : `<p class="ppf-notification-empty">No tienes notificaciones.</p>`;
   }
 
