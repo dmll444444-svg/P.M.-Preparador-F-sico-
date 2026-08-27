@@ -5,7 +5,7 @@
   const STORAGE_KEY = "notifications";
   const CLEANUP_MIGRATION_KEY = "ppf_notification_cleanup_b2142_done";
   const TRUTH_RECONCILIATION_KEY = "ppf_notification_truth_b2143_done";
-  const LIFECYCLE_VERSION = "3.4.2.2";
+  const LIFECYCLE_VERSION = "3.4.2.4";
   const POLL_MS = 15000;
   let currentNickname = "";
   let initialized = false;
@@ -160,22 +160,58 @@
     } catch (_) { return new Set(); }
   }
 
+  function sessionIsCompletedByTruth(session, completed) {
+    if (!session) return false;
+    if (window.PPF_SESSION_TRUTH?.isCompleted) {
+      try { return Boolean(window.PPF_SESSION_TRUTH.isCompleted(session, completed)); } catch (_) {}
+    }
+    const sid = String(session?.id || session?.sessionId || "").trim();
+    return Boolean(sid) && completed.some(row => String(row?.sessionId || row?.id || "").trim() === sid);
+  }
+
+  function groupedNotificationSessions(item, sessions, deletedIds = readDeletedSessionIds()) {
+    const ids = Array.isArray(item?.sessionIds)
+      ? item.sessionIds.map(v => String(v || "").trim()).filter(Boolean)
+      : [];
+    return ids
+      .filter(id => !deletedIds.has(id))
+      .map(id => sessions.find(session => String(session?.id || session?.sessionId || "").trim() === id))
+      .filter(Boolean);
+  }
+
   function isNotificationExpired(item, sessions, completed, deletedIds = readDeletedSessionIds()) {
     const sid = String(item?.sessionId || "").trim();
     const groupedIds = Array.isArray(item?.sessionIds)
       ? item.sessionIds.map(v => String(v || "").trim()).filter(Boolean)
       : [];
 
-    // v3.4.1: los tombstones mandan. Sirve tanto para prepared_session como
-    // para la notificación agrupada microcycle_plan del Deep Clone Engine.
+    // Las notificaciones de una sesión concreta mueren con su tombstone.
     if (sid && deletedIds.has(sid)) return true;
-    if (groupedIds.some(id => deletedIds.has(id))) return true;
 
+    if (item?.type === "microcycle_plan") {
+      // v3.4.2.4 · Grouped Notification Lifecycle Truth
+      // Una notificación de micro representa un conjunto. No debe desaparecer
+      // porque se elimine/termine UNA sesión: permanece mientras exista al menos
+      // una sesión viva y pendiente del micro. Al terminar/eliminar todo el micro,
+      // desaparece también de local y Supabase mediante replaceValue().
+      const nonDeletedIds = groupedIds.filter(id => !deletedIds.has(id));
+      if (groupedIds.length && !nonDeletedIds.length) return true;
+
+      const live = groupedNotificationSessions(item, sessions, deletedIds);
+      // Protección de sincronización: si la notificación llega por realtime antes
+      // que sus sesiones, no la damos por caducada. La próxima reconciliación decidirá.
+      if (!live.length) return false;
+
+      const matchedIds = new Set(live.map(session => String(session?.id || session?.sessionId || "").trim()).filter(Boolean));
+      const hasUnresolvedLinkedSessions = nonDeletedIds.some(id => !matchedIds.has(id));
+      if (hasUnresolvedLinkedSessions) return false;
+      return live.every(session => sessionIsCompletedByTruth(session, completed));
+    }
+
+    if (groupedIds.some(id => deletedIds.has(id))) return true;
     if (item?.type !== "prepared_session" || !sid) return false;
     const session = notificationSession(item, sessions);
-    if (session && window.PPF_SESSION_TRUTH?.isCompleted) {
-      try { return Boolean(window.PPF_SESSION_TRUTH.isCompleted(session, completed)); } catch (_) {}
-    }
+    if (sessionIsCompletedByTruth(session, completed)) return true;
 
     // Fallback estricto por ID estable: nunca inferimos por número de sesión.
     return completed.some(row => String(row?.sessionId || row?.id || "").trim() === sid);
@@ -275,21 +311,76 @@
     });
   }
 
-  // v3.4.2.2 · Canonical Microcycle Notification Labels
-  // La notificación puede haber sido persistida por un build anterior con
-  // IDs/contadores legacy (24, 25, 26...). Para microcycle_plan reconstruimos
-  // SIEMPRE la numeración visible desde microcycle + sessionCount.
-  function notificationBody(item) {
-    if (item?.type !== "microcycle_plan") return item?.body || "Ya tienes una nueva sesión disponible.";
+  // v3.4.2.4 · Canonical Microcycle Notification Presenter
+  // El texto visible se reconstruye desde datos estructurados y Session Truth.
+  // Así evitamos cuerpos legacy, mostramos el día real de la doble sesión y
+  // retiramos de la lista las sesiones ya terminadas sin perder contexto del micro.
+  function formatAwarenessDate(value) {
+    const parsed = new Date(`${value}T12:00:00`);
+    if (!value || Number.isNaN(parsed.getTime())) return value || "";
+    return new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long" }).format(parsed);
+  }
+
+  function notificationPresentation(item) {
+    if (item?.type !== "microcycle_plan") {
+      return { title: item?.title || "Nueva sesión preparada", body: item?.body || "Ya tienes una nueva sesión disponible." };
+    }
+
+    const sessions = readSessions();
+    const completed = readCompletedSessions();
+    const deletedIds = readDeletedSessionIds();
     const micro = Number(item.microcycle || 0);
-    const count = Math.max(0, Number(item.sessionCount || (Array.isArray(item.sessionIds) ? item.sessionIds.length : 0)));
-    if (!micro || !count) return item?.body || "Ya tienes una nueva sesión disponible.";
-    const canonical = Array.from({ length: count }, (_, index) => `${micro}.${index + 1}`);
-    let body = String(item.body || "");
-    const suffix = `Sesiones ${canonical.join(", ")}`;
-    if (/\bSesiones\s+[^·]+$/i.test(body)) body = body.replace(/\bSesiones\s+[^·]+$/i, suffix);
-    else body = `${body}${body ? " · " : ""}${suffix}`;
-    return body;
+    const linked = groupedNotificationSessions(item, sessions, deletedIds)
+      .slice()
+      .sort((a, b) => Number(a?.subsessionOrder || a?.microSequenceOrder || a?.displayOrder || 0) - Number(b?.subsessionOrder || b?.microSequenceOrder || b?.displayOrder || 0));
+    const pending = linked.filter(session => !sessionIsCompletedByTruth(session, completed));
+    const source = pending.length ? pending : linked;
+    if (!source.length) {
+      return {
+        title: `Nuevo microciclo · M${micro || item.microcycle || ""}`,
+        body: item?.body || "Tu preparador ha actualizado tu planificación."
+      };
+    }
+
+    const labels = source.map((session, index) => {
+      const explicit = String(session?.displaySessionNumber || "").trim();
+      if (explicit) return explicit;
+      const order = Number(session?.subsessionOrder || session?.microSequenceOrder || session?.displayOrder || (index + 1));
+      return micro && order ? `${micro}.${order}` : "";
+    }).filter(Boolean);
+
+    const dates = source.map(session => String(session?.fecha || "").trim()).filter(Boolean).sort();
+    const uniqueDates = [...new Set(dates)];
+    const firstDate = uniqueDates[0] || "";
+    const lastDate = uniqueDates[uniqueDates.length - 1] || firstDate;
+    const byDate = source.reduce((acc, session) => {
+      const date = String(session?.fecha || "").trim();
+      if (!date) return acc;
+      (acc[date] ||= []).push(session);
+      return acc;
+    }, {});
+    const doubleDays = Object.entries(byDate).filter(([, rows]) => rows.length > 1);
+
+    const sessionText = `${source.length} ${source.length === 1 ? "sesión pendiente" : "sesiones pendientes"}`;
+    const dayText = `${uniqueDates.length} ${uniqueDates.length === 1 ? "día" : "días"}`;
+    const rangeText = firstDate && lastDate && firstDate !== lastDate ? ` · ${firstDate} → ${lastDate}` : (firstDate ? ` · ${firstDate}` : "");
+    const numbersText = labels.length ? ` · Sesiones ${labels.join(", ")}` : "";
+    const awarenessText = doubleDays.length
+      ? ` · ⚡ ${doubleDays.map(([date, rows]) => {
+          const dayLabels = rows.map((session, index) => {
+            const explicit = String(session?.displaySessionNumber || "").trim();
+            if (explicit) return explicit;
+            const order = Number(session?.subsessionOrder || session?.microSequenceOrder || session?.displayOrder || (index + 1));
+            return micro && order ? `${micro}.${order}` : "";
+          }).filter(Boolean);
+          return `Doble sesión: ${formatAwarenessDate(date)} (${dayLabels.join(" + ")})`;
+        }).join(" · ")}`
+      : "";
+
+    return {
+      title: `Nuevo microciclo · M${micro || item.microcycle || ""}`,
+      body: `${sessionText} · ${dayText}${rangeText}${numbersText}${awarenessText}`
+    };
   }
 
   function renderUI() {
@@ -303,11 +394,14 @@
     }
     const list = document.getElementById("ppfNotificationList");
     if (!list) return;
-    list.innerHTML = items.length ? items.slice(0, 20).map(item => `
+    list.innerHTML = items.length ? items.slice(0, 20).map(item => {
+      const presentation = notificationPresentation(item);
+      return `
       <button type="button" class="ppf-notification-item ${isRead(item) ? "is-read" : "is-unread"}" data-notification-id="${escapeHtml(item.id)}">
         <span class="ppf-notification-icon">${item.type === "microcycle_plan" ? "📅" : "🏋️"}</span>
-        <span><strong>${escapeHtml(item.title || "Nueva sesión preparada")}</strong><small>${escapeHtml(notificationBody(item))}</small><time>${formatDate(item.createdAt)}</time></span>
-      </button>`).join("") : `<p class="ppf-notification-empty">No tienes notificaciones.</p>`;
+        <span><strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(presentation.body)}</small><time>${formatDate(item.createdAt)}</time></span>
+      </button>`;
+    }).join("") : `<p class="ppf-notification-empty">No tienes notificaciones.</p>`;
   }
 
   function escapeHtml(value) {
@@ -328,7 +422,7 @@
   async function showSystemNotification(item) {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     const options = {
-      body: item.body || "Tu preparador ha publicado una nueva sesión.",
+      body: notificationPresentation(item).body || "Tu preparador ha publicado una nueva sesión.",
       icon: "./icons/icon-192.png",
       badge: "./icons/icon-96.png",
       tag: `ppf-session-${item.sessionId || item.id}`,
@@ -338,9 +432,9 @@
     try {
       const registration = await navigator.serviceWorker?.ready;
       if (registration?.showNotification) await registration.showNotification(item.title || "Nueva sesión preparada", options);
-      else new Notification(item.title || "Nueva sesión preparada", options);
+      else new Notification(notificationPresentation(item).title || "Nueva sesión preparada", options);
     } catch (_) {
-      try { new Notification(item.title || "Nueva sesión preparada", options); } catch (_) {}
+      try { new Notification(notificationPresentation(item).title || "Nueva sesión preparada", options); } catch (_) {}
     }
   }
 
@@ -349,7 +443,8 @@
     const toast = document.createElement("button");
     toast.type = "button";
     toast.className = "ppf-notification-toast";
-    toast.innerHTML = `<span>🔔</span><span><strong>${escapeHtml(item.title || "Nueva sesión preparada")}</strong><small>${escapeHtml(item.body || "Ya está disponible.")}</small></span>`;
+    const presentation = notificationPresentation(item);
+    toast.innerHTML = `<span>🔔</span><span><strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(presentation.body || "Ya está disponible.")}</small></span>`;
     toast.addEventListener("click", () => { markRead(item.id); toast.remove(); openSession(); });
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 8000);

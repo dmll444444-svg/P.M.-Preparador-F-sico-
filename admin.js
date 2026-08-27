@@ -3616,6 +3616,31 @@ function bindSessionsForm() {
     const lastDate = uniqueDates[uniqueDates.length-1] || firstDate;
     const sessionsByDate = dates.reduce((acc, date) => { acc[date] = (acc[date] || 0) + 1; return acc; }, {});
     const doubleSessionDates = Object.entries(sessionsByDate).filter(([, count]) => count > 1).map(([date]) => date);
+
+    // v3.4.2.4 · Double Session Awareness · canonical payload
+    // Agrupamos las sesiones por fecha usando SIEMPRE la numeración funcional
+    // del micro (8.1, 8.2...) para decir al deportista qué día tiene doble sesión.
+    const doubleSessionAwareness = doubleSessionDates.map(date => {
+      const labels = created
+        .filter(item => String(item.fecha || "") === String(date))
+        .slice()
+        .sort((a, b) => Number(a.subsessionOrder || a.microSequenceOrder || 0) - Number(b.subsessionOrder || b.microSequenceOrder || 0))
+        .map((item, index) => {
+          const explicit = String(item.displaySessionNumber || "").trim();
+          if (explicit) return explicit;
+          const order = Number(item.subsessionOrder || item.microSequenceOrder || item.displayOrder || (index + 1));
+          return `${operation.targetMicro}.${order}`;
+        })
+        .filter(Boolean);
+
+      const parsed = new Date(`${date}T12:00:00`);
+      const displayDate = Number.isNaN(parsed.getTime())
+        ? date
+        : new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long" }).format(parsed);
+
+      return { date, displayDate, sessionNumbers: labels };
+    });
+
     // v3.4.2.1 · Micro Notification Session Labels
     // La UX nunca expone el contador/ID legacy (numero). Mostramos la
     // numeración funcional del micro destino: 8.1, 8.2, 8.3...
@@ -3634,18 +3659,22 @@ function bindSessionsForm() {
     const rangeText = firstDate && lastDate && firstDate !== lastDate ? ` · ${firstDate} → ${lastDate}` : (firstDate ? ` · ${firstDate}` : "");
     const doubleText = doubleSessionDates.length ? ` · ${doubleSessionDates.length === 1 ? "doble sesión" : `${doubleSessionDates.length} días con doble sesión`}` : "";
     const numbersText = sessionNumbers.length ? ` · Sesiones ${sessionNumbers.join(", ")}` : "";
+    const doubleAwarenessText = doubleSessionAwareness.length
+      ? ` · ⚡ ${doubleSessionAwareness.map(item => `Doble sesión: ${item.displayDate} (${item.sessionNumbers.join(" + ")})`).join(" · ")}`
+      : "";
     const notification = {
       id: phase34Uuid("micro-notification"),
       type: "microcycle_plan",
       recipient: String(operation.targetPatient.nickname || "").trim().toLowerCase(),
       recipientName: operation.targetPatient.nombre || operation.targetPatient.nickname,
       title: `Nuevo microciclo · M${operation.targetMicro}`,
-      body: `${sessionText} · ${dayText}${rangeText}${doubleText}${numbersText}`,
+      body: `${sessionText} · ${dayText}${rangeText}${doubleText}${numbersText}${doubleAwarenessText}`,
       microcycle: operation.targetMicro,
       sessionCount: created.length,
       trainingDayCount: uniqueDates.length,
       sessionNumbers,
       doubleSessionDates,
+      doubleSessionAwareness,
       sessionIds: created.map(item => item.id),
       sessionDates: dates,
       cloneOperationId: operation.id,
