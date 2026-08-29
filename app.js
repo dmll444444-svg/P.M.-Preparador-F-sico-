@@ -8,6 +8,21 @@ const form = document.getElementById("loginForm");
 const message = document.getElementById("message");
 const submitButton = form ? form.querySelector('button[type="submit"]') : null;
 
+// P.P.F. PRO · Login Focus UX
+// El acceso es común para ADMIN y CLIENTES: al abrir Login, el cursor queda listo en Usuario/Nickname.
+function ppfFocusLoginNickname() {
+  const usernameInput = document.getElementById("username");
+  if (!usernameInput) return;
+  usernameInput.removeAttribute("readonly");
+  try { usernameInput.focus({ preventScroll: true }); } catch (_) { usernameInput.focus(); }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => requestAnimationFrame(ppfFocusLoginNickname), { once: true });
+} else {
+  requestAnimationFrame(ppfFocusLoginNickname);
+}
+
 function normalizeLoginValue(value) {
   return String(value || "").trim();
 }

@@ -1,0 +1,15 @@
+-- P.P.F. Health Bridge · SECURITY GATE
+-- NO EJECUTAR como sustituto de autenticación.
+--
+-- Los datos de salud NO deben añadirse a public.app_state mientras ese recurso
+-- conserve políticas de lectura/escritura anónimas para pruebas.
+--
+-- Requisito previo para Alpha cloud:
+-- 1) Supabase Auth o identidad verificable equivalente.
+-- 2) tabla health_records con athlete_user_id UUID.
+-- 3) RLS que limite SELECT/INSERT al titular y, para ADMIN, a una relación
+--    profesional-deportista autorizada.
+-- 4) consentimiento y revocación auditables.
+-- 5) minimización/retención definida.
+--
+-- Este archivo es deliberadamente un bloqueo de seguridad, no un esquema abierto.

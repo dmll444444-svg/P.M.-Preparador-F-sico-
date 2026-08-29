@@ -1,0 +1,13 @@
+{
+  "athlete_id": "demo",
+  "source": "health_connect",
+  "device_source": "Health Connect test device",
+  "transport": "native-bridge",
+  "permission_scope": ["sleep", "heart_rate", "resting_heart_rate", "steps", "workout"],
+  "records": [
+    {"metric_type":"sleep","start_time":"2026-08-28T23:30:00+02:00","end_time":"2026-08-29T06:40:00+02:00","value":430,"unit":"min","external_id":"demo-sleep-1"},
+    {"metric_type":"heart_rate","start_time":"2026-08-29T08:15:00+02:00","value":61,"unit":"bpm","external_id":"demo-hr-1"},
+    {"metric_type":"resting_heart_rate","start_time":"2026-08-29T07:00:00+02:00","value":56,"unit":"bpm","external_id":"demo-rhr-1"},
+    {"metric_type":"steps","start_time":"2026-08-29T09:00:00+02:00","value":2840,"unit":"count","external_id":"demo-steps-1"}
+  ]
+}

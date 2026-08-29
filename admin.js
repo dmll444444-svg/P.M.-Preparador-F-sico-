@@ -386,6 +386,8 @@ function getPatientPhotoSafe(patient) {
   return normalizePatientPhotoPath(patient.foto || patient.photo || patient.imagen || patient.image || patient.avatar || "");
 }
 
+window.getPatientPhotoSafe = getPatientPhotoSafe;
+
 function ppfSanitizeFilePart(value = "") {
   return String(value || "paciente")
     .trim()
@@ -8756,6 +8758,14 @@ function bindGraphPro() {
     filter.focus();
   });
 
+  // P.P.F. v3.5.0-alpha.1.2 · Context handoff desde Control del Deportista.
+  // Conserva el deportista al saltar a Centro de Rendimiento sin alterar la lógica GOLD.
+  const athleteHandoff = sessionStorage.getItem("ppf:athlete-intelligence:handoff:graph-pro") || "";
+  if (athleteHandoff && [...filter.options].some(option => option.value === athleteHandoff)) {
+    filter.value = athleteHandoff;
+    sessionStorage.removeItem("ppf:athlete-intelligence:handoff:graph-pro");
+  }
+
   renderActiveComparison();
 }
 
@@ -11112,6 +11122,7 @@ const sections = {
   historial: { title: "Historial", html: historialHTML, afterRender: bindHistoryForm },
   archivos: { title: "Archivos", html: archivosHTML, afterRender: bindFilesForm },
   agenda: { title: "Agenda PRO", html: () => agendaProHTML(), afterRender: bindAgendaPro },
+  athleteIntelligence: { title: "Control del Deportista", html: () => window.PPF_ATHLETE_INTELLIGENCE?.shellHTML?.() || "<p>Inicializando Athlete Intelligence…</p>", afterRender: () => window.PPF_ATHLETE_INTELLIGENCE?.mount?.() },
   sesiones: {
     title: "Creación sesiones",
     html: `
@@ -11634,6 +11645,14 @@ function pmOpenAdminMoreSheet() {
 
 function pmNavigateAdmin(key, options = {}) {
   const target = sections[key] ? key : "inicio";
+  // Context handoff hacia Control del Deportista: si la pantalla origen tiene un deportista
+  // seleccionado explícitamente, se conserva. Desde menú sin contexto, Control abre limpio.
+  if (target === "athleteIntelligence") {
+    const candidates = ["graphProPatientFilter","agendaWorkspacePatient","valuationPatient","sessionPatient"];
+    const source = candidates.map(id => document.getElementById(id)).find(el => el && el.value);
+    if (source?.value) sessionStorage.setItem("ppf:athlete-intelligence:handoff:control", source.value);
+    else sessionStorage.removeItem("ppf:athlete-intelligence:handoff:control");
+  }
   pmSyncAdminNavigation(target);
   renderSection(target);
   pmCloseAdminMoreSheet();
@@ -11647,15 +11666,17 @@ function renderSection(key) {
   const isAgenda = key === "agenda";
   const isPeriodicity = key === "periodicidad";
   const isGraphPro = key === "graficaPro";
+  const isAthleteIntelligence = key === "athleteIntelligence";
   document.body.classList.toggle("admin-home-active", isHome);
   document.body.classList.toggle("admin-agenda-active", isAgenda);
   document.body.classList.toggle("admin-periodicity-active", isPeriodicity);
   document.body.classList.toggle("admin-graph-pro-active", isGraphPro);
+  document.body.classList.toggle("admin-athlete-intelligence-active", isAthleteIntelligence);
   sectionTitle.textContent = section.title;
   contentArea.innerHTML = typeof section.html === "function" ? section.html() : section.html;
-  if (!isHome && !isPeriodicity && !isGraphPro) pmSetDashboardKpis(key);
+  if (!isHome && !isPeriodicity && !isGraphPro && !isAthleteIntelligence) pmSetDashboardKpis(key);
   if (section.afterRender) section.afterRender();
-  if (!isHome && !isPeriodicity && !isGraphPro) pmSetDashboardKpis(key);
+  if (!isHome && !isPeriodicity && !isGraphPro && !isAthleteIntelligence) pmSetDashboardKpis(key);
 }
 
 navItems.forEach(item => {
@@ -11685,6 +11706,7 @@ const PPF_FLOATING_SECTION_LABELS = Object.freeze({
   agenda: "Agenda PRO",
   periodicidad: "Periodicidad",
   graficaPro: "Centro de Rendimiento",
+  athleteIntelligence: "Control del Deportista",
   valoraciones: "Valoraciones",
   sistema: "Sistema"
 });
