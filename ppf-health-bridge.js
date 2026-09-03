@@ -1,4 +1,4 @@
-/* P.P.F. v3.6.0-alpha.1 · Health Bridge Foundation
+/* P.P.F. v3.6.0-alpha.2.1 · Health Local-Day Truth
    Read-only normalization layer for health data supplied by an authorized native bridge.
    SECURITY: health data is kept local in this alpha. Cloud upload is intentionally disabled
    until authenticated per-athlete RLS / secure ingestion is deployed. */
@@ -84,7 +84,26 @@
   function ingest(payload = {}) {
     const records = Array.isArray(payload) ? payload : (Array.isArray(payload.records) ? payload.records : []);
     const context = Array.isArray(payload) ? {} : payload;
-    if (!records.length) return { inserted: 0, updated: 0, rejected: 0, total: getAll().length };
+
+    // Alpha 2: native bridge can report permissions/source even when Health Connect has no records yet.
+    const meta = getMeta();
+    const contextAthlete = identity(context.athlete_id || records[0]?.athlete_id || records[0]?.athlete || "");
+    if (contextAthlete) {
+      meta[contextAthlete] = {
+        last_sync: nowIso(),
+        source: String(context.source || records[0]?.source || "health_connect"),
+        device_source: String(context.device_source || records[0]?.device_source || "Android Health Connect"),
+        permission_scope: Array.isArray(context.permission_scope) ? context.permission_scope : [],
+        transport: String(context.transport || "android-native-bridge"),
+        cloud_status: "local_only"
+      };
+      writeJson(META_KEY, meta);
+    }
+
+    if (!records.length) {
+      window.dispatchEvent(new CustomEvent("ppf:health-updated", { detail: { athlete_id: contextAthlete, inserted: 0, updated: 0, rejected: 0 } }));
+      return { inserted: 0, updated: 0, rejected: 0, total: getAll().length };
+    }
 
     const current = getAll();
     const byId = new Map(current.map(r => [r.id, r]));
@@ -101,19 +120,7 @@
     });
     const merged = [...byId.values()].sort((a,b) => String(a.start_time).localeCompare(String(b.start_time)));
     writeJson(STORAGE_KEY, merged);
-    const meta = getMeta();
-    const athlete = identity(context.athlete_id || records[0]?.athlete_id || records[0]?.athlete || "");
-    if (athlete) {
-      meta[athlete] = {
-        last_sync: nowIso(),
-        source: String(context.source || records[0]?.source || "unknown"),
-        device_source: String(context.device_source || records[0]?.device_source || ""),
-        permission_scope: Array.isArray(context.permission_scope) ? context.permission_scope : [],
-        transport: String(context.transport || "native-bridge"),
-        cloud_status: "local_only"
-      };
-      writeJson(META_KEY, meta);
-    }
+    const athlete = contextAthlete || identity(records[0]?.athlete_id || records[0]?.athlete || "");
     window.dispatchEvent(new CustomEvent("ppf:health-updated", { detail: { athlete_id: athlete, inserted, updated, rejected } }));
     return { inserted, updated, rejected, total: merged.length };
   }
@@ -129,10 +136,18 @@
     const heart24 = records.filter(r => r.metric_type === "heart_rate" && Date.now() - new Date(r.start_time).getTime() <= 86400000 && Number.isFinite(Number(r.value)));
     const heartVals = heart24.map(r => Number(r.value));
     const today = new Date();
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
-    const stepRecords = records.filter(r => r.metric_type === "steps" && String(r.start_time).slice(0,10) === todayKey);
+    const localDayKey = value => {
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return "";
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    };
+    const todayKey = localDayKey(today);
+    // Health Connect supplies Instants in UTC. A local midnight in UTC+02 is serialized
+    // as the previous UTC date (for example 2026-09-01T22:00:00Z for 02/09 local).
+    // Compare by LOCAL calendar date, never by slicing the ISO/UTC string.
+    const stepRecords = records.filter(r => r.metric_type === "steps" && localDayKey(r.start_time) === todayKey);
     const stepsToday = stepRecords.reduce((sum,r) => sum + (Number(r.value)||0), 0);
-    const workoutsToday = records.filter(r => r.metric_type === "workout" && String(r.start_time).slice(0,10) === todayKey);
+    const workoutsToday = records.filter(r => r.metric_type === "workout" && localDayKey(r.start_time) === todayKey);
     return {
       records,
       meta,
@@ -159,7 +174,7 @@
   });
 
   window.PPF_HEALTH_BRIDGE = Object.freeze({
-    version: "3.6.0-alpha.1",
+    version: "3.6.0-alpha.2.1",
     schemaVersion: 1,
     supportedMetrics: Object.freeze([...TYPES]),
     normalizeRecord,

@@ -1246,7 +1246,7 @@ function renderNextSession() {
 
 
 
-/* P.P.F. v3.6.0-alpha.1.1.1 · Client Health Connect Entry · Mobile Access Fix */
+/* P.P.F. v3.6.0-alpha.2 · Android Health Connect Bridge */
 function ppfClientHealthSnapshot() {
   try { return window.PPF_HEALTH_BRIDGE?.snapshot?.(currentPatient?.nickname || currentUser?.nickname) || {}; } catch (_) { return {}; }
 }
@@ -1263,6 +1263,30 @@ function ppfClientHealthPanelHTML() {
   const nativeReady = !!(window.PPF_NATIVE_HEALTH || window.AndroidHealthBridge || window.webkit?.messageHandlers?.ppfHealth);
   const lastSync = snap?.meta?.last_sync ? new Date(snap.meta.last_sync).toLocaleString("es-ES") : "Sin sincronización";
   const source = snap?.meta?.source || "Sin origen todavía";
+  const safeNum = value => Number.isFinite(Number(value)) ? Number(value) : null;
+  const formatMinutes = value => {
+    const minutes = safeNum(value);
+    if (minutes === null) return "Sin datos";
+    const h = Math.floor(minutes / 60), m = Math.round(minutes % 60);
+    return h ? `${h} h ${String(m).padStart(2,"0")} min` : `${m} min`;
+  };
+  const formatTime = iso => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("es-ES", { hour:"2-digit", minute:"2-digit" });
+  };
+  const healthValue = {
+    sleep: snap?.sleep ? formatMinutes(snap.sleep.value) : "Sin datos",
+    heart_rate: snap?.heartRate ? `${Math.round(Number(snap.heartRate.value))} ppm` : "Sin datos",
+    steps: Number.isFinite(Number(snap?.stepsToday)) && Number(snap.stepsToday) > 0 ? `${Number(snap.stepsToday).toLocaleString("es-ES")} pasos` : "Sin datos",
+    workout: Array.isArray(snap?.workoutsToday) && snap.workoutsToday.length ? `${snap.workoutsToday.length} actividad${snap.workoutsToday.length === 1 ? "" : "es"}` : "Sin datos"
+  };
+  const healthDetail = {
+    sleep: snap?.sleep ? `Último registro · ${new Date(snap.sleep.end_time || snap.sleep.start_time).toLocaleDateString("es-ES")}` : "Health Connect aún no ha entregado sueño.",
+    heart_rate: snap?.heartRate ? `Última lectura${formatTime(snap.heartRate.start_time) ? ` · ${formatTime(snap.heartRate.start_time)}` : ""}${snap?.heart24Range ? ` · 24 h ${Math.round(snap.heart24Range.min)}–${Math.round(snap.heart24Range.max)} ppm` : ""}` : "Health Connect aún no ha entregado frecuencia cardíaca.",
+    steps: Number(snap?.stepsToday) > 0 ? "Total agregado de hoy en Health Connect." : "Health Connect aún no ha entregado pasos de hoy.",
+    workout: Array.isArray(snap?.workoutsToday) && snap.workoutsToday.length ? "Entrenamientos externos registrados hoy." : "Health Connect aún no ha entregado entrenamientos de hoy."
+  };
   const cards = [
     ["sleep","😴","Sueño","Duración y registros de sueño disponibles en Health Connect."],
     ["heart_rate","❤️","Frecuencia cardíaca","Lecturas de frecuencia cardíaca registradas por fuentes compatibles."],
@@ -1272,19 +1296,19 @@ function ppfClientHealthPanelHTML() {
   return `
     <section class="ppf-client-health-shell">
       <section class="ppf-client-health-hero">
-        <div><p class="eyebrow">P.P.F. HEALTH BRIDGE · BETA</p><h2>Datos de salud</h2><p>Conecta tus datos de salud para que P.P.F. pueda recibir únicamente la información que autorices. Esta Alpha está preparada para Health Connect y nunca completa datos ausentes.</p></div>
-        <div class="ppf-client-health-state"><b>${nativeReady ? "Bridge móvil disponible" : "Bridge móvil pendiente"}</b><span>${source}</span></div>
+        <div><p class="eyebrow">P.P.F. HEALTH BRIDGE · ALPHA 2</p><h2>Datos de salud</h2><p>Conecta Health Connect para que P.P.F. lea únicamente las categorías que autorices. Los valores mostrados proceden del dispositivo; P.P.F. no completa datos ausentes.</p></div>
+        <div class="ppf-client-health-state"><b>${nativeReady ? "Bridge Android disponible" : "Bridge móvil pendiente"}</b><span>${source}</span></div>
       </section>
-      <section class="ppf-client-health-consent"><strong>🔐 TU PERMISO MANDA</strong><span>El acceso es de solo lectura y por categorías. Puedes rechazar permisos o revocarlos desde Health Connect. En esta Alpha los datos permanecen en el dispositivo de prueba.</span></section>
-      <div class="ppf-client-health-grid">${cards.map(([key,icon,title,desc])=>`<article><div class="ppf-health-card-top"><span class="ppf-health-icon">${icon}</span><span class="ppf-health-permission ${perms.has(key)?"ok":""}">${perms.has(key)?"PERMITIDO":"SIN PERMISO"}</span></div><h3>${title}</h3><p>${desc}</p></article>`).join("")}</div>
+      <section class="ppf-client-health-consent"><strong>🔐 TU PERMISO MANDA</strong><span>Acceso de solo lectura y por categorías. Puedes rechazar o revocar permisos desde Health Connect. En esta Alpha los datos permanecen en el dispositivo de prueba.</span></section>
+      <div class="ppf-client-health-grid">${cards.map(([key,icon,title,desc])=>`<article class="ppf-health-data-card"><div class="ppf-health-card-top"><span class="ppf-health-icon">${icon}</span><span class="ppf-health-permission ${perms.has(key)?"ok":""}">${perms.has(key)?"PERMITIDO":"SIN PERMISO"}</span></div><h3>${title}</h3><div class="ppf-health-live-value ${healthValue[key] === "Sin datos" ? "empty" : ""}">${healthValue[key]}</div><p class="ppf-health-live-detail">${healthDetail[key]}</p><p class="ppf-health-card-desc">${desc}</p></article>`).join("")}</div>
       <section class="ppf-client-health-actions">
         <button type="button" class="primary-btn" data-ppf-health-connect>Conectar Health Connect</button>
         <button type="button" class="secondary-btn" data-ppf-health-sync>Sincronizar ahora</button>
         <button type="button" class="secondary-btn" data-ppf-health-permissions>Gestionar permisos</button>
-        <p>${nativeReady ? "Bridge detectado. Ya podemos solicitar permisos reales al dispositivo." : "La pantalla cliente está preparada. Para abrir el diálogo real de Health Connect falta ejecutar P.P.F. dentro del bridge Android nativo."}</p>
+        <p>${nativeReady ? "Bridge Android detectado. Puedes conceder permisos y sincronizar datos reales." : "Esta PWA no puede leer Health Connect por sí sola. Para permisos y lecturas reales abre P.P.F. desde el bridge Android nativo."}</p>
       </section>
       <div class="ppf-client-health-meta"><article><small>ÚLTIMA SINCRONIZACIÓN</small><strong>${lastSync}</strong></article><article><small>ORIGEN</small><strong>${source}</strong></article><article><small>DEPORTISTA</small><strong>@${athlete}</strong></article></div>
-      <p class="ppf-client-health-truth">Health Truth: P.P.F. muestra registros entregados por una fuente autorizada; no estima sueño, pulsaciones, pasos ni entrenamientos cuando el dispositivo no los proporciona.</p>
+      <p class="ppf-client-health-truth">Health Truth: P.P.F. muestra únicamente registros entregados por una fuente autorizada; no estima sueño, pulsaciones, pasos ni entrenamientos cuando el dispositivo no los proporciona.</p>
     </section>`;
 }
 
