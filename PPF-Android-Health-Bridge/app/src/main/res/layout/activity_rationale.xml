@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#030817"
+    android:padding="24dp">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="P.P.F. · Datos de salud"
+            android:textColor="#2BE6A6"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Privacidad y permisos"
+            android:textColor="#FFFFFF"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="P.P.F. solicita únicamente acceso de lectura a los datos que el deportista autoriza en Health Connect: pasos, frecuencia cardíaca, sueño y entrenamientos. En esta Alpha los datos se transfieren al WebView local de P.P.F. para mostrarlos al propio deportista y permanecen en el dispositivo. No se escriben datos en Health Connect ni se suben datos de salud a la nube. Los permisos pueden revocarse en cualquier momento desde Health Connect."
+            android:textColor="#C6D2DF"
+            android:textSize="17sp"
+            android:lineSpacingExtra="5dp" />
+    </LinearLayout>
+</ScrollView>

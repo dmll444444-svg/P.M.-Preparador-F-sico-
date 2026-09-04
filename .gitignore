@@ -1,0 +1,40 @@
+﻿# ============================================================
+# P.P.F MASTER - GITIGNORE
+# Android / Android Studio / Gradle
+# ============================================================
+
+# Gradle caches
+.gradle/
+**/.gradle/
+
+# Android Studio / IntelliJ
+.idea/
+**/.idea/
+*.iml
+
+# Build outputs
+build/
+**/build/
+
+# Local machine configuration
+local.properties
+
+# Generated binaries / packages
+*.apk
+*.aab
+*.class
+*.dex
+
+# OS / temporary files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+
+# Keystores / signing material
+*.jks
+*.keystore
+
+# ============================================================
+# END
+# ============================================================
