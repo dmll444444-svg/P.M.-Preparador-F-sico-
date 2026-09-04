@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P.M. Preparador Físico Online| Login</title>
+  <link rel="stylesheet" href="style.css?v=2026.08.07-master-pm-relief-v5.1" />
+
+  <link rel="manifest" href="manifest.webmanifest?v=2026.08.07-master-pm-login-wide-v4" />
+  <meta name="theme-color" content="#22c55e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="PM Online" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=2026.08.07-master-pm-login-wide-v4" />
+  <link rel="icon" href="favicon.ico?v=2026.08.07-master-pm-login-wide-v4" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=2026.08.07-master-pm-login-wide-v4" />
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=2026.08.07-master-pm-login-wide-v4" />
+  <link rel="stylesheet" href="ppf-unified-feedback.css?v=2.5.0.2.2" />
+  <link rel="stylesheet" href="ppf-motion.css?v=2.5.0.2.4" />
+  <link rel="stylesheet" href="ppf-smart-states.css?v=2.5.0.2.4" />
+</head>
+<body>
+  <main class="login-page">
+    <section class="login-card">
+      <div class="brand">
+        <div class="ppf-brand-lockup-login"><img src="brand/pm-login-relief.png?v=2026.08.07-master-pm-relief-v5.1" alt="Pablo Marín · Preparador Físico · PPF · Planifica, Entrena, Evoluciona" /></div>
+        <p>Acceso privado para clientes y administrador</p>
+      </div>
+
+      <form id="loginForm" autocomplete="off">
+        <label>Usuario o nickname</label>
+        <input type="text" id="username" name="ppf_login_user_new" autocomplete="new-password" autofocus readonly onfocus="this.removeAttribute('readonly')" placeholder="Ej: admin o cliente1" required />
+
+        <label>Contraseña</label>
+        <input type="password" id="password" name="ppf_login_pass_new" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')" placeholder="Introduce tu contraseña" required />
+
+        <button type="submit">Entrar</button>
+        <p id="message"></p>
+      </form>
+      <button class="pwa-install-btn" type="button" onclick="PM_PWA_INSTALL()">📲 Instalar app</button>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="supabase-sync.js"></script>
+  <script src="presence.js"></script>
+  <script src="app.js?v=3.5.0-alpha.3.1"></script>
+  <script src="app-version.js?v=3.6.0-alpha.2.1"></script>
+  <script src="ppf-cache-manager.js?v=2026.07.20-cache-manager-v2"></script>
+  <script src="pwa-register.js?v=2026.07.20-cache-manager-v2"></script>
+  <script src="ppf-unified-feedback.js?v=2.5.0.2.2"></script>
+  <script src="ppf-motion.js?v=2.5.0.2.4"></script>
+  <script src="ppf-smart-states.js?v=2.5.0.2.4"></script>
+</body>
+</html>
