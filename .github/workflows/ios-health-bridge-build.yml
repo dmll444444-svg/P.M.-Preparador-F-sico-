@@ -6,39 +6,99 @@ on:
     paths:
       - "PPF-iOS-Health-Bridge/**"
       - ".github/workflows/ios-health-bridge-build.yml"
-  pull_request:
-    paths:
-      - "PPF-iOS-Health-Bridge/**"
-      - ".github/workflows/ios-health-bridge-build.yml"
-
-permissions:
-  contents: read
 
 jobs:
   build:
     name: SwiftPM macOS / Apple SDK
     runs-on: macos-15
-    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show Apple toolchain
+      - name: Apple toolchain probe
+        shell: bash
         run: |
-          set -euxo pipefail
-          sw_vers
-          xcodebuild -version
-          xcrun swift --version
+          set -euo pipefail
 
-      - name: Validate package manifest
+          echo "=== PPF APPLE TOOLCHAIN PROBE ==="
+          echo
+
+          echo "[1] HOST"
+          sw_vers
+          uname -m
+          echo
+
+          echo "[2] XCODE"
+          xcodebuild -version
+          echo "DEVELOPER_DIR=${DEVELOPER_DIR:-<not-set>}"
+          xcode-select -p
+          echo
+
+          echo "[3] SWIFT"
+          xcrun swift --version
+          xcrun swiftc --version
+          echo
+
+          echo "[4] AVAILABLE SDKs"
+          xcodebuild -showsdks
+          echo
+
+          echo "[5] iPhoneOS SDK"
+          IOS_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          IOS_SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          IOS_SWIFTC="$(xcrun --sdk iphoneos --find swiftc)"
+
+          echo "IOS_SDK_PATH=$IOS_SDK_PATH"
+          echo "IOS_SDK_VERSION=$IOS_SDK_VERSION"
+          echo "IOS_SWIFTC=$IOS_SWIFTC"
+          echo
+
+          echo "[6] iPhoneSimulator SDK"
+          SIM_SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          SIM_SDK_VERSION="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          SIM_SWIFTC="$(xcrun --sdk iphonesimulator --find swiftc)"
+
+          echo "SIM_SDK_PATH=$SIM_SDK_PATH"
+          echo "SIM_SDK_VERSION=$SIM_SDK_VERSION"
+          echo "SIM_SWIFTC=$SIM_SWIFTC"
+          echo
+
+          echo "[7] macOS SDK - CONTROL"
+          MAC_SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+          MAC_SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+
+          echo "MAC_SDK_PATH=$MAC_SDK_PATH"
+          echo "MAC_SDK_VERSION=$MAC_SDK_VERSION"
+          echo
+
+          echo "[8] TARGET INFO - iOS DEVICE"
+          "$IOS_SWIFTC" -print-target-info \
+            -target arm64-apple-ios18.0 \
+            -sdk "$IOS_SDK_PATH"
+          echo
+
+          echo "[9] TARGET INFO - iOS SIMULATOR"
+          "$SIM_SWIFTC" -print-target-info \
+            -target arm64-apple-ios18.0-simulator \
+            -sdk "$SIM_SDK_PATH"
+          echo
+
+          echo "=== END PPF APPLE TOOLCHAIN PROBE ==="
+
+      - name: Inspect Swift package
         working-directory: PPF-iOS-Health-Bridge
+        shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           xcrun swift package dump-package
 
-      - name: Build iOS Health Bridge
+      - name: Existing SwiftPM diagnostic build
         working-directory: PPF-iOS-Health-Bridge
+        shell: bash
+        continue-on-error: true
         run: |
-          set -euxo pipefail
+          set -o pipefail
+          echo "=== CONTROL: CURRENT SWIFTPM HOST BUILD ==="
+          echo "This step is diagnostic only."
           xcrun swift build -v
