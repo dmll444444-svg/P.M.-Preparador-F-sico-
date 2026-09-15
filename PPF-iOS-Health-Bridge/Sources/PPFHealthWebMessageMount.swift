@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import WebKit
 
 @MainActor
@@ -68,16 +68,4 @@ final class PPFHealthWebMessageMount {
         isMounted = false
     }
 
-    deinit {
-
-        if isMounted {
-
-            webView?
-                .configuration
-                .userContentController
-                .removeScriptMessageHandler(
-                    forName: PPFHealthScriptMessageHandler.messageName
-                )
-        }
-    }
 }
