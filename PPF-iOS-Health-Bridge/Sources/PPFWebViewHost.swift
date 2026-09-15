@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import WebKit
 
 @MainActor
@@ -48,7 +48,4 @@ final class PPFWebViewHost {
         healthMount.unmount()
     }
 
-    deinit {
-        healthMount.unmount()
-    }
 }
