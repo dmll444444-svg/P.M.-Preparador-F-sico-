@@ -1,0 +1,44 @@
+name: iOS Health Bridge Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "PPF-iOS-Health-Bridge/**"
+      - ".github/workflows/ios-health-bridge-build.yml"
+  pull_request:
+    paths:
+      - "PPF-iOS-Health-Bridge/**"
+      - ".github/workflows/ios-health-bridge-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: SwiftPM macOS / Apple SDK
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show Apple toolchain
+        run: |
+          set -euxo pipefail
+          sw_vers
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Validate package manifest
+        working-directory: PPF-iOS-Health-Bridge
+        run: |
+          set -euxo pipefail
+          xcrun swift package dump-package
+
+      - name: Build iOS Health Bridge
+        working-directory: PPF-iOS-Health-Bridge
+        run: |
+          set -euxo pipefail
+          xcrun swift build -v
