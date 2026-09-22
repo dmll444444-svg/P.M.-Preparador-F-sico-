@@ -1,0 +1,303 @@
+name: G.32-A Apple Environment Certification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  g32a-certification:
+    name: G.32-A macOS / Xcode / Repository Certification
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository - read only
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: G.32-A - Certify Apple environment and repository
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          section() {
+            echo
+            echo "============================================================"
+            echo "$1"
+            echo "============================================================"
+          }
+
+          fail() {
+            echo
+            echo "[STOP] $1"
+            exit 1
+          }
+
+          ok() {
+            echo "[OK] $1"
+          }
+
+          EXPECTED_HEAD="454588fafa36badee1c818f416b72848afb47cb9"
+          EXPECTED_BRANCH="main"
+          PROJECT_DIR="PPF-iOS-Health-Bridge"
+
+          section "[1] REAL APPLE RUNNER"
+
+          echo "RUNNER_OS        : ${RUNNER_OS}"
+          echo "RUNNER_ARCH      : ${RUNNER_ARCH}"
+          echo "GITHUB_REPOSITORY: ${GITHUB_REPOSITORY}"
+          echo "GITHUB_REF       : ${GITHUB_REF}"
+          echo "GITHUB_SHA       : ${GITHUB_SHA}"
+
+          [[ "${RUNNER_OS}" == "macOS" ]] ||
+            fail "Runner is not macOS"
+
+          ok "REAL GITHUB-HOSTED macOS ENVIRONMENT PRESENT"
+
+
+          section "[2] macOS IDENTITY"
+
+          sw_vers
+          uname -a
+
+          ok "macOS IDENTITY CAPTURED"
+
+
+          section "[3] XCODE TOOLCHAIN"
+
+          XCODE_PATH="$(xcode-select -p)"
+          echo "XCODE SELECT PATH: ${XCODE_PATH}"
+
+          xcodebuild -version
+
+          SWIFT_VERSION="$(swift --version)"
+          echo "${SWIFT_VERSION}"
+
+          [[ -n "${XCODE_PATH}" ]] ||
+            fail "Xcode developer directory not available"
+
+          command -v xcodebuild >/dev/null 2>&1 ||
+            fail "xcodebuild not available"
+
+          command -v swift >/dev/null 2>&1 ||
+            fail "Swift not available"
+
+          ok "XCODE + SWIFT TOOLCHAIN PRESENT"
+
+
+          section "[4] APPLE SDK INVENTORY"
+
+          xcodebuild -showsdks
+
+          IOS_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          IOS_SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+
+          echo "IPHONEOS SDK PATH   : ${IOS_SDK_PATH}"
+          echo "IPHONEOS SDK VERSION: ${IOS_SDK_VERSION}"
+
+          [[ -d "${IOS_SDK_PATH}" ]] ||
+            fail "Real iPhoneOS SDK not found"
+
+          ok "REAL iPhoneOS SDK PRESENT"
+
+
+          section "[5] REPOSITORY IDENTITY"
+
+          REPO_ROOT="$(git rev-parse --show-toplevel)"
+          ACTUAL_HEAD="$(git rev-parse HEAD)"
+          ACTUAL_BRANCH="$(git branch --show-current)"
+
+          echo "REPOSITORY ROOT : ${REPO_ROOT}"
+          echo "ACTUAL HEAD     : ${ACTUAL_HEAD}"
+          echo "EXPECTED HEAD   : ${EXPECTED_HEAD}"
+          echo "ACTUAL BRANCH   : ${ACTUAL_BRANCH}"
+          echo "EXPECTED BRANCH : ${EXPECTED_BRANCH}"
+
+          [[ "${ACTUAL_HEAD}" == "${EXPECTED_HEAD}" ]] ||
+            fail "GitHub main HEAD differs from certified Windows HEAD"
+
+          [[ "${ACTUAL_BRANCH}" == "${EXPECTED_BRANCH}" ]] ||
+            fail "Unexpected Git branch"
+
+          ok "GIT HEAD / BRANCH CERTIFIED"
+
+
+          section "[6] CHECKOUT CLEAN-STATE CONTRACT"
+
+          mapfile -t STATUS_LINES < <(
+            git status --porcelain=v1 --untracked-files=all
+          )
+
+          STATUS_COUNT="${#STATUS_LINES[@]}"
+
+          echo "CHECKOUT STATUS ENTRIES: ${STATUS_COUNT}"
+
+          if (( STATUS_COUNT != 0 )); then
+            printf '%s\n' "${STATUS_LINES[@]}"
+            fail "GitHub checkout is not clean"
+          fi
+
+          ok "GITHUB CHECKOUT CLEAN"
+
+          echo
+          echo "NOTE:"
+          echo "The certified Windows 83-entry dirty worktree is intentionally"
+          echo "NOT expected in a normal GitHub checkout."
+          echo "G.32-A certifies committed GitHub repository state only."
+
+
+          section "[7] SWIFTPM PROJECT ROOT"
+
+          PROJECT_ROOT="${REPO_ROOT}/${PROJECT_DIR}"
+
+          echo "PROJECT ROOT: ${PROJECT_ROOT}"
+
+          [[ -d "${PROJECT_ROOT}" ]] ||
+            fail "PPF-iOS-Health-Bridge directory missing"
+
+          [[ -f "${PROJECT_ROOT}/Package.swift" ]] ||
+            fail "Package.swift missing"
+
+          ok "SWIFTPM PROJECT ROOT PRESENT"
+
+
+          section "[8] COMMITTED CRITICAL PAYLOAD"
+
+          REQUIRED_PATHS=(
+            "Package.swift"
+            "Sources"
+            "App/PPFAppOwner.swift"
+            "Resources/Web"
+            "Resources/Web/index.html"
+            "Resources/AppleLaunch/PPFLaunchBrand.png"
+            "Resources/AppleLaunch/LaunchScreen.storyboard"
+          )
+
+          for REL in "${REQUIRED_PATHS[@]}"; do
+            TARGET="${PROJECT_ROOT}/${REL}"
+
+            if [[ -e "${TARGET}" ]]; then
+              printf "%-55s : True\n" "${REL}"
+            else
+              printf "%-55s : False\n" "${REL}"
+              fail "Critical committed payload missing: ${REL}"
+            fi
+          done
+
+          ok "CRITICAL SWIFTPM / APP / WEB / LAUNCH PAYLOAD PRESENT"
+
+
+          section "[9] PACKAGE MANIFEST READ-ONLY VALIDATION"
+
+          (
+            cd "${PROJECT_ROOT}"
+            swift package dump-package >/tmp/g32a-package.json
+          )
+
+          [[ -s /tmp/g32a-package.json ]] ||
+            fail "SwiftPM could not parse Package.swift"
+
+          echo "PACKAGE MANIFEST PARSE: True"
+
+          ok "SWIFTPM MANIFEST ACCEPTED BY REAL APPLE TOOLCHAIN"
+
+
+          section "[10] ZERO PREMATURE XCODE MATERIALIZATION"
+
+          XCODEPROJ_COUNT="$(
+            find "${REPO_ROOT}" \
+              -type d -name '*.xcodeproj' \
+              -not -path '*/.git/*' |
+            wc -l | tr -d ' '
+          )"
+
+          XCWORKSPACE_COUNT="$(
+            find "${REPO_ROOT}" \
+              -type d -name '*.xcworkspace' \
+              -not -path '*/.git/*' |
+            wc -l | tr -d ' '
+          )"
+
+          PBXPROJ_COUNT="$(
+            find "${REPO_ROOT}" \
+              -type f -name 'project.pbxproj' \
+              -not -path '*/.git/*' |
+            wc -l | tr -d ' '
+          )"
+
+          echo "XCODE PROJECTS   : ${XCODEPROJ_COUNT}"
+          echo "XCODE WORKSPACES : ${XCWORKSPACE_COUNT}"
+          echo "PROJECT.PBXPROJ  : ${PBXPROJ_COUNT}"
+
+          [[ "${XCODEPROJ_COUNT}" == "0" ]] ||
+            fail "Pre-existing Xcode project detected"
+
+          [[ "${XCWORKSPACE_COUNT}" == "0" ]] ||
+            fail "Pre-existing Xcode workspace detected"
+
+          [[ "${PBXPROJ_COUNT}" == "0" ]] ||
+            fail "Pre-existing project.pbxproj detected"
+
+          ok "ZERO PREMATURE XCODE MATERIALIZATION CERTIFIED"
+
+
+          section "[11] POST-PROBE ZERO-WRITE VERIFICATION"
+
+          mapfile -t FINAL_STATUS < <(
+            git status --porcelain=v1 --untracked-files=all
+          )
+
+          FINAL_STATUS_COUNT="${#FINAL_STATUS[@]}"
+
+          echo "FINAL STATUS ENTRIES: ${FINAL_STATUS_COUNT}"
+
+          if (( FINAL_STATUS_COUNT != 0 )); then
+            printf '%s\n' "${FINAL_STATUS[@]}"
+            fail "Certification probe modified repository"
+          fi
+
+          FINAL_HEAD="$(git rev-parse HEAD)"
+
+          [[ "${FINAL_HEAD}" == "${EXPECTED_HEAD}" ]] ||
+            fail "HEAD changed during certification"
+
+          ok "REPOSITORY RECEIVED ZERO WRITES"
+
+
+          section "[12] G.32-A FINAL HARD GATE"
+
+          echo "macOS runner             : True"
+          echo "Xcode toolchain          : True"
+          echo "Swift toolchain          : True"
+          echo "iPhoneOS SDK             : True"
+          echo "Expected Git HEAD        : True"
+          echo "Expected branch          : True"
+          echo "Clean GitHub checkout    : True"
+          echo "SwiftPM project root     : True"
+          echo "Critical payload         : True"
+          echo "Package manifest parse   : True"
+          echo "Zero Xcode materialization: True"
+          echo "Repository untouched     : True"
+
+          echo
+          echo "============================================================"
+          echo "RESULTADO 19.3-G.32-A"
+          echo "GITHUB ACTIONS REAL macOS / XCODE ENVIRONMENT CERTIFIED"
+          echo "============================================================"
+          echo
+          echo "[CERTIFIED] REAL macOS RUNNER"
+          echo "[CERTIFIED] REAL XCODE TOOLCHAIN"
+          echo "[CERTIFIED] REAL iPhoneOS SDK"
+          echo "[CERTIFIED] GIT HEAD ${EXPECTED_HEAD}"
+          echo "[CERTIFIED] BRANCH ${EXPECTED_BRANCH}"
+          echo "[CERTIFIED] COMMITTED SWIFTPM / APP / WEB / LAUNCH PAYLOAD"
+          echo "[CERTIFIED] SWIFTPM MANIFEST PARSES ON APPLE TOOLCHAIN"
+          echo "[CERTIFIED] ZERO PREMATURE XCODE MATERIALIZATION"
+          echo "[CERTIFIED] ZERO REPOSITORY WRITES"
+          echo
+          echo "[CLOSED] 19.3-G.32-A APPLE ENVIRONMENT CERTIFIED"
+          echo "[NEXT] 19.3-G.32-B XCODE STAGE-1 MATERIALIZATION"
