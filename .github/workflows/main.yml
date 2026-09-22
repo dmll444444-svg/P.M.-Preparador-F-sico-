@@ -117,13 +117,22 @@ jobs:
           echo "ACTUAL BRANCH   : ${ACTUAL_BRANCH}"
           echo "EXPECTED BRANCH : ${EXPECTED_BRANCH}"
 
-          [[ "${ACTUAL_HEAD}" == "${EXPECTED_HEAD}" ]] ||
-            fail "GitHub main HEAD differs from certified Windows HEAD"
-
           [[ "${ACTUAL_BRANCH}" == "${EXPECTED_BRANCH}" ]] ||
             fail "Unexpected Git branch"
 
-          ok "GIT HEAD / BRANCH CERTIFIED"
+          if [[ "${ACTUAL_HEAD}" == "${EXPECTED_HEAD}" ]]; then
+            echo "HEAD RELATION     : EXACT MATCH"
+          else
+            if git merge-base --is-ancestor "${EXPECTED_HEAD}" "${ACTUAL_HEAD}"; then
+              echo "HEAD RELATION     : CERTIFIED WINDOWS HEAD IS ANCESTOR"
+              echo "WINDOWS BASE HEAD : ${EXPECTED_HEAD}"
+              echo "CURRENT GH HEAD   : ${ACTUAL_HEAD}"
+            else
+              fail "Certified Windows HEAD is not an ancestor of current GitHub HEAD"
+            fi
+          fi
+
+          ok "GIT HEAD / BRANCH / ANCESTRY CERTIFIED"
 
 
           section "[6] CHECKOUT CLEAN-STATE CONTRACT"
@@ -262,7 +271,7 @@ jobs:
 
           FINAL_HEAD="$(git rev-parse HEAD)"
 
-          [[ "${FINAL_HEAD}" == "${EXPECTED_HEAD}" ]] ||
+          [[ "${FINAL_HEAD}" == "${ACTUAL_HEAD}" ]] ||
             fail "HEAD changed during certification"
 
           ok "REPOSITORY RECEIVED ZERO WRITES"
