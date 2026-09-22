@@ -137,16 +137,23 @@ jobs:
 
           section "[6] CHECKOUT CLEAN-STATE CONTRACT"
 
-          mapfile -t STATUS_LINES < <(
+          STATUS_OUTPUT="$(
             git status --porcelain=v1 --untracked-files=all
-          )
+          )"
 
-          STATUS_COUNT="${#STATUS_LINES[@]}"
+          if [[ -z "${STATUS_OUTPUT}" ]]; then
+            STATUS_COUNT=0
+          else
+            STATUS_COUNT="$(
+              printf '%s\n' "${STATUS_OUTPUT}" |
+              awk 'NF { count++ } END { print count+0 }'
+            )"
+          fi
 
           echo "CHECKOUT STATUS ENTRIES: ${STATUS_COUNT}"
 
           if (( STATUS_COUNT != 0 )); then
-            printf '%s\n' "${STATUS_LINES[@]}"
+            printf '%s\n' "${STATUS_OUTPUT}"
             fail "GitHub checkout is not clean"
           fi
 
@@ -256,19 +263,26 @@ jobs:
 
           section "[11] POST-PROBE ZERO-WRITE VERIFICATION"
 
-          mapfile -t FINAL_STATUS < <(
+          FINAL_STATUS_OUTPUT="$(
             git status --porcelain=v1 --untracked-files=all
-          )
+          )"
 
-          FINAL_STATUS_COUNT="${#FINAL_STATUS[@]}"
+          if [[ -z "${FINAL_STATUS_OUTPUT}" ]]; then
+            FINAL_STATUS_COUNT=0
+          else
+            FINAL_STATUS_COUNT="$(
+              printf '%s\n' "${FINAL_STATUS_OUTPUT}" |
+              awk 'NF { count++ } END { print count+0 }'
+            )"
+          fi
 
           echo "FINAL STATUS ENTRIES: ${FINAL_STATUS_COUNT}"
 
           if (( FINAL_STATUS_COUNT != 0 )); then
-            printf '%s\n' "${FINAL_STATUS[@]}"
+            printf '%s\n' "${FINAL_STATUS_OUTPUT}"
             fail "Certification probe modified repository"
-          fi
-
+          fi    
+          
           FINAL_HEAD="$(git rev-parse HEAD)"
 
           [[ "${FINAL_HEAD}" == "${ACTUAL_HEAD}" ]] ||
