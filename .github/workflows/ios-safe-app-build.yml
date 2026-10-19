@@ -1,0 +1,77 @@
+name: PPF iOS Safe App Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios-simulator:
+    name: Build PPF iOS Simulator App
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Install XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: PPF-iOS-Health-Bridge/iOS/PPFiOSApp
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodegen generate --spec project.yml
+          test -d PPFiOSApp.xcodeproj
+
+      - name: Build iOS simulator app
+        working-directory: PPF-iOS-Health-Bridge/iOS/PPFiOSApp
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          xcodebuild \
+            -project PPFiOSApp.xcodeproj \
+            -scheme PPFiOSApp \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/PPFDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+          APP_PATH="$RUNNER_TEMP/PPFDerivedData/Build/Products/Debug-iphonesimulator/PPFiOSApp.app"
+
+          test -d "$APP_PATH"
+          test -f "$APP_PATH/Info.plist"
+          test -f "$APP_PATH/PPFiOSApp"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_PATH/Info.plist"
+
+          echo "PPF_IOS_SIMULATOR_APP_BUILD_OK"
+
+      - name: Package simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$RUNNER_TEMP/PPFDerivedData/Build/Products/Debug-iphonesimulator/PPFiOSApp.app"
+
+          cd "$(dirname "$APP_PATH")"
+          ditto -c -k --sequesterRsrc --keepParent PPFiOSApp.app "$RUNNER_TEMP/PPFiOSApp-Simulator.zip"
+
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: PPF-iOS-Simulator-App
+          path: ${{ runner.temp }}/PPFiOSApp-Simulator.zip
+          if-no-files-found: error
