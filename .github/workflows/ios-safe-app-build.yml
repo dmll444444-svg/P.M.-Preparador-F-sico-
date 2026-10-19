@@ -3,6 +3,12 @@ name: PPF iOS Safe App Build
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - ppf-ios-safe-build-r13
+    paths:
+      - ".github/workflows/ios-safe-app-build.yml"
+
 jobs:
   build-ios-simulator:
     name: Build PPF iOS Simulator App
