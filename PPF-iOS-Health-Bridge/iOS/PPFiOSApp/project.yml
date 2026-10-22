@@ -29,8 +29,25 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         CODE_SIGNING_ALLOWED: NO
 
+  PPFiOSAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: PPFiOSApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.ppf.preparadorfisico.dev.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: PPFiOSApp
+        CODE_SIGNING_ALLOWED: NO
+
 schemes:
   PPFiOSApp:
     build:
       targets:
         PPFiOSApp: all
+    test:
+      targets:
+        - PPFiOSAppUITests

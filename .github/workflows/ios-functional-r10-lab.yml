@@ -180,6 +180,46 @@ jobs:
 
           echo "PPF_EXPERIMENTAL_LAUNCH_ATTEMPTED"
 
+      - name: Capture initial application screen
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EVIDENCE="$RUNNER_TEMP/PPFLabEvidence"
+          mkdir -p "$EVIDENCE"
+
+          xcrun simctl io \
+            "$PPF_SIMULATOR_UDID" \
+            screenshot "$EVIDENCE/ppf-ios-initial.png"
+
+          test -s "$EVIDENCE/ppf-ios-initial.png"
+
+          echo "PPF_INITIAL_SCREENSHOT_OK"
+
+      - name: Run PPF laboratory XCUITests
+        working-directory: PPF-iOS-Health-Bridge/iOS/PPFiOSApp
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EVIDENCE="$RUNNER_TEMP/PPFLabEvidence"
+          mkdir -p "$EVIDENCE"
+
+          RESULT="$EVIDENCE/PPF-XCUITest.xcresult"
+
+          xcodebuild \
+            -project PPFiOSApp.xcodeproj \
+            -scheme PPFiOSApp \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$PPF_SIMULATOR_UDID" \
+            -derivedDataPath "$RUNNER_TEMP/PPFDerivedData" \
+            -resultBundlePath "$RESULT" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
+          echo "PPF_XCUITEST_PASSED"
+
       - name: Collect experimental evidence
         if: always()
         shell: bash
@@ -195,10 +235,12 @@ jobs:
           xcrun simctl list devices available \
             > "$EVIDENCE/devices.txt" 2>&1 || true
 
-          if [ -n "${PPF_SIMULATOR_UDID:-}" ]; then
-            xcrun simctl io \
-              "$PPF_SIMULATOR_UDID" \
-              screenshot "$EVIDENCE/ppf-ios-initial.png" || true
+          if [ -d "$EVIDENCE/PPF-XCUITest.xcresult" ]; then
+            echo "PPF_XCUITEST_RESULT_PRESENT" \
+              > "$EVIDENCE/xcuitest-status.txt"
+          else
+            echo "PPF_XCUITEST_RESULT_MISSING" \
+              > "$EVIDENCE/xcuitest-status.txt"
           fi
 
           echo "PPF_EXPERIMENTAL_EVIDENCE_COLLECTED"
