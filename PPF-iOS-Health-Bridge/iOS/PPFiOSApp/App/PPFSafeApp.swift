@@ -12,6 +12,8 @@ struct PPFSafeApp: App {
 
 private struct PPFSafeDiagnosticView: View {
 
+    @State private var showLab = false
+
     var body: some View {
         VStack(spacing: 20) {
 
@@ -41,7 +43,26 @@ private struct PPFSafeDiagnosticView: View {
             Text("Compilación técnica de prueba")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+
+            Button("Abrir P.P.F.") {
+                showLab = true
+            }
+            .buttonStyle(.borderedProminent)
         }
         .padding(24)
+        .sheet(isPresented: $showLab) {
+            NavigationStack {
+                PPFLabWebView()
+                    .navigationTitle("P.P.F.")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Cerrar") {
+                                showLab = false
+                            }
+                        }
+                    }
+            }
+        }
     }
 }

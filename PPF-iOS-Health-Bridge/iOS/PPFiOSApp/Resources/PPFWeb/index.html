@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+
+    <title>P.P.F. iOS — Laboratorio local</title>
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="ppf-motion.css">
+    <link rel="stylesheet" href="ppf-smart-states.css">
+    <link rel="stylesheet" href="ppf-unified-feedback.css">
+    <link rel="stylesheet" href="ppf-ios-lab.css">
+</head>
+
+<body>
+    <main class="ppf-ios-lab-container">
+        <h1>P.P.F. — Preparador Físico</h1>
+
+        <h2>Laboratorio local iOS</h2>
+
+        <p>
+            Primera interfaz web aislada para comprobar
+            el empaquetado y la futura integración con WKWebView.
+        </p>
+
+        <p>Supabase: desactivado.</p>
+        <p>HealthKit: desactivado.</p>
+        <p>Sin sincronización externa.</p>
+
+        <button id="ppf-lab-button" type="button">
+            Verificar interacción local
+        </button>
+
+        <p id="ppf-lab-status" role="status">
+            Esperando interacción.
+        </p>
+    </main>
+
+    <script src="ppf-lab.js"></script>
+</body>
+</html>

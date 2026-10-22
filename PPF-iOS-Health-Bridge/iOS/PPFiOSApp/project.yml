@@ -17,6 +17,9 @@ targets:
 
     sources:
       - path: App
+      - path: Resources/PPFWeb
+        type: folder
+        buildPhase: resources
 
     settings:
       base:
