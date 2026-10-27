@@ -121,7 +121,7 @@ jobs:
 
           assert_case T8 REJECT \
             refs/heads/main \
-            "${main_sha}" "${main_sha^^}"
+            "${main_sha}" "$(printf '%s' "${main_sha}" | tr '[:lower:]' '[:upper:]')"
 
           echo "L3 PASS: 8/8"
 
