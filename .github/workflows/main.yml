@@ -107,18 +107,23 @@ jobs:
 
           section "[5] REPOSITORY IDENTITY"
 
+          EXPECTED_REF="refs/heads/${EXPECTED_BRANCH}"
+
           REPO_ROOT="$(git rev-parse --show-toplevel)"
           ACTUAL_HEAD="$(git rev-parse HEAD)"
-          ACTUAL_BRANCH="$(git branch --show-current)"
 
           echo "REPOSITORY ROOT : ${REPO_ROOT}"
           echo "ACTUAL HEAD     : ${ACTUAL_HEAD}"
           echo "EXPECTED HEAD   : ${EXPECTED_HEAD}"
-          echo "ACTUAL BRANCH   : ${ACTUAL_BRANCH}"
-          echo "EXPECTED BRANCH : ${EXPECTED_BRANCH}"
+          echo "EVENT REF       : ${GITHUB_REF}"
+          echo "EXPECTED REF    : ${EXPECTED_REF}"
+          echo "EVENT SHA       : ${GITHUB_SHA}"
 
-          [[ "${ACTUAL_BRANCH}" == "${EXPECTED_BRANCH}" ]] ||
-            fail "Unexpected Git branch"
+          [[ "${GITHUB_REF}" == "${EXPECTED_REF}" ]] ||
+            fail "Unexpected Git event reference"
+
+          [[ "${ACTUAL_HEAD}" == "${GITHUB_SHA}" ]] ||
+            fail "Checkout HEAD differs from event SHA"
 
           if [[ "${ACTUAL_HEAD}" == "${EXPECTED_HEAD}" ]]; then
             echo "HEAD RELATION     : EXACT MATCH"
