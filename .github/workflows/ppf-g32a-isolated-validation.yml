@@ -1,0 +1,166 @@
+name: PPF G32A Isolated Validation
+
+on:
+  push:
+    branches:
+      - ppf-g32a-isolated-lab
+    paths:
+      - .github/workflows/ppf-g32a-isolated-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-validation:
+    name: Validate G32A patch on macOS
+    runs-on: macos-latest
+
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact correction commit
+        uses: actions/checkout@v4
+        with:
+          ref: 898cedb7c1ec0316e98219f18b8034a600b1c95d
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: L1 - Verify exact checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected="898cedb7c1ec0316e98219f18b8034a600b1c95d"
+          actual="$(git rev-parse HEAD)"
+
+          echo "Expected: ${expected}"
+          echo "Actual:   ${actual}"
+
+          [[ "${actual}" == "${expected}" ]]
+
+      - name: L2 - Verify original guard expressions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          workflow=".github/workflows/main.yml"
+
+          test -f "${workflow}"
+
+          grep -Fq 'EXPECTED_BRANCH="main"' "${workflow}"
+          grep -Fq 'EXPECTED_REF="refs/heads/${EXPECTED_BRANCH}"' "${workflow}"
+          grep -Fq '[[ "${GITHUB_REF}" == "${EXPECTED_REF}" ]]' "${workflow}"
+          grep -Fq '[[ "${ACTUAL_HEAD}" == "${GITHUB_SHA}" ]]' "${workflow}"
+
+          echo "L2 PASS"
+
+      - name: L3 - Test eight Bash guard scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          main_sha="5a432f0fc33d91fd676256779152a1d7d89efcc9"
+          patch_sha="898cedb7c1ec0316e98219f18b8034a600b1c95d"
+
+          evaluate() {
+            local ref="$1"
+            local event_sha="$2"
+            local checkout_sha="$3"
+
+            local EXPECTED_BRANCH="main"
+            local EXPECTED_REF="refs/heads/${EXPECTED_BRANCH}"
+
+            local GITHUB_REF="${ref}"
+            local GITHUB_SHA="${event_sha}"
+            local ACTUAL_HEAD="${checkout_sha}"
+
+            [[ "${GITHUB_REF}" == "${EXPECTED_REF}" ]] &&
+            [[ "${ACTUAL_HEAD}" == "${GITHUB_SHA}" ]]
+          }
+
+          assert_case() {
+            local name="$1"
+            local expected="$2"
+            local ref="$3"
+            local event_sha="$4"
+            local checkout_sha="$5"
+
+            local actual="REJECT"
+
+            if evaluate "${ref}" "${event_sha}" "${checkout_sha}"; then
+              actual="ACCEPT"
+            fi
+
+            echo "${name}: expected=${expected} actual=${actual}"
+
+            [[ "${actual}" == "${expected}" ]]
+          }
+
+          assert_case T1 ACCEPT \
+            refs/heads/main "${main_sha}" "${main_sha}"
+
+          assert_case T2 REJECT \
+            refs/heads/ppf-g32a-workflow-identity-fix \
+            "${patch_sha}" "${patch_sha}"
+
+          assert_case T3 REJECT \
+            refs/heads/main "${main_sha}" "${patch_sha}"
+
+          assert_case T4 REJECT \
+            refs/heads/ppf-g32a-workflow-identity-fix \
+            "${main_sha}" "${patch_sha}"
+
+          assert_case T5 ACCEPT \
+            refs/heads/main "${patch_sha}" "${patch_sha}"
+
+          assert_case T6 REJECT \
+            refs/tags/v1.0 "${main_sha}" "${main_sha}"
+
+          assert_case T7 REJECT \
+            refs/heads/Main "${main_sha}" "${main_sha}"
+
+          assert_case T8 REJECT \
+            refs/heads/main \
+            "${main_sha}" "${main_sha^^}"
+
+          echo "L3 PASS: 8/8"
+
+      - name: L4 - Verify Apple environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$(uname -s)" == "Darwin" ]]
+
+          xcodebuild -version
+          xcrun --find swift
+          xcrun --sdk iphoneos --show-sdk-path
+
+          echo "L4 PASS"
+
+      - name: L5 - Inspect Swift package manifest
+        shell: bash
+        working-directory: PPF-iOS-Health-Bridge
+        run: |
+          set -euo pipefail
+
+          test -f Package.swift
+          swift package dump-package > /dev/null
+
+          echo "L5 PASS"
+
+      - name: L6 - Confirm isolated execution scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Laboratory scope:"
+          echo "- Exact correction commit"
+          echo "- Read-only checkout"
+          echo "- No push"
+          echo "- No merge"
+          echo "- No XcodeGen"
+          echo "- No application build"
+          echo "- No HealthKit access"
+
+          echo "L6 PASS"
