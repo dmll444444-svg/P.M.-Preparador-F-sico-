@@ -1,0 +1,466 @@
+  });
+
+  setTimeout(() => {
+    const { check, select } = getMicroManualControls();
+
+    if (!check || !select) return;
+
+    select.style.display = check.checked ? "block" : "none";
+
+    check.addEventListener("change", () => {
+      select.style.display = check.checked ? "block" : "none";
+    });
+  }, 0);
+
+
+
+  const principalTypes = ["F. ppal. TS", "F. ppal. TI", "Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos", "Mov. Olímpicos", "Tarea de Campo"];
+
+  const principalUnitGroups = [
+    { label: "Carga", options: [["Kg", "Kg"], ["%", "%"], ["BW", "BW · Peso corporal"]] },
+    { label: "Distancia", options: [["m", "m · Metros"]] },
+    { label: "Tiempo", options: [["s", "s · Segundos"], ["min", "min · Minutos"]] },
+    { label: "Otras", options: [["rep", "rep · Repeticiones"], ["cal", "cal · Calorías"]] },
+    { label: "Velocidad", options: [["m/s", "m/s"]] }
+  ];
+
+  function getSuggestedPrincipalUnit(type = "") {
+    const normalized = String(type || "").trim();
+    if (["F. ppal. TS", "F. ppal. TI", "Mov. Olímpicos"].includes(normalized)) return "Kg";
+    if (["Core", "Plyo Extensiva", "Plyo Intensiva", "Lanzamientos"].includes(normalized)) return "rep";
+    if (normalized === "Tarea de Campo") return "m";
+    return "Kg";
+  }
+
+  function renderPrincipalUnitOptions(selected = "Kg") {
+    const current = String(selected || "Kg");
+    const known = principalUnitGroups.some(group => group.options.some(([value]) => value === current));
+    const legacyOption = known ? "" : `<optgroup label="Unidad existente"><option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option></optgroup>`;
+    return legacyOption + principalUnitGroups.map(group => `
+      <optgroup label="${group.label}">
+        ${group.options.map(([value, label]) => `<option value="${value}" ${current === value ? "selected" : ""}>${label}</option>`).join("")}
+      </optgroup>
+    `).join("");
+  }
+  const activationTypes = ["T. Superior", "T. Inferior", "Core", "Pliometría"];
+  const mobilityTypes = ["Movilidad", "Est. Estático", "Fascias"];
+
+  const defaultExercise = (tipo = "Movilidad") => ({ nombre: "", series: "", repeticiones: "", carga: "", unidad: "Kg", rpe: "", tipo, url: "", deleted: false });
+  const defaultPrincipalBlock = () => ({ notes: "", exercises: Array.from({ length: 4 }, () => defaultExercise("F. ppal. TS")) });
+
+  const moduleData = {
+    movilidad: Array.from({ length: 10 }, () => defaultExercise("Movilidad")),
+    activacion: Array.from({ length: 10 }, () => defaultExercise("T. Superior")),
+    principal: { blocks: { bloque1: defaultPrincipalBlock(), bloque2: defaultPrincipalBlock(), bloque3: defaultPrincipalBlock(), bloque4: defaultPrincipalBlock() } }
+  };
+
+  function escapeHtml(value = "") {
+    return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+  }
+
+  function getTypeOptions(module) {
+    if (module === "principal") return principalTypes;
+    if (module === "activacion") return activationTypes;
+    return mobilityTypes;
+  }
+
+  function currentExerciseList() {
+    if (activeModule === "principal") return moduleData.principal.blocks[activePrincipalBlock].exercises;
+    return moduleData[activeModule];
+  }
+
+
+  function savePrincipalBlockFromDom(blockKey) {
+    const prefix = `principal_${blockKey}`;
+    const block = moduleData.principal.blocks[blockKey];
+
+    if (!block) return;
+
+    if (activeModule === "principal" && activePrincipalBlock === blockKey && principalBlockNotes) {
+      block.notes = principalBlockNotes.value.trim();
+    }
+
+    block.exercises = block.exercises.map((item, index) => {
+      const num = index + 1;
+
+      if (item.deleted) return item;
+
+      const nameInput = document.getElementById(`${prefix}_nombre_${num}`);
+      const seriesInput = document.getElementById(`${prefix}_series_${num}`);
+      const repsInput = document.getElementById(`${prefix}_reps_${num}`);
+      const cargaInput = document.getElementById(`${prefix}_carga_${num}`);
+      const unidadInput = document.getElementById(`${prefix}_unidad_${num}`);
+      const rpeInput = document.getElementById(`${prefix}_rpe_${num}`);
+      const tipoInput = document.getElementById(`${prefix}_tipo_${num}`);
+      const urlInput = document.getElementById(`${prefix}_url_${num}`);
+
+      // Si el bloque no está renderizado en pantalla, conservamos lo que ya había en memoria.
+      if (!nameInput && !seriesInput && !repsInput && !urlInput) {
+        return item;
+      }
+
+      return {
+        nombre: nameInput?.value.trim() || "",
+        series: seriesInput?.value.trim() || "",
+        repeticiones: repsInput?.value.trim() || "",
+        carga: cargaInput?.value.trim() || "",
+        unidad: unidadInput?.value || "Kg",
+        rpe: rpeInput?.value.trim() || "",
+        tipo: tipoInput?.value || "F. ppal. TS",
+        url: urlInput?.value.trim() || "",
+        deleted: false
+      };
+    });
+  }
+
+  function saveAllVisiblePrincipalBlocksToMemory() {
+    ["bloque1", "bloque2", "bloque3", "bloque4"].forEach(savePrincipalBlockFromDom);
+  }
+
+  function saveActiveModuleToMemory() {
+    if (activeModule === "principal") {
+      savePrincipalBlockFromDom(activePrincipalBlock);
+      return;
+    }
+
+    const prefix = activeModule;
+    const list = currentExerciseList();
+
+    list.forEach((item, index) => {
+      const num = index + 1;
+      if (item.deleted) return;
+
+      const nameInput = document.getElementById(`${prefix}_nombre_${num}`);
+      const seriesInput = document.getElementById(`${prefix}_series_${num}`);
+      const repsInput = document.getElementById(`${prefix}_reps_${num}`);
+      const cargaInput = document.getElementById(`${prefix}_carga_${num}`);
+      const unidadInput = document.getElementById(`${prefix}_unidad_${num}`);
+      const rpeInput = document.getElementById(`${prefix}_rpe_${num}`);
+      const tipoInput = document.getElementById(`${prefix}_tipo_${num}`);
+      const urlInput = document.getElementById(`${prefix}_url_${num}`);
+
+      const isRendered = nameInput || seriesInput || repsInput || cargaInput || unidadInput || rpeInput || tipoInput || urlInput;
+
+      if (!isRendered) {
+        list[index] = { ...item };
+        return;
+      }
+
+      list[index] = {
+        nombre: nameInput?.value.trim() || "",
+        series: seriesInput?.value.trim() || "",
+        repeticiones: repsInput?.value.trim() || "",
+        carga: cargaInput?.value.trim() || "",
+        unidad: unidadInput?.value || item.unidad || "Kg",
+        rpe: rpeInput?.value.trim() || "",
+        tipo: tipoInput?.value || getTypeOptions(activeModule)[0],
+        url: urlInput?.value.trim() || "",
+        deleted: false
+      };
+    });
+  }
+
+  function exerciseRow(module, number, item, prefix) {
+    if (item.deleted) return "";
+
+    const showRpe = module === "activacion" || module === "principal";
+    const typeSelect = getTypeOptions(module).map(option => `<option value="${option}" ${item.tipo === option ? "selected" : ""}>${option}</option>`).join("");
+
+    return `
+      <div class="exercise-row ${showRpe ? "exercise-row-rpe" : ""}">
+        <button class="remove-exercise-btn" type="button" data-remove-number="${number}">✕ Eliminar</button>
+        <div><label>Ejercicio ${number}</label><input id="${prefix}_nombre_${number}" type="text" list="${module === "principal" ? "libraryPrincipalList" : module === "activacion" ? "libraryActivacionList" : "libraryMovilidadList"}" placeholder="Ejercicio ${number}" value="${escapeHtml(item.nombre)}" data-exercise-name="${prefix}_${number}" /></div>
+        <div><label>Nº series</label><input id="${prefix}_series_${number}" type="number" min="0" placeholder="Ej: 3" value="${escapeHtml(item.series)}" /></div>
+        <div><label>Repeticiones</label><input id="${prefix}_reps_${number}" type="text" placeholder="Ej: 10 / 30''" value="${escapeHtml(item.repeticiones)}" /></div>
+        ${module === "principal" ? `
+          <div><label>Carga</label><input id="${prefix}_carga_${number}" type="number" step="0.01" placeholder="Ej: 120" value="${escapeHtml(item.carga || "")}" /></div>
+          <div>
+            <label>Unidad</label>
+            <select id="${prefix}_unidad_${number}" data-principal-unit>
+              ${renderPrincipalUnitOptions(item.unidad || "Kg")}
+            </select>
+          </div>
+        ` : ""}
+        ${showRpe ? `<div><label>RPE</label><input id="${prefix}_rpe_${number}" type="number" min="0" max="10" step="0.5" placeholder="Ej: 8" value="${escapeHtml(item.rpe || "")}" /></div>` : ""}
+        <div><label>Tipo</label><select id="${prefix}_tipo_${number}">${typeSelect}</select></div>
+        <div>
+          <label>URL</label>
+          <div class="url-field">
+            <input id="${prefix}_url_${number}" type="url" placeholder="https://..." value="${libraryEscapeHtml(item.url)}" />
+            <button class="url-search-btn" type="button" data-url-search="${prefix}_nombre_${number}">Buscar</button>
+            <button class="url-play-btn" type="button" data-url-play="${prefix}_url_${number}">▶</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindPanelButtons() {
+    document.querySelectorAll("[data-remove-number]").forEach(button => {
+      button.addEventListener("click", () => {
+        saveActiveModuleToMemory();
+        const index = Number(button.dataset.removeNumber) - 1;
+        currentExerciseList()[index].deleted = true;
+        renderModule(activeModule);
+      });
+    });
+
+    document.querySelectorAll("[data-url-search]").forEach(button => {
+      button.addEventListener("click", () => {
+        const exerciseInput = document.getElementById(button.dataset.urlSearch);
+        const query = exerciseInput?.value.trim() || "ejercicio técnica";
+        window.open(`https://www.google.com/search?q=${encodeURIComponent(query + " ejercicio técnica vídeo")}`, "_blank");
+      });
+    });
+
+    document.querySelectorAll("[data-url-play]").forEach(button => {
+      button.addEventListener("click", () => {
+        const urlInput = document.getElementById(button.dataset.urlPlay);
+        const url = urlInput?.value.trim();
+        if (!url) return alert("Pega primero una URL para poder abrir el vídeo.");
+        window.open(url, "_blank");
+      });
+    });
+
+    document.querySelectorAll("[data-exercise-name]").forEach(input => {
+      input.addEventListener("change", () => {
+        const category = activeModule === "principal" ? "Sesión Principal" : activeModule === "activacion" ? "Activación" : "Movilidad";
+        const libraryExercise = findLibraryExercise(input.value.trim(), category);
+        if (!libraryExercise) return;
+
+        const parts = input.dataset.exerciseName.split("_");
+        const number = parts[parts.length - 1];
+        const prefix = parts.slice(0, -1).join("_");
+
+        const urlInput = document.getElementById(`${prefix}_url_${number}`);
+        const typeSelect = document.getElementById(`${prefix}_tipo_${number}`);
+
+        if (urlInput && libraryExercise.url && !urlInput.value.trim()) {
+          urlInput.value = libraryExercise.url;
+        }
+
+        if (typeSelect && libraryExercise.type) {
+          const option = [...typeSelect.options].find(opt => opt.value === libraryExercise.type);
+          if (option) {
+            typeSelect.value = libraryExercise.type;
+            typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        }
+      });
+    });
+
+    document.querySelectorAll('select[id*="_tipo_"]').forEach(typeSelect => {
+      if (!typeSelect.id.startsWith("principal_")) return;
+      typeSelect.addEventListener("change", () => {
+        const unitSelect = document.getElementById(typeSelect.id.replace("_tipo_", "_unidad_"));
+        if (!unitSelect) return;
+        unitSelect.value = getSuggestedPrincipalUnit(typeSelect.value);
+      });
+    });
+  }
+
+  function renderModule(module) {
+    activeModule = module;
+
+    const isPrincipal = module === "principal";
+    if (principalBlocksNav) principalBlocksNav.style.display = isPrincipal ? "grid" : "none";
+    if (principalBlockNotesWrap) principalBlockNotesWrap.style.display = isPrincipal ? "grid" : "none";
+    if (loadHead) loadHead.style.display = isPrincipal ? "block" : "none";
+    if (unitHead) unitHead.style.display = isPrincipal ? "block" : "none";
+    if (rpeHead) rpeHead.style.display = (module === "activacion" || isPrincipal) ? "block" : "none";
+
+    const title = isPrincipal ? `Sesión Principal · ${activePrincipalBlock.replace("bloque", "Bloque ")}` : (module === "activacion" ? "Activación" : "Movilidad");
+    activeModuleTitle.textContent = title;
+
+    if (isPrincipal) {
+      principalBlockNotesLabel.textContent = `Objetivo / Observaciones · ${activePrincipalBlock.replace("bloque", "Bloque ")}`;
+      principalBlockNotes.value = moduleData.principal.blocks[activePrincipalBlock].notes || "";
+    }
+
+    const prefix = isPrincipal ? `principal_${activePrincipalBlock}` : module;
+    const list = currentExerciseList();
+
+    activeModuleCount.textContent = `${list.filter(item => !item.deleted).length} ejercicios`;
+
+    moduleExercises.innerHTML = list.map((item, index) => exerciseRow(module, index + 1, item, prefix)).join("");
+
+    moduleButtons.forEach(button => button.classList.toggle("active", button.dataset.module === module));
+    document.querySelectorAll(".principal-block-btn").forEach(button => button.classList.toggle("active", button.dataset.principalBlock === activePrincipalBlock));
+
+    bindPanelButtons();
+  }
+
+  function refreshSessionInfo() {
+    const patientNickname = patientHidden.value;
+    const patient = patients.find(item => item.nickname === patientNickname);
+
+    updateSelectedSessionPatientCard();
+    kpiClientName.textContent = patient ? patient.nombre : "-";
+    kpiClientNickname.textContent = patient ? `@${patient.nickname}` : "-";
+    const existingSession = editingSessionId ? sessions.find(item => String(item.id) === String(editingSessionId)) : null;
+    const microManualActive = Boolean(microManualCheck && microManualCheck.checked);
+    const manualMicro = Number(String(microManualSelect?.value || "").replace(/\D/g, ""));
+    const microInfo = existingSession
+      ? { number: microManualActive && manualMicro ? manualMicro : (existingSession.microciclo || "-") }
+      : getMicrocycleInfo(patientNickname, date.value, microManualActive && manualMicro ? manualMicro : "");
+    sessionNumber.textContent = nciPreviewSessionNumber(patientNickname, date.value, microInfo.number, editingSessionId);
+
+    if (microInfo.number === "-") {
+      microciclo.textContent = "-";
+      microcicloDate.textContent = "Selecciona cliente y fecha";
+      microcicloNumber.value = "";
+    } else {
+      microciclo.textContent = `Micro ${microInfo.number}`;
+      microcicloDate.textContent = date.value;
+      microcicloNumber.value = microInfo.number;
+    }
+  }
+
+
+  function updateSelectedSessionPatientCard() {
+    const card = document.getElementById("selectedSessionPatientCard");
+    if (!card) return;
+
+    const patient = patients.find(item => item.nickname === patientHidden.value);
+
+    if (!patient) {
+      card.innerHTML = `
+        <div class="session-selected-avatar">?</div>
+        <div>
+          <strong>Selecciona cliente</strong>
+          <span>Foto del paciente</span>
+        </div>
+      `;
+      return;
+    }
+
+    card.innerHTML = `
+      ${getPatientPhotoSafe(patient) ? `<img src="${getPatientPhotoSafe(patient)}" alt="${patient.nombre}">` : `<div class="session-selected-avatar">${patient.nombre.charAt(0).toUpperCase()}</div>`}
+      <div>
+        <strong>${patient.nombre}</strong>
+        <span>@${patient.nickname}</span>
+      </div>
+    `;
+  }
+
+  function resetSessionForm() {
+    if (sessionKind) sessionKind.value = "gym";
+    form.reset();
+    moduleData.movilidad = Array.from({ length: 10 }, () => defaultExercise("Movilidad"));
+    moduleData.activacion = Array.from({ length: 10 }, () => defaultExercise("T. Superior"));
+    moduleData.principal.blocks = { bloque1: defaultPrincipalBlock(), bloque2: defaultPrincipalBlock(), bloque3: defaultPrincipalBlock(), bloque4: defaultPrincipalBlock() };
+    editingSessionId = null;
+    saveSessionBtn.textContent = "Guardar sesión";
+    delete saveSessionBtn.dataset.editing;
+    setTodayIfEmpty("sessionDate");
+    patientHidden.value = "";
+    activePrincipalBlock = "bloque1";
+    renderModule("movilidad");
+    refreshSessionInfo();
+  }
+
+  setTodayIfEmpty("sessionDate");
+  if (Number(localStorage.getItem("ppfNciVersion") || 0) < PPF_NCI_VERSION) {
+    const migration = nciRenumberAllSessions({ touchUpdatedAt: true, rebuildOrder: true });
+    localStorage.setItem("ppfNciVersion", String(PPF_NCI_VERSION));
+    if (migration.changed && window.PPF_SUPABASE?.pushKey) {
+      window.PPF_SUPABASE.pushKey("sessions").catch(error => console.warn("No se pudo sincronizar la migración NCI:", error));
+    }
+    if (migration.notificationsChanged && window.PPF_SUPABASE?.pushKey) {
+      window.PPF_SUPABASE.pushKey("notifications").catch(error => console.warn("No se pudieron sincronizar las notificaciones NCI:", error));
+    }
+  }
+  renderModule("movilidad");
+  refreshSessionInfo();
+  renderSessionList();
+
+  moduleButtons.forEach(button => button.addEventListener("click", () => {
+    saveActiveModuleToMemory();
+    renderModule(button.dataset.module);
+  }));
+
+  document.querySelectorAll(".principal-block-btn").forEach(button => button.addEventListener("click", () => {
+    saveActiveModuleToMemory();
+    activePrincipalBlock = button.dataset.principalBlock;
+    renderModule("principal");
+  }));
+
+  if (saveCurrentBlockBtn) {
+    saveCurrentBlockBtn.addEventListener("click", () => {
+      saveActiveModuleToMemory();
+      alert("Bloque guardado en memoria. Recuerda pulsar Guardar sesión para guardar la sesión completa.");
+    });
+  }
+
+  date.addEventListener("change", refreshSessionInfo);
+  if (microManualCheck) microManualCheck.addEventListener("change", refreshSessionInfo);
+  if (microManualSelect) microManualSelect.addEventListener("change", refreshSessionInfo);
+  filter.addEventListener("change", () => renderSessionList(filter.value));
+
+  patientSearch.addEventListener("change", () => {
+    const patient = patients.find(item => item.nickname === patientSearch.value) || getSelectedPatientBySearch(patientSearch.value.trim());
+    patientHidden.value = patient ? patient.nickname : "";
+    refreshSessionInfo();
+  });
+
+  if (pasteCopiedSessionBtn) pasteCopiedSessionBtn.addEventListener("click", pasteCopiedSessionIntoForm);
+  if (loadLastSessionBtn) loadLastSessionBtn.addEventListener("click", loadLastSessionForSelectedPatient);
+  refreshSessionClipboardStatus();
+
+
+  function cloneExerciseForStorage(item, fallbackType = "") {
+    return {
+      nombre: item?.nombre || "",
+      series: item?.series || "",
+      repeticiones: item?.repeticiones || "",
+      carga: item?.carga || "",
+      unidad: item?.unidad || "Kg",
+      rpe: item?.rpe || "",
+      tipo: item?.tipo || fallbackType || "",
+      url: item?.url || "",
+      deleted: Boolean(item?.deleted)
+    };
+  }
+
+  function cloneAllModulesForStorage(existingSession = null) {
+    saveActiveModuleToMemory();
+
+    const principal = { blocks: {} };
+
+    ["bloque1", "bloque2", "bloque3", "bloque4"].forEach(blockKey => {
+      const block = moduleData.principal.blocks[blockKey] || defaultPrincipalBlock();
+
+      principal.blocks[blockKey] = {
+        notes: block.notes || "",
+        exercises: (block.exercises || []).map(item => cloneExerciseForStorage(item, "F. ppal. TS"))
+      };
+
+      while (principal.blocks[blockKey].exercises.length < 4) {
+        principal.blocks[blockKey].exercises.push(defaultExercise("F. ppal. TS"));
+      }
+    });
+
+    return {
+      movilidad: (moduleData.movilidad || []).map(item => cloneExerciseForStorage(item, "Movilidad")),
+      activacion: (moduleData.activacion || []).map(item => cloneExerciseForStorage(item, "T. Superior")),
+      principal
+    };
+  }
+
+  function normalizeImportedExercise(item = {}, fallbackType = "") {
+    return {
+      nombre: item.nombre || "",
+      series: item.series || "",
+      repeticiones: item.repeticiones || "",
+      carga: item.carga || "",
+      unidad: item.unidad || "Kg",
+      rpe: item.rpe || "",
+      tipo: item.tipo || fallbackType || "",
+      url: item.url || "",
+      deleted: Boolean(item.deleted)
+    };
+  }
+
+  function applySessionModulesToForm(modules = {}, sourceLabel = "sesión copiada") {
+    const movilidad = Array.isArray(modules.movilidad) ? modules.movilidad : [];
+    const activacion = Array.isArray(modules.activacion) ? modules.activacion : [];

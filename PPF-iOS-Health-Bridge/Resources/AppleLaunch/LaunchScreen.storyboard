@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB"
+          version="3.0"
+          toolsVersion="23094"
+          targetRuntime="iOS.CocoaTouch"
+          propertyAccessControl="none"
+          useAutolayout="YES"
+          launchScreen="YES"
+          useTraitCollections="YES"
+          useSafeAreas="YES"
+          colorMatched="YES">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin"
+                version="23084"/>
+        <capability name="Safe area layout guides"
+                    minToolsVersion="9.0"/>
+        <capability name="System colors in document resources"
+                    minToolsVersion="11.0"/>
+        <capability name="documents saved in the Xcode 8 format"
+                    minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="PPF-LAUNCH-SCENE">
+            <objects>
+                <viewController id="PPF-LAUNCH-VC"
+                                sceneMemberID="viewController">
+                    <view key="view"
+                          contentMode="scaleToFill"
+                          id="PPF-LAUNCH-VIEW">
+                        <rect key="frame"
+                              x="0"
+                              y="0"
+                              width="393"
+                              height="852"/>
+                        <autoresizingMask key="autoresizingMask"
+                                          widthSizable="YES"
+                                          heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES"
+                                       userInteractionEnabled="NO"
+                                       contentMode="scaleAspectFit"
+                                       image="PPFLaunchBrand.png"
+                                       translatesAutoresizingMaskIntoConstraints="NO"
+                                       id="PPF-LAUNCH-IMAGE">
+                                <rect key="frame"
+                                      x="46.5"
+                                      y="276"
+                                      width="300"
+                                      height="300"/>
+                            </imageView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea"
+                                         id="PPF-LAUNCH-SAFE"/>
+                        <color key="backgroundColor"
+                               red="0.007843137255"
+                               green="0.023529411765"
+                               blue="0.090196078431"
+                               alpha="1"
+                               colorSpace="custom"
+                               customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="PPF-LAUNCH-IMAGE"
+                                        firstAttribute="centerX"
+                                        secondItem="PPF-LAUNCH-VIEW"
+                                        secondAttribute="centerX"
+                                        id="PPF-CENTER-X"/>
+                            <constraint firstItem="PPF-LAUNCH-IMAGE"
+                                        firstAttribute="centerY"
+                                        secondItem="PPF-LAUNCH-VIEW"
+                                        secondAttribute="centerY"
+                                        id="PPF-CENTER-Y"/>
+                            <constraint firstItem="PPF-LAUNCH-IMAGE"
+                                        firstAttribute="width"
+                                        constant="300"
+                                        id="PPF-WIDTH"/>
+                            <constraint firstItem="PPF-LAUNCH-IMAGE"
+                                        firstAttribute="height"
+                                        constant="300"
+                                        id="PPF-HEIGHT"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder"
+                             id="PPF-FIRST-RESPONDER"
+                             userLabel="First Responder"
+                             sceneMemberID="firstResponder"/>
+            </objects>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="PPFLaunchBrand.png"
+               width="526"
+               height="445"/>
+    </resources>
+</document>
